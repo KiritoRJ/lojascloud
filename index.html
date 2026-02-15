@@ -3,84 +3,116 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Assistência Técnica Pro</title>
     
-    <!-- Adicionado crossorigin para evitar "Script Error at 0:0" -->
-    <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.1/dist/es-module-shims.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.tailwindcss.com" crossorigin="anonymous"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin="anonymous"></script>
+    <!-- Configuração de Segurança e Cross-Origin -->
+    <script crossorigin="anonymous" src="https://ga.jspm.io/npm:es-module-shims@1.10.1/dist/es-module-shims.js"></script>
+    <script crossorigin="anonymous" src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
-        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
         #app-loader {
             position: fixed; inset: 0; background: #0f172a;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             z-index: 9999; transition: opacity 0.5s;
         }
         .spinner {
-            width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1);
-            border-left-color: #2563eb; border-radius: 50%; animation: spin 1s linear infinite;
+            width: 48px; height: 48px; border: 4px solid rgba(255,255,255,0.05);
+            border-left-color: #3b82f6; border-radius: 50%; animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        
         #debug-console {
-            position: fixed; top: 0; left: 0; right: 0; max-height: 50%; 
-            background: rgba(0,0,0,0.9); color: #ff3333; font-family: monospace; 
-            font-size: 10px; overflow-y: auto; z-index: 10000; padding: 10px;
-            display: none; border-bottom: 2px solid red;
+            position: fixed; top: 0; left: 0; right: 0; max-height: 60%; 
+            background: #000; color: #33ff33; font-family: 'Courier New', monospace; 
+            font-size: 11px; overflow-y: auto; z-index: 10000; padding: 15px;
+            display: none; border-bottom: 3px solid #ef4444; line-height: 1.4;
         }
+        .error-tag { color: #ef4444; font-weight: bold; }
     </style>
 
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "recharts": "https://esm.sh/recharts@^3.7.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
-    "jspdf": "https://esm.sh/jspdf@2.5.1"
-  }
-}
-</script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.4",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+        "react/": "https://esm.sh/react@^19.2.4/",
+        "recharts": "https://esm.sh/recharts@^3.7.0",
+        "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
+        "jspdf": "https://esm.sh/jspdf@2.5.1"
+      }
+    }
+    </script>
 </head>
 <body class="bg-slate-50 text-slate-900">
+    <!-- Console de Debug Visível em caso de erro crítico -->
     <div id="debug-console">
-        <div style="font-weight: bold; margin-bottom: 5px; color: white;">DEBUG CONSOLE (ERROS):</div>
+        <div style="display:flex; justify-content:space-between; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px;">
+            <span style="font-weight: bold; color: #fff;">SISTEMA DE DIAGNÓSTICO</span>
+            <button onclick="location.reload()" style="background:#333; color:#fff; border:none; padding:2px 10px; border-radius:4px; font-size:9px;">RECARREGAR</button>
+        </div>
+        <div id="debug-logs"></div>
     </div>
 
+    <!-- Tela de Carregamento Moderna -->
     <div id="app-loader">
         <div class="spinner"></div>
-        <p id="loader-text" style="color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-top: 15px; letter-spacing: 0.1em;">Carregando do Netlify...</p>
+        <div style="margin-top: 24px; text-align: center;">
+            <p id="loader-status" style="color: #fff; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 4px;">Iniciando Sistema</p>
+            <p id="loader-sub" style="color: #64748b; font-size: 10px; font-weight: 500;">Conectando ao Netlify...</p>
+        </div>
     </div>
     
     <div id="root"></div>
 
     <script>
-        // Sistema de debug robusto para WebView
-        const debug = document.getElementById('debug-console');
-        
-        function logError(msg, source, line, col, error) {
-            debug.style.display = 'block';
+        const logsContainer = document.getElementById('debug-logs');
+        const consoleEl = document.getElementById('debug-console');
+        const loaderStatus = document.getElementById('loader-status');
+
+        function log(msg, isError = false) {
+            console.log(msg);
             const div = document.createElement('div');
-            div.style.marginBottom = '5px';
-            div.innerHTML = `<strong>Erro:</strong> ${msg}<br><small>${source}:${line}:${col}</small>`;
-            debug.appendChild(div);
-            // Se houver erro de script 0:0, provavelmente é CORS ou falta de internet
-            if (msg.toLowerCase().includes('script error')) {
-                const hint = document.createElement('div');
-                hint.style.color = 'yellow';
-                hint.style.fontSize = '9px';
-                hint.innerText = 'Dica: Verifique a conexão ou se o Netlify permite acesso externo.';
-                debug.appendChild(hint);
-            }
+            div.innerHTML = `<span class="${isError ? 'error-tag' : ''}">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+            logsContainer.appendChild(div);
+            if (isError) consoleEl.style.display = 'block';
         }
 
-        window.onerror = logError;
-        window.addEventListener('unhandledrejection', function(event) {
-            logError('Promessa Rejeitada: ' + event.reason, '', '', '', '');
-        });
+        window.onerror = (msg, src, line, col) => log(`ERRO: ${msg} em ${line}:${col}`, true);
+
+        // Função manual para carregar e transformar o index.tsx
+        // Isso resolve o problema do Babel falhando no fetch interno no WebView
+        async function bootstrap() {
+            try {
+                loaderStatus.innerText = "Baixando Código";
+                const response = await fetch('./index.tsx');
+                if (!response.ok) throw new Error(`Falha ao baixar index.tsx (Status: ${response.status})`);
+                
+                const code = await response.text();
+                log("Código baixado, transformando...");
+                
+                loaderStatus.innerText = "Processando TSX";
+                const transformed = Babel.transform(code, {
+                    presets: ['react', 'typescript'],
+                    filename: 'index.tsx'
+                }).code;
+
+                log("Transformação concluída, executando...");
+                const script = document.createElement('script');
+                script.type = 'module';
+                // Injetamos o código transformado como um módulo
+                script.textContent = transformed;
+                document.body.appendChild(script);
+
+            } catch (err) {
+                log(`FALHA NO BOOTSTRAP: ${err.message}`, true);
+                loaderStatus.innerText = "Erro Crítico";
+                loaderStatus.style.color = "#ef4444";
+            }
+        }
 
         window.hideAppLoader = () => {
             const loader = document.getElementById('app-loader');
@@ -89,9 +121,9 @@
                 setTimeout(() => loader.remove(), 500);
             }
         };
-    </script>
 
-    <!-- Adicionado crossorigin aqui também -->
-    <script type="text/babel" data-type="module" data-presets="react,typescript" src="./index.tsx" crossorigin="anonymous"></script>
+        // Inicia o processo após o carregamento do DOM
+        window.addEventListener('load', bootstrap);
+    </script>
 </body>
 </html>

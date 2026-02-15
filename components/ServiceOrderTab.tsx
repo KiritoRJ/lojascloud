@@ -3,7 +3,6 @@ import React, { useState, useRef } from 'react';
 import { Plus, Search, Trash2, ChevronRight, Camera, X, Eye, Loader2, DollarSign } from 'lucide-react';
 import { ServiceOrder, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
-import { jsPDF } from 'jspdf';
 
 interface Props {
   orders: ServiceOrder[];
@@ -178,76 +177,107 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
     }
   };
 
-  const generatePDF = (order: ServiceOrder) => {
-    const doc = new jsPDF({
-      orientation: 'p',
-      unit: 'mm',
-      format: [80, 180]
-    });
-    
-    const margin = 5;
-    const width = 80;
-    const centerX = width / 2;
+  // FUNÇÃO OTIMIZADA PARA GERAR IMAGEM (JPEG) EM VEZ DE PDF
+  const generateReceiptImage = (order: ServiceOrder) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text(settings.storeName.toUpperCase(), centerX, 10, { align: 'center' });
+    // Configurações do Recibo (Escala 2x para nitidez)
+    const scale = 2;
+    const width = 400 * scale;
+    const height = 750 * scale; 
+    canvas.width = width;
+    canvas.height = height;
+
+    // Fundo
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, width, height);
+
+    // Texto Centralizado
+    const drawText = (text: string, y: number, fontSize: number, bold: boolean = false) => {
+      ctx.fillStyle = '#000000';
+      ctx.font = `${bold ? '900' : '500'} ${fontSize * scale}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.fillText(text, width / 2, y * scale);
+    };
+
+    // Texto Alinhado Esquerda/Direita
+    const drawRow = (left: string, right: string, y: number, fontSize: number, bold: boolean = false) => {
+      ctx.fillStyle = '#000000';
+      ctx.font = `${bold ? '800' : '400'} ${fontSize * scale}px Arial`;
+      ctx.textAlign = 'left';
+      ctx.fillText(left, 20 * scale, y * scale);
+      ctx.textAlign = 'right';
+      ctx.fillText(right, (width - 20 * scale), y * scale);
+    };
+
+    // Cabeçalho
+    drawText(settings.storeName.toUpperCase(), 40, 18, true);
+    drawText(`RECIBO DE SERVIÇO #${order.id}`, 65, 12, true);
     
-    doc.setFontSize(8);
-    doc.text(`RECIBO DE SERVIÇO #${order.id}`, centerX, 15, { align: 'center' });
-    doc.line(margin, 18, width - margin, 18);
-    
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Data: ${formatDate(order.date)}`, margin, 25);
-    doc.text(`Cliente: ${order.customerName}`, margin, 30);
-    doc.text(`Fone: ${order.phoneNumber || 'N/A'}`, margin, 35);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text(`EQUIPAMENTO:`, margin, 45);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`${order.deviceBrand} ${order.deviceModel}`, margin, 50);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text(`RELATÓRIO:`, margin, 60);
-    doc.setFont('helvetica', 'normal');
-    const defectLines = doc.splitTextToSize(`Defeito: ${order.defect}`, width - 10);
-    doc.text(defectLines, margin, 65);
-    
-    let y = 65 + (defectLines.length * 4);
-    const repairLines = doc.splitTextToSize(`Serviço: ${order.repairDetails || 'Em análise'}`, width - 10);
-    doc.text(repairLines, margin, y);
-    
-    y += (repairLines.length * 4) + 10;
-    doc.line(margin, y - 5, width - margin, y - 5);
-    
-    doc.text(`Custo Peças:`, margin, y);
-    doc.text(formatCurrency(order.partsCost || 0), width - margin, y, { align: 'right' });
-    
-    y += 5;
-    doc.text(`Mão de Obra:`, margin, y);
-    doc.text(formatCurrency(order.serviceCost || 0), width - margin, y, { align: 'right' });
-    
-    y += 8;
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`TOTAL:`, margin, y);
-    doc.text(formatCurrency(order.total), width - margin, y, { align: 'right' });
-    
+    ctx.strokeStyle = '#EEEEEE';
+    ctx.lineWidth = 1 * scale;
+    ctx.beginPath();
+    ctx.moveTo(20 * scale, 75 * scale);
+    ctx.lineTo((width - 20 * scale), 75 * scale);
+    ctx.stroke();
+
+    // Dados do Cliente
+    ctx.textAlign = 'left';
+    ctx.font = `bold ${10 * scale}px Arial`;
+    ctx.fillText('CLIENTE:', 20 * scale, 95 * scale);
+    ctx.font = `${10 * scale}px Arial`;
+    ctx.fillText(order.customerName.toUpperCase(), 20 * scale, 110 * scale);
+    ctx.fillText(`FONE: ${order.phoneNumber || 'N/A'}`, 20 * scale, 125 * scale);
+    ctx.fillText(`DATA: ${formatDate(order.date)}`, 20 * scale, 140 * scale);
+
+    // Equipamento
+    ctx.font = `bold ${10 * scale}px Arial`;
+    ctx.fillText('EQUIPAMENTO:', 20 * scale, 170 * scale);
+    ctx.font = `${10 * scale}px Arial`;
+    ctx.fillText(`${order.deviceBrand} ${order.deviceModel}`.toUpperCase(), 20 * scale, 185 * scale);
+
+    // Detalhes Financeiros
+    let y = 230;
+    ctx.beginPath();
+    ctx.moveTo(20 * scale, (y - 15) * scale);
+    ctx.lineTo((width - 20 * scale), (y - 15) * scale);
+    ctx.stroke();
+
+    drawRow('CUSTO DE PEÇAS', formatCurrency(order.partsCost || 0), y, 11);
     y += 15;
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'bold');
-    doc.text('TERMOS DE GARANTIA:', centerX, y, { align: 'center' });
-    y += 4;
-    doc.setFont('helvetica', 'normal');
-    const warrantyLines = doc.splitTextToSize(settings.pdfWarrantyText || 'Garantia legal de 90 dias.', width - 10);
-    doc.text(warrantyLines, margin, y);
+    drawRow('MÃO DE OBRA', formatCurrency(order.serviceCost || 0), y, 11);
+    
+    y += 25;
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fillRect(15 * scale, (y - 15) * scale, (width - 30 * scale), 30 * scale);
+    drawRow('VALOR TOTAL', formatCurrency(order.total), y + 5, 14, true);
 
-    // Lógica para Android WebView:
-    const base64 = doc.output('datauristring').split(',')[1];
+    // Garantia
+    y += 60;
+    drawText('TERMOS DE GARANTIA', y, 9, true);
+    y += 15;
+    ctx.textAlign = 'left';
+    ctx.font = `${8 * scale}px Arial`;
+    const lines = settings.pdfWarrantyText.split('\n').slice(0, 10); // Pega as primeiras linhas para não estourar
+    lines.forEach(line => {
+      ctx.fillText(line, 20 * scale, y * scale);
+      y += 10;
+    });
+
+    // Converter para Base64 JPEG (Qualidade 0.8 para compressão)
+    const jpegData = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    const fileName = `Recibo_${order.id}.jpg`;
+
     if ((window as any).AndroidBridge) {
-      (window as any).AndroidBridge.downloadPdf(base64);
+      (window as any).AndroidBridge.shareFile(jpegData, fileName, 'image/jpeg');
     } else {
-      window.location.href = `data:application/pdf;base64,${base64}`;
+      // Fallback para navegador desktop
+      const link = document.createElement('a');
+      link.download = fileName;
+      link.href = `data:image/jpeg;base64,${jpegData}`;
+      link.click();
     }
   };
 
@@ -300,7 +330,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
               <button onClick={() => handleEdit(order)} className="flex-1 bg-slate-50 text-slate-600 py-2 rounded-lg text-[9px] font-bold uppercase flex items-center justify-center gap-1 active:scale-95 border border-slate-100">
                 <ChevronRight size={12} /> Info
               </button>
-              <button onClick={() => generatePDF(order)} className="flex-[2] bg-blue-600 text-white py-2 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 shadow-md active:scale-95">
+              <button onClick={() => generateReceiptImage(order)} className="flex-[2] bg-blue-600 text-white py-2 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 shadow-md active:scale-95">
                 <Eye size={12} /> Recibo
               </button>
               <button onClick={() => handleDelete(order.id)} className="p-2 text-red-500 bg-red-50 rounded-lg active:scale-90 border border-red-100">

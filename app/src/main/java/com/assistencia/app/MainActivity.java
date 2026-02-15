@@ -58,17 +58,12 @@ public class MainActivity extends AppCompatActivity {
         settings.setDatabaseEnabled(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
 
-        // Adiciona a ponte JavaScript para o App Nativo
+        // Ponte JavaScript para o App Nativo
         webView.addJavascriptInterface(new WebAppInterface(), "AndroidBridge");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String url = request.getUrl().toString();
-                if (url.startsWith("data:application/pdf;base64,")) {
-                    handleDownload(url);
-                    return true;
-                }
                 return false; 
             }
         });
@@ -76,9 +71,7 @@ public class MainActivity extends AppCompatActivity {
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
-                if (mUploadMessage != null) {
-                    mUploadMessage.onReceiveValue(null);
-                }
+                if (mUploadMessage != null) mUploadMessage.onReceiveValue(null);
                 mUploadMessage = filePathCallback;
 
                 Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
@@ -87,13 +80,12 @@ public class MainActivity extends AppCompatActivity {
                     try {
                         photoFile = createImageFile();
                     } catch (IOException ex) {
-                        Log.e("CAMERA", "Erro ao criar arquivo", ex);
+                        Log.e("CAMERA", "Erro", ex);
                     }
 
                     if (photoFile != null) {
                         mCameraPhotoPath = "file:" + photoFile.getAbsolutePath();
-                        Uri photoURI = FileProvider.getUriForFile(MainActivity.this,
-                                getPackageName() + ".provider", photoFile);
+                        Uri photoURI = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".provider", photoFile);
                         takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
                     } else {
                         takePictureIntent = null;
@@ -106,42 +98,61 @@ public class MainActivity extends AppCompatActivity {
 
                 Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
                 chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent);
-                chooserIntent.putExtra(Intent.EXTRA_TITLE, "Selecione a Foto");
-                if (takePictureIntent != null) {
-                    chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{takePictureIntent});
-                }
+                if (takePictureIntent != null) chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{takePictureIntent});
 
                 startActivityForResult(chooserIntent, INPUT_FILE_REQUEST_CODE);
                 return true;
             }
         });
 
-        webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
-            handleDownload(url);
-        });
-
+        // Aponta para o endereço do seu app web
         webView.loadUrl("https://lovely-empanada-d13b49.netlify.app/");
         checkAndRequestPermissions();
     }
 
-    /**
-     * Interface para o JavaScript chamar métodos nativos
-     */
     public class WebAppInterface {
+        // Novo método genérico para compartilhar arquivos (PDF ou Imagens)
+        @JavascriptInterface
+        public void shareFile(String base64Data, String fileName, String mimeType) {
+            runOnUiThread(() -> {
+                saveAndShare(base64Data, fileName, mimeType);
+            });
+        }
+        
+        // Mantido para compatibilidade se o JS antigo ainda chamar
         @JavascriptInterface
         public void downloadPdf(String base64Data) {
             runOnUiThread(() -> {
-                String fullUrl = "data:application/pdf;base64," + base64Data;
-                handleDownload(fullUrl);
+                saveAndShare(base64Data, "Recibo_" + System.currentTimeMillis() + ".pdf", "application/pdf");
             });
+        }
+    }
+
+    private void saveAndShare(String base64Data, String fileName, String mimeType) {
+        try {
+            byte[] decodedBytes = Base64.decode(base64Data, Base64.DEFAULT);
+            File file = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName);
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(decodedBytes);
+            fos.close();
+
+            Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".provider", file);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, mimeType);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            
+            // Abre o seletor de compartilhamento/visualização do sistema
+            startActivity(Intent.createChooser(intent, "Abrir ou Enviar Recibo"));
+        } catch (Exception e) {
+            Toast.makeText(this, "Erro ao processar arquivo", Toast.LENGTH_SHORT).show();
+            Log.e("SHARE", "Erro", e);
         }
     }
 
     private File createImageFile() throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-        String imageFileName = "JPEG_" + timeStamp + "_";
         File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
-        return File.createTempFile(imageFileName, ".jpg", storageDir);
+        return File.createTempFile("JPEG_" + timeStamp + "_", ".jpg", storageDir);
     }
 
     @Override
@@ -150,46 +161,16 @@ public class MainActivity extends AppCompatActivity {
             super.onActivityResult(requestCode, resultCode, data);
             return;
         }
-
         Uri[] results = null;
         if (resultCode == Activity.RESULT_OK) {
             if (data == null || data.getData() == null) {
-                if (mCameraPhotoPath != null) {
-                    results = new Uri[]{Uri.parse(mCameraPhotoPath)};
-                }
+                if (mCameraPhotoPath != null) results = new Uri[]{Uri.parse(mCameraPhotoPath)};
             } else {
                 results = new Uri[]{data.getData()};
             }
         }
-
         mUploadMessage.onReceiveValue(results);
         mUploadMessage = null;
-    }
-
-    private void handleDownload(String url) {
-        try {
-            if (url.startsWith("data:application/pdf;base64,")) {
-                String base64Data = url.substring(url.indexOf(",") + 1);
-                byte[] decodedBytes = Base64.decode(base64Data, Base64.DEFAULT);
-                String fileName = "Recibo_" + System.currentTimeMillis() + ".pdf";
-                File file = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName);
-                FileOutputStream fos = new FileOutputStream(file);
-                fos.write(decodedBytes);
-                fos.close();
-                openPDF(file);
-            }
-        } catch (Exception e) {
-            Toast.makeText(this, "Erro ao gerar PDF", Toast.LENGTH_SHORT).show();
-            Log.e("PDF", "Erro", e);
-        }
-    }
-
-    private void openPDF(File file) {
-        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".provider", file);
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(uri, "application/pdf");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        startActivity(Intent.createChooser(intent, "Abrir Recibo"));
     }
 
     private void checkAndRequestPermissions() {
@@ -199,7 +180,6 @@ public class MainActivity extends AppCompatActivity {
         } else {
             permissions = new String[]{Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE};
         }
-
         for (String permission : permissions) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE);

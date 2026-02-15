@@ -3,7 +3,6 @@ import React, { useState, useMemo } from 'react';
 import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2 } from 'lucide-react';
 import { Product, Sale, AppSettings, User } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
-import { jsPDF } from 'jspdf';
 
 interface Props {
   products: Product[];
@@ -62,57 +61,73 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     }
   };
 
-  const generateReceiptPDF = (items: CartItem[], total: number, payment: string, seller: string) => {
-    const width = 80;
-    const estimatedHeight = 100 + (items.length * 10);
-    const doc = new jsPDF({
-      orientation: 'p',
-      unit: 'mm',
-      format: [width, estimatedHeight]
-    });
+  const generateSalesReceiptImage = (items: CartItem[], total: number, payment: string, seller: string) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    const centerX = width / 2;
-    const margin = 5;
+    const scale = 2;
+    const width = 400 * scale;
+    const height = (180 + items.length * 25) * scale;
+    canvas.width = width;
+    canvas.height = height;
 
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text(settings.storeName.toUpperCase(), centerX, 10, { align: 'center' });
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${18 * scale}px Arial`;
+    ctx.fillText(settings.storeName.toUpperCase(), width / 2, 40 * scale);
     
-    doc.setFontSize(8);
-    doc.text('CUPOM DE VENDA', centerX, 16, { align: 'center' });
-    doc.line(margin, 18, width - margin, 18);
+    ctx.font = `bold ${10 * scale}px Arial`;
+    ctx.fillText('CUPOM DE VENDA', width / 2, 65 * scale);
     
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Data: ${new Date().toLocaleDateString()}`, margin, 25);
-    doc.text(`Vendedor: ${seller}`, margin, 30);
-    doc.line(margin, 32, width - margin, 32);
+    ctx.strokeStyle = '#EEEEEE';
+    ctx.beginPath(); ctx.moveTo(20*scale, 75*scale); ctx.lineTo((width-20*scale), 75*scale); ctx.stroke();
 
-    let y = 38;
+    ctx.textAlign = 'left';
+    ctx.font = `${10 * scale}px Arial`;
+    ctx.fillText(`DATA: ${new Date().toLocaleDateString()}`, 20 * scale, 95 * scale);
+    ctx.fillText(`VENDEDOR: ${seller}`, 20 * scale, 110 * scale);
+
+    let y = 140;
     items.forEach(item => {
-      doc.text(`${item.quantity}x ${item.product.name.substring(0, 20)}`, margin, y);
-      doc.text(formatCurrency(item.product.salePrice * item.quantity), width - margin, y, { align: 'right' });
-      y += 5;
+      ctx.font = `bold ${10 * scale}px Arial`;
+      ctx.textAlign = 'left';
+      ctx.fillText(`${item.quantity}x ${item.product.name.substring(0, 20).toUpperCase()}`, 20 * scale, y * scale);
+      ctx.textAlign = 'right';
+      ctx.fillText(formatCurrency(item.product.salePrice * item.quantity), (width - 20 * scale), y * scale);
+      y += 15;
     });
 
-    y += 5;
-    doc.setFont('helvetica', 'bold');
-    doc.text(`TOTAL:`, margin, y);
-    doc.text(formatCurrency(total), width - margin, y, { align: 'right' });
+    y += 10;
+    ctx.beginPath(); ctx.moveTo(20*scale, (y-10)*scale); ctx.lineTo((width-20*scale), (y-10)*scale); ctx.stroke();
     
-    y += 8;
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Pagamento: ${payment}`, margin, y);
-    
-    y += 15;
-    doc.text('Obrigado pela preferência!', centerX, y, { align: 'center' });
-    
-    return doc;
+    ctx.font = `bold ${14 * scale}px Arial`;
+    ctx.textAlign = 'left';
+    ctx.fillText('TOTAL', 20 * scale, (y + 10) * scale);
+    ctx.textAlign = 'right';
+    ctx.fillText(formatCurrency(total), (width - 20 * scale), (y + 10) * scale);
+
+    y += 40;
+    ctx.textAlign = 'center';
+    ctx.font = `${9 * scale}px Arial`;
+    ctx.fillText('OBRIGADO PELA PREFERÊNCIA!', width / 2, y * scale);
+
+    const jpegData = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    const fileName = `Venda_${Date.now()}.jpg`;
+
+    if ((window as any).AndroidBridge) {
+      (window as any).AndroidBridge.shareFile(jpegData, fileName, 'image/jpeg');
+    } else {
+      const link = document.createElement('a');
+      link.download = fileName; link.href = `data:image/jpeg;base64,${jpegData}`; link.click();
+    }
   };
 
   const handleFinalizeSale = () => {
     if (cart.length === 0) return;
-
     const transactionId = Math.random().toString(36).substr(2, 6).toUpperCase();
     const date = new Date().toISOString();
 
@@ -148,19 +163,12 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   };
 
   const handleViewReceipt = () => {
-    const doc = generateReceiptPDF(
+    generateSalesReceiptImage(
       lastTransactionItems, 
       lastSaleAmount, 
       lastPaymentMethod, 
       currentUser?.name || 'Sistema'
     );
-    
-    const base64 = doc.output('datauristring').split(',')[1];
-    if ((window as any).AndroidBridge) {
-      (window as any).AndroidBridge.downloadPdf(base64);
-    } else {
-      window.location.href = `data:application/pdf;base64,${base64}`;
-    }
   };
 
   const filteredProducts = products.filter(p => 

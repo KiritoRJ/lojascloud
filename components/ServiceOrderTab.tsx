@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Plus, Search, Trash2, Printer, ChevronRight, ClipboardList, Camera, X, MessageCircle, Share2 } from 'lucide-react';
+import { Plus, Search, Trash2, Printer, ChevronRight, ClipboardList, Camera, X, MessageCircle, Share2, FileText, Download } from 'lucide-react';
 import { ServiceOrder, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
 import { jsPDF } from 'jspdf';
@@ -122,10 +122,18 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
     const textColor = settings.pdfTextColor || '#000000';
     const bgColor = settings.pdfBgColor || '#FFFFFF';
 
-    // Estimativa de altura
-    const inputRows = Math.ceil((order.photos?.length || 0) / 2);
-    const finishedRows = Math.ceil((order.finishedPhotos?.length || 0) / 2);
-    const estimatedHeight = 250 + (inputRows * 30) + (finishedRows * 30);
+    const tempDoc = new jsPDF();
+    const textWidth = width - 2 * margin;
+    const estimateLines = (text: string) => tempDoc.splitTextToSize(text || "", textWidth).length;
+
+    let estimatedHeight = 50;
+    estimatedHeight += 30; // Cliente
+    estimatedHeight += 30; // Aparelho
+    estimatedHeight += estimateLines(order.repairDetails) * (baseFontSize * 0.6) + 15;
+    estimatedHeight += Math.ceil((order.photos?.length || 0) / 2) * 35;
+    estimatedHeight += Math.ceil((order.finishedPhotos?.length || 0) / 2) * 35;
+    estimatedHeight += 20; // Totais
+    estimatedHeight += estimateLines(settings.pdfWarrantyText) * (baseFontSize * 0.5) + 30;
 
     const doc = new jsPDF({
       orientation: 'p',
@@ -133,152 +141,141 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
       format: [width, estimatedHeight]
     });
 
-    // Background color
     doc.setFillColor(bgColor);
     doc.rect(0, 0, width, estimatedHeight, 'F');
-
-    // Text color and font
     doc.setTextColor(textColor);
     doc.setFont(fontFamily, 'normal');
 
     let y = 10;
-
-    // Header
     doc.setFontSize(baseFontSize + 4);
     doc.setFont(fontFamily, 'bold');
     doc.text(settings.storeName.toUpperCase(), centerX, y, { align: 'center' });
-    y += (baseFontSize * 0.8);
+    y += 8;
     
     doc.setFontSize(baseFontSize);
     doc.setFont(fontFamily, 'normal');
     doc.text(`ORDEM DE SERVIÇO #${order.id.toUpperCase()}`, centerX, y, { align: 'center' });
-    y += (baseFontSize * 0.5);
+    y += 5;
     doc.text(`Data: ${formatDate(order.date)}`, centerX, y, { align: 'center' });
-    y += (baseFontSize * 0.7);
+    y += 7;
 
     doc.setDrawColor(textColor);
     doc.line(margin, y, width - margin, y);
-    y += (baseFontSize * 0.7);
+    y += 7;
 
-    // Info Blocks
-    const drawBlock = (title: string, lines: string[]) => {
+    const drawCenteredBlock = (title: string, lines: string[]) => {
       doc.setFont(fontFamily, 'bold');
-      doc.text(title, margin, y);
-      y += (baseFontSize * 0.5);
+      doc.text(title, centerX, y, { align: 'center' });
+      y += 5;
       doc.setFont(fontFamily, 'normal');
       lines.forEach(line => {
-        const splitText = doc.splitTextToSize(line, width - 2 * margin);
-        doc.text(splitText, margin, y);
-        y += (splitText.length * (baseFontSize * 0.45));
+        const splitText = doc.splitTextToSize(line, textWidth);
+        doc.text(splitText, centerX, y, { align: 'center' });
+        y += (splitText.length * (baseFontSize * 0.5));
       });
-      y += (baseFontSize * 0.2);
+      y += 4;
     };
 
-    drawBlock('CLIENTE', [
+    drawCenteredBlock('DADOS DO CLIENTE', [
       `Nome: ${order.customerName}`,
       `Telefone: ${order.phoneNumber}`,
       `Endereço: ${order.address}`
     ]);
 
-    drawBlock('APARELHO', [
+    drawCenteredBlock('DADOS DO APARELHO', [
       `Marca: ${order.deviceBrand}`,
       `Modelo: ${order.deviceModel}`,
       `Defeito: ${order.defect}`
     ]);
 
-    drawBlock('REPARO EFETUADO', [order.repairDetails || 'Nenhum detalhe adicional.']);
+    drawCenteredBlock('REPARO EXECUTADO', [order.repairDetails || 'Nenhum detalhe adicional informado.']);
 
     doc.line(margin, y, width - margin, y);
-    y += (baseFontSize * 0.7);
+    y += 8;
 
-    // Photos Entry
-    if (order.photos && order.photos.length > 0) {
-      doc.setFontSize(baseFontSize - 1);
+    const drawPhotosSection = (title: string, photos: string[]) => {
+      if (!photos || photos.length === 0) return;
       doc.setFont(fontFamily, 'bold');
-      doc.text('FOTOS DE ENTRADA', centerX, y, { align: 'center' });
-      y += (baseFontSize * 0.5);
+      doc.text(title, centerX, y, { align: 'center' });
+      y += 5;
       
-      const thumbWidth = (width - 2 * margin - 4) / 2;
-      const thumbHeight = 25;
-      order.photos.forEach((photo, index) => {
+      const thumbWidth = (width - 2 * margin - 5) / 2;
+      const thumbHeight = 30;
+      photos.forEach((photo, index) => {
         const col = index % 2;
-        const xPos = margin + (col * (thumbWidth + 4));
-        try { doc.addImage(photo, 'JPEG', xPos, y, thumbWidth, thumbHeight); } catch (e) {}
-        if (col === 1 || index === order.photos.length - 1) y += thumbHeight + 2;
+        const xPos = margin + (col * (thumbWidth + 5));
+        try { 
+          doc.addImage(photo, 'JPEG', xPos, y, thumbWidth, thumbHeight); 
+        } catch (e) { console.warn("Falha ao incluir foto no PDF"); }
+        if (col === 1 || index === photos.length - 1) y += thumbHeight + 2;
       });
-      y += 3;
-    }
+      y += 5;
+    };
 
-    // Photos Exit
-    if (order.finishedPhotos && order.finishedPhotos.length > 0) {
-      doc.setFontSize(baseFontSize - 1);
-      doc.setFont(fontFamily, 'bold');
-      doc.text('FOTOS DO SERVIÇO CONCLUÍDO', centerX, y, { align: 'center' });
-      y += (baseFontSize * 0.5);
-      
-      const thumbWidth = (width - 2 * margin - 4) / 2;
-      const thumbHeight = 25;
-      order.finishedPhotos.forEach((photo, index) => {
-        const col = index % 2;
-        const xPos = margin + (col * (thumbWidth + 4));
-        try { doc.addImage(photo, 'JPEG', xPos, y, thumbWidth, thumbHeight); } catch (e) {}
-        if (col === 1 || index === order.finishedPhotos.length - 1) y += thumbHeight + 2;
-      });
-      y += 3;
-    }
+    drawPhotosSection('REGISTRO DE ENTRADA', order.photos || []);
+    drawPhotosSection('REGISTRO DE SAÍDA', order.finishedPhotos || []);
 
     doc.line(margin, y, width - margin, y);
-    y += (baseFontSize * 0.7);
+    y += 10;
 
-    // Totals
-    doc.setFontSize(baseFontSize + 2);
+    doc.setFontSize(baseFontSize + 3);
     doc.setFont(fontFamily, 'bold');
-    doc.text(`TOTAL: ${formatCurrency(order.total)}`, centerX, y, { align: 'center' });
-    y += (baseFontSize * 1.2);
+    doc.text(`VALOR TOTAL: ${formatCurrency(order.total)}`, centerX, y, { align: 'center' });
+    y += 12;
 
     doc.line(margin, y, width - margin, y);
-    y += (baseFontSize * 0.7);
+    y += 10;
 
-    // Warranty
     doc.setFontSize(baseFontSize - 1);
     doc.setFont(fontFamily, 'bold');
     doc.text('TERMOS DE GARANTIA', centerX, y, { align: 'center' });
-    y += (baseFontSize * 0.5);
+    y += 5;
     doc.setFont(fontFamily, 'normal');
     
     const warrantyText = settings.pdfWarrantyText || "";
-    const splitWarranty = doc.splitTextToSize(warrantyText, width - 2 * margin);
-    doc.text(splitWarranty, margin, y);
+    const splitWarranty = doc.splitTextToSize(warrantyText, textWidth);
+    doc.text(splitWarranty, centerX, y, { align: 'center' });
 
     return doc;
+  };
+
+  const handleDownloadPDF = (order: ServiceOrder) => {
+    try {
+      const doc = getDoc(order);
+      const fileName = `OS_${order.id}_${order.customerName.replace(/\s+/g, '_')}.pdf`;
+      doc.save(fileName);
+    } catch (error) {
+      console.error('Erro ao baixar PDF:', error);
+      alert('Não foi possível gerar o arquivo PDF.');
+    }
   };
 
   const sharePDF = async (order: ServiceOrder) => {
     try {
       const doc = getDoc(order);
+      const fileName = `OS_${order.id}_${order.customerName.replace(/\s+/g, '_')}.pdf`;
       const pdfBlob = doc.output('blob');
-      const fileName = `OS_${order.customerName}_${order.id}.pdf`.replace(/\s+/g, '_');
       const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
           title: `O.S. ${order.customerName}`,
-          text: `Segue a Ordem de Serviço de ${settings.storeName}`,
+          text: `Olá ${order.customerName}! Segue em anexo a Ordem de Serviço da ${settings.storeName}.`,
         });
       } else {
-        // Fallback para dispositivos que não suportam compartilhamento de arquivos
-        const whatsappNumber = order.phoneNumber.replace(/\D/g, '');
-        if (whatsappNumber) {
-          window.open(`https://wa.me/55${whatsappNumber}?text=Olá! Segue o link para baixar sua Ordem de Serviço.`, '_blank');
+        doc.save(fileName);
+        const cleanPhone = order.phoneNumber.replace(/\D/g, '');
+        if (cleanPhone) {
+          const message = encodeURIComponent(`Olá ${order.customerName}! Sua Ordem de Serviço foi concluída. O PDF foi baixado automaticamente no seu aparelho. Por favor, anexe o arquivo aqui para sua conferência.`);
+          window.open(`https://wa.me/55${cleanPhone}?text=${message}`, '_blank');
         } else {
-          alert('Compartilhamento de arquivos não disponível no seu navegador. O PDF será baixado automaticamente.');
-          doc.save(fileName);
+          alert('PDF baixado com sucesso!');
         }
       }
     } catch (error) {
-      console.error('Erro ao compartilhar:', error);
-      alert('Não foi possível compartilhar o arquivo.');
+      console.error('Erro ao processar PDF:', error);
+      alert('Houve um erro ao gerar o PDF.');
     }
   };
 
@@ -323,8 +320,9 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
                   <button onClick={() => handleEdit(order)} className="p-2 text-slate-500 hover:text-blue-600 bg-slate-50 rounded-lg"><ChevronRight size={20} /></button>
                   <button onClick={() => handleDelete(order.id)} className="p-2 text-slate-500 hover:text-red-600 bg-slate-50 rounded-lg"><Trash2 size={20} /></button>
                 </div>
-                <div className="flex gap-2 w-full sm:w-auto overflow-x-auto">
-                  <button onClick={() => sharePDF(order)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 text-xs font-bold text-green-600 bg-green-50 hover:bg-green-100 px-4 py-3 rounded-lg transition-all border border-green-100 shadow-sm active:scale-95"><MessageCircle size={18} /> Enviar para WhatsApp</button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button onClick={() => handleDownloadPDF(order)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 text-xs font-black text-blue-700 bg-blue-50 hover:bg-blue-100 px-4 py-3 rounded-xl transition-all border border-blue-200 shadow-sm active:scale-95"><Download size={18} /> Baixar PDF</button>
+                  <button onClick={() => sharePDF(order)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 text-xs font-black text-green-700 bg-green-50 hover:bg-green-100 px-4 py-3 rounded-xl transition-all border border-green-200 shadow-sm active:scale-95"><MessageCircle size={18} /> WhatsApp</button>
                 </div>
               </div>
             </div>

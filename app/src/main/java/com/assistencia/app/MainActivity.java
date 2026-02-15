@@ -3,6 +3,7 @@ package com.assistencia.app;
 
 import android.annotation.SuppressLint;
 import android.os.Bundle;
+import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -10,6 +11,10 @@ import android.webkit.WebViewClient;
 import androidx.appcompat.app.AppCompatActivity;
 
 public class MainActivity extends AppCompatActivity {
+
+    // COLOQUE AQUI A URL DO SEU GITHUB PAGES APÓS FAZER O DEPLOY
+    // Exemplo: "https://seu-usuario.github.io/nome-do-repositorio/"
+    private static final String APP_URL = ""; 
 
     private WebView webView;
 
@@ -22,23 +27,36 @@ public class MainActivity extends AppCompatActivity {
         webView = findViewById(R.id.webview);
         WebSettings webSettings = webView.getSettings();
         
-        // Habilita JavaScript e armazenamento local para o React
+        // Configurações essenciais para React e Apps Online
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
+        webSettings.setDatabaseEnabled(true);
         webSettings.setAllowFileAccess(true);
         webSettings.setAllowContentAccess(true);
         webSettings.setLoadWithOverviewMode(true);
         webSettings.setUseWideViewPort(true);
-        webSettings.setMediaPlaybackRequiresUserGesture(false);
+        
+        // Otimização para funcionamento Online
+        webSettings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
+        
+        // Habilitar Cookies
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        cookieManager.setAcceptThirdPartyCookies(webView, true);
 
-        // Cliente para lidar com diálogos de arquivos e câmera (galeria)
+        // Cliente para lidar com gallery/camera e elementos de interface
         webView.setWebChromeClient(new WebChromeClient());
         
-        // Mantém a navegação dentro do app
+        // Mantém a navegação dentro do WebView
         webView.setWebViewClient(new WebViewClient());
 
-        // Carrega o arquivo principal de assets
-        webView.loadUrl("file:///android_asset/index.html");
+        // Lógica de carregamento: Prioriza URL remota, senão usa asset local
+        if (APP_URL != null && !APP_URL.isEmpty() && APP_URL.startsWith("http")) {
+            webView.loadUrl(APP_URL);
+        } else {
+            webView.loadUrl("file:///android_asset/index.html");
+        }
     }
 
     @Override

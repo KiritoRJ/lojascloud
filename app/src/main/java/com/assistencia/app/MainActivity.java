@@ -13,6 +13,7 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -41,7 +42,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int INPUT_FILE_REQUEST_CODE = 1;
     private static final int PERMISSION_REQUEST_CODE = 1001;
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -54,17 +55,25 @@ public class MainActivity extends AppCompatActivity {
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
+        settings.setDatabaseEnabled(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+
+        // Adiciona a ponte JavaScript para o App Nativo
+        webView.addJavascriptInterface(new WebAppInterface(), "AndroidBridge");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.startsWith("data:application/pdf;base64,")) {
+                    handleDownload(url);
+                    return true;
+                }
                 return false; 
             }
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
-            // Este método é chamado quando você clica em "Anexar Foto" no seu site
             @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
                 if (mUploadMessage != null) {
@@ -77,9 +86,8 @@ public class MainActivity extends AppCompatActivity {
                     File photoFile = null;
                     try {
                         photoFile = createImageFile();
-                        takePictureIntent.putExtra("PhotoPath", mCameraPhotoPath);
                     } catch (IOException ex) {
-                        Log.e("CAMERA", "Erro ao criar arquivo de imagem", ex);
+                        Log.e("CAMERA", "Erro ao criar arquivo", ex);
                     }
 
                     if (photoFile != null) {
@@ -96,20 +104,14 @@ public class MainActivity extends AppCompatActivity {
                 contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE);
                 contentSelectionIntent.setType("image/*");
 
-                Intent[] intentArray;
-                if (takePictureIntent != null) {
-                    intentArray = new Intent[]{takePictureIntent};
-                } else {
-                    intentArray = new Intent[0];
-                }
-
                 Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
                 chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent);
                 chooserIntent.putExtra(Intent.EXTRA_TITLE, "Selecione a Foto");
-                chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray);
+                if (takePictureIntent != null) {
+                    chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{takePictureIntent});
+                }
 
                 startActivityForResult(chooserIntent, INPUT_FILE_REQUEST_CODE);
-
                 return true;
             }
         });
@@ -118,19 +120,28 @@ public class MainActivity extends AppCompatActivity {
             handleDownload(url);
         });
 
-        // URL do seu site
         webView.loadUrl("https://lovely-empanada-d13b49.netlify.app/");
-        
         checkAndRequestPermissions();
+    }
+
+    /**
+     * Interface para o JavaScript chamar métodos nativos
+     */
+    public class WebAppInterface {
+        @JavascriptInterface
+        public void downloadPdf(String base64Data) {
+            runOnUiThread(() -> {
+                String fullUrl = "data:application/pdf;base64," + base64Data;
+                handleDownload(fullUrl);
+            });
+        }
     }
 
     private File createImageFile() throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
         String imageFileName = "JPEG_" + timeStamp + "_";
         File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
-        File image = File.createTempFile(imageFileName, ".jpg", storageDir);
-        mCameraPhotoPath = image.getAbsolutePath();
-        return image;
+        return File.createTempFile(imageFileName, ".jpg", storageDir);
     }
 
     @Override
@@ -147,10 +158,7 @@ public class MainActivity extends AppCompatActivity {
                     results = new Uri[]{Uri.parse(mCameraPhotoPath)};
                 }
             } else {
-                String dataString = data.getDataString();
-                if (dataString != null) {
-                    results = new Uri[]{Uri.parse(dataString)};
-                }
+                results = new Uri[]{data.getData()};
             }
         }
 
@@ -163,7 +171,7 @@ public class MainActivity extends AppCompatActivity {
             if (url.startsWith("data:application/pdf;base64,")) {
                 String base64Data = url.substring(url.indexOf(",") + 1);
                 byte[] decodedBytes = Base64.decode(base64Data, Base64.DEFAULT);
-                String fileName = "Doc_" + System.currentTimeMillis() + ".pdf";
+                String fileName = "Recibo_" + System.currentTimeMillis() + ".pdf";
                 File file = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName);
                 FileOutputStream fos = new FileOutputStream(file);
                 fos.write(decodedBytes);
@@ -171,7 +179,8 @@ public class MainActivity extends AppCompatActivity {
                 openPDF(file);
             }
         } catch (Exception e) {
-            Toast.makeText(this, "Erro no download", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Erro ao gerar PDF", Toast.LENGTH_SHORT).show();
+            Log.e("PDF", "Erro", e);
         }
     }
 
@@ -180,7 +189,7 @@ public class MainActivity extends AppCompatActivity {
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(uri, "application/pdf");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        startActivity(intent);
+        startActivity(Intent.createChooser(intent, "Abrir Recibo"));
     }
 
     private void checkAndRequestPermissions() {

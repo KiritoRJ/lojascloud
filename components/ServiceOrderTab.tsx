@@ -182,7 +182,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
     const doc = new jsPDF({
       orientation: 'p',
       unit: 'mm',
-      format: [80, 180] // Ajustado para ser um pouco mais longo para caber tudo
+      format: [80, 180]
     });
     
     const margin = 5;
@@ -194,7 +194,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
     doc.text(settings.storeName.toUpperCase(), centerX, 10, { align: 'center' });
     
     doc.setFontSize(8);
-    doc.text(`COMPROVANTE DE SERVIÇO #${order.id}`, centerX, 15, { align: 'center' });
+    doc.text(`RECIBO DE SERVIÇO #${order.id}`, centerX, 15, { align: 'center' });
     doc.line(margin, 18, width - margin, 18);
     
     doc.setFont('helvetica', 'normal');
@@ -220,12 +220,12 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
     y += (repairLines.length * 4) + 10;
     doc.line(margin, y - 5, width - margin, y - 5);
     
-    doc.text(`Peças:`, margin, y);
-    doc.text(formatCurrency(order.partsCost), width - margin, y, { align: 'right' });
+    doc.text(`Custo Peças:`, margin, y);
+    doc.text(formatCurrency(order.partsCost || 0), width - margin, y, { align: 'right' });
     
     y += 5;
     doc.text(`Mão de Obra:`, margin, y);
-    doc.text(formatCurrency(order.serviceCost), width - margin, y, { align: 'right' });
+    doc.text(formatCurrency(order.serviceCost || 0), width - margin, y, { align: 'right' });
     
     y += 8;
     doc.setFontSize(10);
@@ -239,13 +239,16 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
     doc.text('TERMOS DE GARANTIA:', centerX, y, { align: 'center' });
     y += 4;
     doc.setFont('helvetica', 'normal');
-    const warrantyLines = doc.splitTextToSize(settings.pdfWarrantyText || 'Garantia de 90 dias conforme CDC.', width - 10);
+    const warrantyLines = doc.splitTextToSize(settings.pdfWarrantyText || 'Garantia legal de 90 dias.', width - 10);
     doc.text(warrantyLines, margin, y);
 
-    // IMPORTANTE PARA ANDROID WEBVIEW:
-    // Em vez de doc.save(), usamos doc.output('datauristring') para o MainActivity capturar o download.
-    const dataUri = doc.output('datauristring');
-    window.location.href = dataUri;
+    // Lógica para Android WebView:
+    const base64 = doc.output('datauristring').split(',')[1];
+    if ((window as any).AndroidBridge) {
+      (window as any).AndroidBridge.downloadPdf(base64);
+    } else {
+      window.location.href = `data:application/pdf;base64,${base64}`;
+    }
   };
 
   const filteredOrders = orders.filter(o => 

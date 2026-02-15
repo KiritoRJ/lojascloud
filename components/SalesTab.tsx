@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { ShoppingBag, Search, X, History, ShoppingCart, MoreVertical, Package, ArrowLeft, CheckCircle2, Share2, Calendar, Layers, MessageCircle, Plus, Minus, Trash2, DollarSign, Calculator, FileText, CreditCard, Wallet as WalletIcon, Coins } from 'lucide-react';
+import { ShoppingBag, Search, X, History, ShoppingCart, MoreVertical, Package, ArrowLeft, CheckCircle2, Share2, Calendar, Layers, MessageCircle, Plus, Minus, Trash2, DollarSign, Calculator, FileText, CreditCard, Wallet as WalletIcon, Coins, Eye } from 'lucide-react';
 import { Product, Sale, AppSettings, User } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
 import { jsPDF } from 'jspdf';
@@ -29,6 +29,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [lastSaleAmount, setLastSaleAmount] = useState(0);
   const [lastTransactionItems, setLastTransactionItems] = useState<CartItem[]>([]);
   const [lastPaymentMethod, setLastPaymentMethod] = useState('');
+  // Added state to store the transaction ID of the last sale
+  const [lastTransactionId, setLastTransactionId] = useState('');
 
   // Cart State
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -199,13 +201,15 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     setLastSaleAmount(cartTotal);
     setLastTransactionItems([...cart]);
     setLastPaymentMethod(selectedPaymentMethod);
+    // Fixed: set the last transaction ID in state
+    setLastTransactionId(transactionId);
     setCart([]);
     setShowCheckoutModal(false);
     setAmountReceived(0);
     setShowSuccess(true);
   };
 
-  const handleShareReceipt = async () => {
+  const handleViewReceipt = () => {
     try {
       const doc = generateReceiptPDF(
         lastTransactionItems, 
@@ -214,20 +218,10 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
         currentUser?.name || 'Sistema',
         changeDue
       );
-      const pdfBlob = doc.output('blob');
-      const fileName = `Recibo_Venda_${lastPaymentMethod}.pdf`;
-      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `Recibo de Venda - ${settings.storeName}`,
-          text: `Recibo da sua compra em ${settings.storeName}`,
-        });
-      } else {
-        doc.save(fileName);
-        alert('Recibo baixado com sucesso!');
-      }
+      // lastTransactionId is now defined in state
+      const fileName = `Recibo_Venda_${lastTransactionId}.pdf`;
+      // No APK, doc.save permite visualizar/baixar
+      doc.save(fileName);
     } catch (error) {
       console.error('Erro ao gerar recibo:', error);
       alert('Não foi possível gerar o recibo.');
@@ -315,28 +309,16 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     return doc;
   };
 
-  const shareSalesReport = async () => {
+  const handleViewReport = () => {
     if (filteredSales.length === 0) return alert('Nenhuma venda no período para gerar relatório.');
     
     try {
       const doc = generateSalesReportPDF(filteredSales);
-      const pdfBlob = doc.output('blob');
       const fileName = `Relatorio_Vendas_${historyFilter}.pdf`;
-      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `Relatório de Vendas - ${settings.storeName}`,
-          text: `Confira o relatório de vendas do período.`,
-        });
-      } else {
-        doc.save(fileName);
-        alert('O PDF foi baixado. Agora você pode enviá-lo manualmente pelo WhatsApp.');
-      }
+      doc.save(fileName);
     } catch (error) {
-      console.error('Erro ao compartilhar relatório:', error);
-      alert('Não foi possível compartilhar o relatório.');
+      console.error('Erro ao visualizar relatório:', error);
+      alert('Não foi possível visualizar o relatório.');
     }
   };
 
@@ -355,10 +337,10 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           </div>
           
           <button 
-            onClick={shareSalesReport}
-            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-green-100 active:scale-95"
+            onClick={handleViewReport}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100 active:scale-95 transition-all"
           >
-            <MessageCircle size={16} /> Relatório PDF
+            <Eye size={16} /> Relatório PDF
           </button>
         </div>
 
@@ -532,13 +514,13 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           <div className="bg-white w-full max-w-sm rounded-[40px] shadow-2xl p-10 text-center animate-in zoom-in-95 duration-300">
             <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-lg shadow-emerald-100 border-4 border-white"><CheckCircle2 size={56} strokeWidth={2.5} /></div>
             <h3 className="text-3xl font-black text-slate-800 mb-3 tracking-tight uppercase">Venda Finalizada!</h3>
-            <p className="text-slate-500 font-bold mb-8 text-sm uppercase tracking-wider">Recibo processado com sucesso</p>
+            <p className="text-slate-500 font-bold mb-8 text-sm uppercase tracking-wider">Recibo gerado com sucesso</p>
             <div className="bg-emerald-50 rounded-[2rem] p-6 mb-8 border border-emerald-100">
               <span className="block text-[10px] font-black text-emerald-700 uppercase tracking-[0.3em] mb-2">Total Recebido</span>
               <span className="text-4xl font-black text-emerald-600 tracking-tighter">{formatCurrency(lastSaleAmount)}</span>
             </div>
             <div className="flex flex-col gap-3">
-              <button onClick={handleShareReceipt} className="w-full py-4 bg-emerald-600 text-white font-black rounded-[2rem] shadow-lg shadow-emerald-100 hover:bg-emerald-700 active:scale-95 transition-all uppercase text-xs tracking-[0.2em] flex items-center justify-center gap-2"><FileText size={18} /> Gerar Recibo (PDF)</button>
+              <button onClick={handleViewReceipt} className="w-full py-5 bg-blue-600 text-white font-black rounded-[2rem] shadow-xl shadow-blue-100 hover:bg-blue-700 active:scale-95 transition-all uppercase text-xs tracking-[0.2em] flex items-center justify-center gap-3"><Eye size={20} /> Visualizar Recibo</button>
               <button onClick={() => setShowSuccess(false)} className="w-full py-4 bg-slate-900 text-white font-black rounded-[2rem] shadow-2xl shadow-slate-900/30 hover:bg-slate-800 active:scale-95 transition-all uppercase text-xs tracking-[0.2em]">Concluir</button>
             </div>
           </div>

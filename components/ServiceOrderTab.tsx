@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Plus, Search, Trash2, Printer, ChevronRight, ClipboardList, Camera, X, MessageCircle, Share2, FileText, Download, CheckCircle } from 'lucide-react';
+import { Plus, Search, Trash2, Printer, ChevronRight, ClipboardList, Camera, X, FileText, Download, CheckCircle, Eye } from 'lucide-react';
 import { ServiceOrder, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
 import { jsPDF } from 'jspdf';
@@ -234,37 +234,15 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
     return doc;
   };
 
-  const handleDownloadPDF = (order: ServiceOrder) => {
+  const handleViewPDF = (order: ServiceOrder) => {
     try {
       const doc = getDoc(order);
       const fileName = `OS_${order.id}.pdf`;
+      // Em APKs, o doc.save dispara o DownloadListener que salva e permite abrir o arquivo
       doc.save(fileName);
     } catch (error) {
-      console.error('Erro ao baixar PDF:', error);
-      alert('Houve um erro ao gerar o PDF.');
-    }
-  };
-
-  const sharePDF = async (order: ServiceOrder) => {
-    try {
-      const doc = getDoc(order);
-      const pdfBlob = doc.output('blob');
-      const fileName = `OS_${order.id}.pdf`;
-      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
-
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `O.S. ${order.customerName}`,
-          text: `Segue Ordem de Serviço da ${settings.storeName}`,
-        });
-      } else {
-        doc.save(fileName);
-        alert('PDF baixado com sucesso!');
-      }
-    } catch (error) {
-      console.error('Erro ao compartilhar:', error);
-      alert('Não foi possível compartilhar.');
+      console.error('Erro ao gerar PDF:', error);
+      alert('Houve um erro ao visualizar o PDF.');
     }
   };
 
@@ -298,10 +276,9 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
             </div>
             
             <div className="flex gap-2">
-              <button onClick={() => handleEdit(order)} className="flex-1 bg-slate-50 text-slate-600 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1"><ChevronRight size={16} /> Detalhes</button>
-              <button onClick={() => handleDownloadPDF(order)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1"><Download size={16} /> PDF</button>
-              <button onClick={() => sharePDF(order)} className="flex-1 bg-green-50 text-green-600 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1"><MessageCircle size={16} /> WhatsApp</button>
-              <button onClick={() => handleDelete(order.id)} className="p-2 text-red-500 bg-red-50 rounded-xl"><Trash2 size={16} /></button>
+              <button onClick={() => handleEdit(order)} className="flex-[2] bg-slate-50 text-slate-600 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform"><ChevronRight size={16} /> Detalhes</button>
+              <button onClick={() => handleViewPDF(order)} className="flex-[3] bg-blue-600 text-white py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-blue-100 active:scale-95 transition-all"><Eye size={16} /> Visualizar PDF</button>
+              <button onClick={() => handleDelete(order.id)} className="p-3 text-red-500 bg-red-50 rounded-xl active:scale-90"><Trash2 size={16} /></button>
             </div>
           </div>
         ))}

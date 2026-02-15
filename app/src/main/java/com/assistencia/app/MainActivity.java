@@ -3,23 +3,21 @@ package com.assistencia.app;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.DownloadManager;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Base64;
-import android.util.Log;
-import android.webkit.ConsoleMessage;
-import android.webkit.CookieManager;
-import android.webkit.ValueCallback;
+import android.webkit.DownloadListener;
+import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -31,7 +29,6 @@ public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
     private static final int PERMISSION_REQUEST_CODE = 1001;
-    private static final String TARGET_URL = "https://lovely-empanada-d13b49.netlify.app/";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -41,96 +38,70 @@ public class MainActivity extends AppCompatActivity {
 
         webView = findViewById(R.id.webview);
         WebSettings settings = webView.getSettings();
-        
-        // Habilitar JS e Armazenamento
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        
-        // Suporte a arquivos e visualização
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
-        settings.setLoadWithOverviewMode(true);
-        settings.setUseWideViewPort(true);
-        settings.setSupportZoom(false);
-        
-        // Habilitar cookies para manter sessões/preferências
-        CookieManager cookieManager = CookieManager.getInstance();
-        cookieManager.setAcceptCookie(true);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            cookieManager.setAcceptThirdPartyCookies(webView, true);
-            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        }
 
-        // Configurações de Acesso Universal (Essencial para o Babel carregar módulos)
-        settings.setAllowFileAccessFromFileURLs(true);
-        settings.setAllowUniversalAccessFromFileURLs(true);
+        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebViewClient(new WebViewClient());
 
-        webView.setWebViewClient(new WebViewClient() {
+        // Suporte para Downloads no Android WebView
+        webView.setDownloadListener(new DownloadListener() {
             @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                // Mantém toda a navegação dentro do WebView
-                return false;
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                super.onPageFinished(view, url);
-                Log.d("WebView", "Página carregada: " + url);
-            }
-
-            @Override
-            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                Log.e("WebViewError", "Erro (" + errorCode + "): " + description + " em " + failingUrl);
+            public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
+                if (checkPermissions()) {
+                    handleDownload(url, mimetype, contentDisposition);
+                } else {
+                    requestPermissions();
+                }
             }
         });
 
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-                // Redireciona logs do JS para o Logcat do Android Studio
-                Log.d("JS_CONSOLE", consoleMessage.message() + " -- na linha "
-                        + consoleMessage.lineNumber() + " de "
-                        + consoleMessage.sourceId());
-                return true;
-            }
-        });
-
-        webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
-            if (checkPermissions()) {
-                handleDownload(url);
-            } else {
-                requestPermissions();
-            }
-        });
-
-        // Carregar a URL final
-        webView.loadUrl(TARGET_URL);
+        webView.loadUrl("file:///android_asset/index.html");
     }
 
-    private void handleDownload(String url) {
+    private void handleDownload(String url, String mimetype, String contentDisposition) {
         try {
             if (url.startsWith("data:")) {
+                // Tratamento para data URIs (comum em PDFs gerados via JS)
                 String base64Data = url.substring(url.indexOf(",") + 1);
                 byte[] decodedBytes = Base64.decode(base64Data, Base64.DEFAULT);
-                String fileName = "OS_Assistencia_" + System.currentTimeMillis() + ".pdf";
+                String fileName = "OS_Gerada_" + System.currentTimeMillis() + ".pdf";
+                
                 File path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
                 File file = new File(path, fileName);
+                
                 FileOutputStream fos = new FileOutputStream(file);
                 fos.write(decodedBytes);
                 fos.close();
-                Toast.makeText(this, "Documento salvo em Downloads!", Toast.LENGTH_LONG).show();
+                
+                Toast.makeText(this, "PDF salvo na pasta Downloads!", Toast.LENGTH_LONG).show();
+            } else {
+                // Download padrão para URLs HTTP/HTTPS
+                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                request.setMimeType(mimetype);
+                String fileName = URLUtil.guessFileName(url, contentDisposition, mimetype);
+                request.setTitle(fileName);
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+                
+                DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                dm.enqueue(request);
+                Toast.makeText(getApplicationContext(), "Baixando arquivo...", Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {
-            Log.e("Download", "Erro ao salvar PDF: " + e.getMessage());
-            Toast.makeText(this, "Erro ao salvar PDF", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Erro ao baixar: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
     private boolean checkPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return true;
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return true; // Android 13+ não precisa de WRITE_EXTERNAL_STORAGE para Downloads
+        } else {
+            return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        }
     }
 
     private void requestPermissions() {
@@ -140,8 +111,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "Permissão concedida! Tente baixar novamente.", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    @Override
     public void onBackPressed() {
-        if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        if (webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
+        }
     }
 }

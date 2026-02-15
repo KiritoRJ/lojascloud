@@ -2,8 +2,6 @@
   "name": "Assistência Técnica Pro",
   "description": "Um aplicativo completo para gestão de ordens de serviço, financeiro e configurações para assistências técnicas de celulares, funcionando totalmente offline.",
   "requestFramePermissions": [
-    "camera",
-    "microphone",
-    "geolocation"
+    "camera"
   ]
 }

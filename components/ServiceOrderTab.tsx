@@ -243,10 +243,25 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
     try {
       const doc = getDoc(order);
       const fileName = `OS_${order.id}_${order.customerName.replace(/\s+/g, '_')}.pdf`;
-      doc.save(fileName);
+      
+      // No Android WebView, blob URLs muitas vezes falham.
+      // Usar datauristring e um link oculto costuma ser mais compatível.
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      
+      if (isMobile) {
+        const dataUri = doc.output('datauristring');
+        const link = document.createElement('a');
+        link.href = dataUri;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        doc.save(fileName);
+      }
     } catch (error) {
       console.error('Erro ao baixar PDF:', error);
-      alert('Não foi possível gerar o arquivo PDF.');
+      alert('Não foi possível gerar o arquivo PDF. Tente usar a opção de compartilhar.');
     }
   };
 
@@ -257,6 +272,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
       const pdfBlob = doc.output('blob');
       const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
+      // Verificação de suporte a Web Share API (Nativo em HTTPS e dispositivos modernos)
       if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
@@ -264,13 +280,23 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
           text: `Olá ${order.customerName}! Segue em anexo a Ordem de Serviço da ${settings.storeName}.`,
         });
       } else {
-        doc.save(fileName);
+        // Fallback robusto para Android
+        const dataUri = doc.output('datauristring');
+        const link = document.createElement('a');
+        link.href = dataUri;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
         const cleanPhone = order.phoneNumber.replace(/\D/g, '');
         if (cleanPhone) {
           const message = encodeURIComponent(`Olá ${order.customerName}! Sua Ordem de Serviço foi concluída. O PDF foi baixado automaticamente no seu aparelho. Por favor, anexe o arquivo aqui para sua conferência.`);
-          window.open(`https://wa.me/55${cleanPhone}?text=${message}`, '_blank');
+          setTimeout(() => {
+            window.open(`https://wa.me/55${cleanPhone}?text=${message}`, '_blank');
+          }, 1000);
         } else {
-          alert('PDF baixado com sucesso!');
+          alert('PDF baixado com sucesso! Como não há número de WhatsApp, envie o arquivo manualmente.');
         }
       }
     } catch (error) {
@@ -340,7 +366,14 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <h3 className="text-xl font-bold text-slate-800">{editingOrder ? 'Editar Ordem de Serviço' : 'Nova Ordem de Serviço'}</h3>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 p-2">&times;</button>
+              <div className="flex gap-2">
+                {editingOrder && (
+                  <button onClick={() => sharePDF(editingOrder)} className="p-2 text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100">
+                    <Share2 size={20} />
+                  </button>
+                )}
+                <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 p-2">&times;</button>
+              </div>
             </div>
             
             <div className="p-6 space-y-6">
@@ -379,8 +412,8 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings }) => {
               <section className="space-y-4 pt-4 border-t border-slate-50">
                 <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Financeiro</h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <input name="partsCost" value={formatCurrency(formData.partsCost || 0).replace('R$', '').trim()} onChange={handleInputChange} className="px-3 py-2 border rounded-lg text-right" placeholder="Valor da Peça" />
-                  <input name="serviceCost" value={formatCurrency(formData.serviceCost || 0).replace('R$', '').trim()} onChange={handleInputChange} className="px-3 py-2 border rounded-lg text-right" placeholder="Valor do Serviço" />
+                  <input name="partsCost" value={formatCurrency(formData.partsCost || 0).replace('R$', '').trim()} onChange={handleInputChange} className="w-full px-3 py-2 border rounded-lg text-right" placeholder="Valor da Peça" />
+                  <input name="serviceCost" value={formatCurrency(formData.serviceCost || 0).replace('R$', '').trim()} onChange={handleInputChange} className="w-full px-3 py-2 border rounded-lg text-right" placeholder="Valor do Serviço" />
                   <div className="col-span-2 flex items-center justify-between bg-blue-50 p-4 rounded-xl font-bold"><span>TOTAL:</span><span className="text-2xl text-blue-600">{formatCurrency((formData.partsCost || 0) + (formData.serviceCost || 0))}</span></div>
                 </div>
               </section>

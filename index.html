@@ -5,10 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Assistência Técnica Pro</title>
+    
+    <!-- Script para garantir que importmaps funcionem em WebViews mais antigos -->
+    <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.1/dist/es-module-shims.js"></script>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Babel Standalone para permitir execução de .tsx diretamente no WebView -->
+    
+    <!-- Babel para converter TSX em tempo real -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <style>
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
         #app-loader {
@@ -18,10 +24,14 @@
         }
         .spinner {
             width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1);
-            border-left-color: #2563eb; border-radius: 50%; animate: spin 1s linear infinite;
+            border-left-color: #2563eb; border-radius: 50%; animation: spin 1s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        #error-msg {
+            display: none; color: #ef4444; font-size: 12px; margin-top: 20px; text-align: center; padding: 0 20px;
+        }
     </style>
+
 <script type="importmap">
 {
   "imports": {
@@ -38,22 +48,39 @@
 <body class="bg-slate-50 text-slate-900">
     <div id="app-loader">
         <div class="spinner"></div>
-        <p style="color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-top: 15px; letter-spacing: 0.1em;">Carregando Interface...</p>
+        <p id="loader-text" style="color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-top: 15px; letter-spacing: 0.1em;">Carregando Interface...</p>
+        <div id="error-msg">
+            O carregamento está demorando mais que o esperado.<br>
+            Verifique sua conexão com a internet.
+        </div>
     </div>
     
     <div id="root"></div>
 
-    <!-- type="text/babel" instrui o Babel a processar este arquivo como TypeScript/JSX -->
+    <!-- O Babel processa o index.tsx e resolve os imports usando o importmap acima -->
     <script type="text/babel" data-type="module" src="./index.tsx"></script>
 
     <script>
+        // Verificação de timeout para avisar o usuário sobre possíveis erros de rede
+        const timeout = setTimeout(() => {
+            const errorMsg = document.getElementById('error-msg');
+            if (errorMsg) errorMsg.style.display = 'block';
+        }, 8000);
+
         window.addEventListener('load', () => {
-            setTimeout(() => {
-                const loader = document.getElementById('app-loader');
-                if(loader) loader.style.opacity = '0';
-                setTimeout(() => loader?.remove(), 500);
-            }, 2000);
+            // Ocultar o loader apenas quando tudo estiver pronto
+            // O React injetará o conteúdo no #root
         });
+
+        // Esta função será chamada pelo App.tsx ou index.tsx quando o React montar com sucesso
+        window.hideAppLoader = () => {
+            clearTimeout(timeout);
+            const loader = document.getElementById('app-loader');
+            if(loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.remove(), 500);
+            }
+        };
     </script>
 </body>
 </html>

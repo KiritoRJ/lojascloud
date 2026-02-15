@@ -14,3 +14,8 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// Notifica o index.html que o React foi carregado com sucesso
+if ((window as any).hideAppLoader) {
+  (window as any).hideAppLoader();
+}

@@ -6,13 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Assistência Técnica Pro</title>
     
-    <!-- Script para garantir que importmaps funcionem em WebViews mais antigos -->
     <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.1/dist/es-module-shims.js"></script>
-
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Babel para converter TSX em tempo real -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
@@ -27,8 +23,11 @@
             border-left-color: #2563eb; border-radius: 50%; animation: spin 1s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        #error-msg {
-            display: none; color: #ef4444; font-size: 12px; margin-top: 20px; text-align: center; padding: 0 20px;
+        #debug-console {
+            position: fixed; bottom: 0; left: 0; right: 0; max-height: 150px; 
+            background: rgba(0,0,0,0.8); color: #00ff00; font-family: monospace; 
+            font-size: 8px; overflow-y: auto; z-index: 10000; padding: 5px;
+            display: none; pointer-events: none;
         }
     </style>
 
@@ -48,33 +47,24 @@
 <body class="bg-slate-50 text-slate-900">
     <div id="app-loader">
         <div class="spinner"></div>
-        <p id="loader-text" style="color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-top: 15px; letter-spacing: 0.1em;">Carregando Interface...</p>
-        <div id="error-msg">
-            O carregamento está demorando mais que o esperado.<br>
-            Verifique sua conexão com a internet.
-        </div>
+        <p id="loader-text" style="color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-top: 15px; letter-spacing: 0.1em;">Iniciando Sistema...</p>
     </div>
+
+    <div id="debug-console"></div>
     
     <div id="root"></div>
 
-    <!-- O Babel processa o index.tsx e resolve os imports usando o importmap acima -->
-    <script type="text/babel" data-type="module" src="./index.tsx"></script>
-
     <script>
-        // Verificação de timeout para avisar o usuário sobre possíveis erros de rede
-        const timeout = setTimeout(() => {
-            const errorMsg = document.getElementById('error-msg');
-            if (errorMsg) errorMsg.style.display = 'block';
-        }, 8000);
+        // Capturador de erros para ajudar no debug via celular
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            const debug = document.getElementById('debug-console');
+            debug.style.display = 'block';
+            debug.innerHTML += `<div>ERROR: ${msg} at ${lineNo}:${columnNo}</div>`;
+            console.error(msg, url, lineNo, columnNo, error);
+            return false;
+        };
 
-        window.addEventListener('load', () => {
-            // Ocultar o loader apenas quando tudo estiver pronto
-            // O React injetará o conteúdo no #root
-        });
-
-        // Esta função será chamada pelo App.tsx ou index.tsx quando o React montar com sucesso
         window.hideAppLoader = () => {
-            clearTimeout(timeout);
             const loader = document.getElementById('app-loader');
             if(loader) {
                 loader.style.opacity = '0';
@@ -82,5 +72,8 @@
             }
         };
     </script>
+
+    <!-- Importante: data-presets para garantir que o Babel saiba o que fazer -->
+    <script type="text/babel" data-type="module" data-presets="react,typescript" src="./index.tsx"></script>
 </body>
 </html>

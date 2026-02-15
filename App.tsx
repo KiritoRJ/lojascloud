@@ -53,14 +53,33 @@ const App: React.FC = () => {
     if (savedSales) setSales(JSON.parse(savedSales));
   }, []);
 
+  // FUNÇÕES DE SALVAMENTO ASSÍNCRONAS PARA EVITAR TRAVAMENTO DA UI NO ANDROID
   const saveOrders = (newOrders: ServiceOrder[]) => {
     setOrders(newOrders);
-    localStorage.setItem('service_orders', JSON.stringify(newOrders));
+    setTimeout(() => {
+      localStorage.setItem('service_orders', JSON.stringify(newOrders));
+    }, 500);
+  };
+
+  const saveProducts = (newProducts: Product[]) => {
+    setProducts(newProducts);
+    setTimeout(() => {
+      localStorage.setItem('stock_products', JSON.stringify(newProducts));
+    }, 500);
+  };
+
+  const saveSales = (newSales: Sale[]) => {
+    setSales(newSales);
+    setTimeout(() => {
+      localStorage.setItem('sales_history', JSON.stringify(newSales));
+    }, 500);
   };
 
   const saveSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
-    localStorage.setItem('app_settings', JSON.stringify(newSettings));
+    setTimeout(() => {
+      localStorage.setItem('app_settings', JSON.stringify(newSettings));
+    }, 500);
   };
 
   const handleSetupComplete = (newSettings: AppSettings) => {
@@ -412,8 +431,8 @@ const App: React.FC = () => {
 
       <main className="flex-1 p-4 pt-16 md:pt-16 max-w-5xl mx-auto w-full overflow-x-hidden">
         {activeTab === 'os' && <ServiceOrderTab orders={orders} setOrders={saveOrders} settings={settings} />}
-        {activeTab === 'estoque' && <StockTab products={products} setProducts={(p) => { setProducts(p); localStorage.setItem('stock_products', JSON.stringify(p)); }} />}
-        {activeTab === 'vendas' && <SalesTab products={products} setProducts={(p) => { setProducts(p); localStorage.setItem('stock_products', JSON.stringify(p)); }} sales={sales} setSales={(s) => { setSales(s); localStorage.setItem('sales_history', JSON.stringify(s)); }} settings={settings} currentUser={currentUser} />}
+        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} />}
+        {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales} setSales={saveSales} settings={settings} currentUser={currentUser} />}
         {activeTab === 'financeiro' && (isFinanciallyAuthenticated ? <FinanceTab orders={orders} sales={sales} /> : <div className="flex flex-col items-center justify-center py-20 text-center space-y-4"><ShieldAlert className="text-red-500" size={64} /><h3 className="text-xl font-bold">Acesso Bloqueado</h3><p className="text-slate-500">A senha do Administrador é obrigatória para ver os dados financeiros.</p></div>)}
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} />}
         {activeTab === 'usuarios' && <UserManagementTab settings={settings} setSettings={saveSettings} currentUser={currentUser} onSwitchProfile={requestProfileSwitch} />}

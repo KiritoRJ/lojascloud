@@ -2,4 +2,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <external-files-path name="my_downloads" path="Download" />
+    <external-files-path name="my_images" path="Android/data/com.assistencia.app/files/Pictures" />
+    <external-path name="external_files" path="." />
 </paths>

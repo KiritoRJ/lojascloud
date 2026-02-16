@@ -36,7 +36,6 @@ const App: React.FC = () => {
   const fullSync = async (tid: string) => {
     setIsSyncing(true);
     try {
-      // 1. Carregar do IndexedDB primeiro (Imediato)
       const localOrders = await getData('orders', `${tid}_orders`);
       const localProducts = await getData('products', `${tid}_products`);
       const localSales = await getData('sales', `${tid}_sales`);
@@ -50,27 +49,30 @@ const App: React.FC = () => {
         setCurrentUser(localConfig.users[0]);
       }
 
-      // 2. Buscar Ordens da tabela SQL (Cloud)
+      // 1. Sincronizar Ordens (Tabela Dedicada)
       const remoteOrders = await OnlineDB.fetchOrders(tid);
       if (remoteOrders !== null) {
         setOrders(remoteOrders);
         await saveData('orders', `${tid}_orders`, remoteOrders);
       }
 
-      // 3. Buscar outros dados via JSON blob
-      const remoteProducts = await OnlineDB.syncPull(tid, 'products');
+      // 2. Sincronizar Produtos (Tabela Dedicada - NOVO)
+      const remoteProducts = await OnlineDB.fetchProducts(tid);
+      if (remoteProducts !== null) {
+        setProducts(remoteProducts);
+        await saveData('products', `${tid}_products`, remoteProducts);
+      }
+
+      // 3. Outros dados (JSON)
       const remoteSales = await OnlineDB.syncPull(tid, 'sales');
       const remoteConfig = await OnlineDB.syncPull(tid, 'settings');
 
-      if (remoteProducts) { setProducts(remoteProducts); await saveData('products', `${tid}_products`, remoteProducts); }
       if (remoteSales) { setSales(remoteSales); await saveData('sales', `${tid}_sales`, remoteSales); }
-      
       if (remoteConfig) {
         setSettings(remoteConfig);
         await saveData('settings', `${tid}_config`, remoteConfig);
         setCurrentUser(remoteConfig.users[0]);
       } else if (!localConfig) {
-        // Fallback para configurações padrão se nada existir
         const defaultSettings: AppSettings = {
           storeName: 'Minha Loja', logoUrl: null, users: [{id:'adm_1', name: 'Administrador', role: 'admin', photo: null}], isConfigured: true,
           pdfWarrantyText: "Garantia de 90 dias...", pdfFontSize: 8, pdfFontFamily: 'helvetica',
@@ -128,15 +130,12 @@ const App: React.FC = () => {
     const oldOrders = [...orders];
     setOrders(newOrders);
     await saveData('orders', `${session.tenantId}_orders`, newOrders);
-
     if (session.tenantId) {
-      const changedOrder = newOrders.find(no => {
+      const changed = newOrders.find(no => {
         const old = oldOrders.find(oo => oo.id === no.id);
         return !old || JSON.stringify(old) !== JSON.stringify(no);
       });
-      if (changedOrder) {
-        await OnlineDB.upsertOS(session.tenantId, changedOrder);
-      }
+      if (changed) await OnlineDB.upsertOS(session.tenantId, changed);
     }
   };
 
@@ -148,10 +147,25 @@ const App: React.FC = () => {
     if (session.tenantId) await OnlineDB.deleteOS(orderId);
   };
 
-  const saveProducts = (newProducts: Product[]) => {
+  const saveProducts = async (newProducts: Product[]) => {
+    const oldProducts = [...products];
     setProducts(newProducts);
-    saveData('products', `${session.tenantId}_products`, newProducts);
-    if (session.tenantId) OnlineDB.syncPush(session.tenantId, 'products', newProducts);
+    await saveData('products', `${session.tenantId}_products`, newProducts);
+    if (session.tenantId) {
+      const changed = newProducts.find(np => {
+        const old = oldProducts.find(op => op.id === np.id);
+        return !old || JSON.stringify(old) !== JSON.stringify(np);
+      });
+      if (changed) await OnlineDB.upsertProduct(session.tenantId, changed);
+    }
+  };
+
+  const removeProduct = async (productId: string) => {
+    if (!confirm('Deseja remover este item do estoque?')) return;
+    const newProducts = products.filter(p => p.id !== productId);
+    setProducts(newProducts);
+    await saveData('products', `${session.tenantId}_products`, newProducts);
+    if (session.tenantId) await OnlineDB.deleteProduct(productId);
   };
 
   const saveSales = (newSales: Sale[]) => {
@@ -169,7 +183,7 @@ const App: React.FC = () => {
   if (!isLogged) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans">
-        <div className="w-full max-w-sm bg-white/5 backdrop-blur-2xl rounded-[3rem] border border-white/10 shadow-[0_0_100px_rgba(37,99,235,0.15)] p-10 relative overflow-hidden">
+        <div className="w-full max-sm bg-white/5 backdrop-blur-2xl rounded-[3rem] border border-white/10 shadow-[0_0_100px_rgba(37,99,235,0.15)] p-10 relative overflow-hidden">
           {isAuthenticating && (
             <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex flex-col items-center justify-center text-white gap-4 text-center p-6">
               <Loader2 className="animate-spin text-blue-500" size={48} />
@@ -225,7 +239,7 @@ const App: React.FC = () => {
 
         <main className="flex-1 p-6 pt-24 md:pt-24 max-w-6xl mx-auto w-full">
           {activeTab === 'os' && <ServiceOrderTab orders={orders} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} />}
-          {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} />}
+          {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} />}
           {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales} setSales={saveSales} settings={settings} currentUser={currentUser} />}
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} />}
           {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} />}

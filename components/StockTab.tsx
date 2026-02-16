@@ -7,9 +7,10 @@ import { formatCurrency, parseCurrencyString } from '../utils';
 interface Props {
   products: Product[];
   setProducts: (products: Product[]) => void;
+  onDeleteProduct: (id: string) => void;
 }
 
-const StockTab: React.FC<Props> = ({ products, setProducts }) => {
+const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -42,15 +43,18 @@ const StockTab: React.FC<Props> = ({ products, setProducts }) => {
   const handleSave = () => {
     if (!formData.name) return alert('Nome é obrigatório.');
     setIsSaving(true);
-    setTimeout(() => {
-      let newList: Product[];
-      if (editingProduct) newList = products.map(p => p.id === editingProduct.id ? { ...p, ...formData } as Product : p);
-      else newList = [{ ...formData, id: Math.random().toString(36).substr(2, 6).toUpperCase() } as Product, ...products];
-      setProducts(newList);
-      setIsModalOpen(false);
-      resetForm();
-      setIsSaving(false);
-    }, 150);
+    
+    let newList: Product[];
+    if (editingProduct) {
+      newList = products.map(p => p.id === editingProduct.id ? { ...p, ...formData } as Product : p);
+    } else {
+      newList = [{ ...formData, id: 'PROD_' + Math.random().toString(36).substr(2, 6).toUpperCase() } as Product, ...products];
+    }
+    
+    setProducts(newList);
+    setIsModalOpen(false);
+    resetForm();
+    setIsSaving(false);
   };
 
   const resetForm = () => {
@@ -80,7 +84,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts }) => {
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-        <input type="text" placeholder="Buscar produto..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        <input type="text" placeholder="Buscar produto..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -89,8 +93,8 @@ const StockTab: React.FC<Props> = ({ products, setProducts }) => {
             <div className="h-32 bg-slate-50 relative">
               {product.photo ? <img src={product.photo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-200"><PackageOpen size={32} /></div>}
               <div className="absolute top-2 right-2 flex flex-col gap-1">
-                <button onClick={() => { setEditingProduct(product); setFormData(product); setIsModalOpen(true); }} className="p-2 bg-white/90 rounded-xl text-slate-600 shadow-sm"><Edit3 size={14} /></button>
-                <button onClick={() => confirm('Remover?') && setProducts(products.filter(p=>p.id!==product.id))} className="p-2 bg-white/90 rounded-xl text-red-500 shadow-sm"><Trash2 size={14} /></button>
+                <button onClick={() => { setEditingProduct(product); setFormData(product); setIsModalOpen(true); }} className="p-2 bg-white/90 rounded-xl text-slate-600 shadow-sm active:scale-90 transition-all"><Edit3 size={14} /></button>
+                <button onClick={() => onDeleteProduct(product.id)} className="p-2 bg-white/90 rounded-xl text-red-500 shadow-sm active:scale-90 transition-all"><Trash2 size={14} /></button>
               </div>
               <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-slate-900 text-white rounded-lg text-[8px] font-black uppercase tracking-widest">Qtd: {product.quantity}</div>
             </div>
@@ -143,10 +147,10 @@ const StockTab: React.FC<Props> = ({ products, setProducts }) => {
               </div>
             </div>
 
-            <div className="p-6 bg-slate-50 flex gap-3">
+            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
               <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[10px] tracking-widest">Sair</button>
               <button onClick={handleSave} disabled={isSaving || isCompressing} className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95">
-                {isSaving ? <Loader2 className="animate-spin" /> : 'Confirmar'}
+                {isSaving ? <Loader2 className="animate-spin" /> : 'Confirmar SQL'}
               </button>
             </div>
           </div>

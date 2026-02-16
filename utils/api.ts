@@ -77,6 +77,7 @@ export class OnlineDB {
     }
   }
 
+  /** ORDENS DE SERVIÇO **/
   static async upsertOS(tenantId: string, os: any) {
     try {
       const { error } = await supabase
@@ -106,10 +107,7 @@ export class OnlineDB {
 
   static async deleteOS(osId: string) {
     try {
-      const { error } = await supabase
-        .from('service_orders')
-        .delete()
-        .eq('id', osId);
+      const { error } = await supabase.from('service_orders').delete().eq('id', osId);
       return { success: !error, error };
     } catch (e) {
       return { success: false, error: e };
@@ -124,11 +122,8 @@ export class OnlineDB {
         .select('*')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false });
-      
       if (error) throw error;
-      if (!data) return [];
-      
-      return data.map(d => ({
+      return (data || []).map(d => ({
         id: d.id,
         customerName: d.customer_name || '',
         phoneNumber: d.phone_number || '',
@@ -146,7 +141,57 @@ export class OnlineDB {
         date: d.created_at
       }));
     } catch (e) {
-      console.error("Erro fetchOrders:", e);
+      return null;
+    }
+  }
+
+  /** PRODUTOS (ESTOQUE) **/
+  static async upsertProduct(tenantId: string, product: any) {
+    try {
+      const { error } = await supabase
+        .from('products')
+        .upsert({
+          id: product.id,
+          tenant_id: tenantId,
+          name: product.name,
+          photo: product.photo,
+          cost_price: product.costPrice,
+          sale_price: product.salePrice,
+          quantity: product.quantity
+        });
+      return { success: !error, error };
+    } catch (e) {
+      return { success: false, error: e };
+    }
+  }
+
+  static async deleteProduct(productId: string) {
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', productId);
+      return { success: !error, error };
+    } catch (e) {
+      return { success: false, error: e };
+    }
+  }
+
+  static async fetchProducts(tenantId: string) {
+    if (!tenantId) return null;
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data || []).map(d => ({
+        id: d.id,
+        name: d.name || '',
+        photo: d.photo || null,
+        costPrice: Number(d.cost_price) || 0,
+        salePrice: Number(d.sale_price) || 0,
+        quantity: Number(d.quantity) || 0
+      }));
+    } catch (e) {
       return null;
     }
   }

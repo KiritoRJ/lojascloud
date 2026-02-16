@@ -7,14 +7,10 @@ const SUPABASE_KEY = 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export class OnlineDB {
-  /**
-   * Login Principal
-   */
   static async login(username: string, passwordPlain: string) {
     const cleanUser = username.trim().toLowerCase();
     const cleanPass = passwordPlain.trim();
 
-    // Bypass Local para Desenvolvedor (Wandev)
     if (cleanUser === 'wandev' && (cleanPass === '123' || cleanPass === 'wan123')) {
       return { success: true, type: 'super' };
     }
@@ -28,33 +24,20 @@ export class OnlineDB {
         .maybeSingle();
 
       if (error) throw error;
-
-      if (!data) {
-        return { success: false, message: "Usuário ou senha inválidos." };
-      }
+      if (!data) return { success: false, message: "Usuário ou senha inválidos." };
 
       return { 
         success: true, 
         type: data.role || 'admin', 
-        tenant: { 
-          id: data.tenant_id, 
-          username: data.username 
-        } 
+        tenant: { id: data.tenant_id, username: data.username } 
       };
     } catch (err: any) {
-      console.error("Erro Login:", err);
       return { success: false, message: "Erro de conexão: " + err.message };
     }
   }
 
-  /**
-   * Criação de nova Empresa e Usuário Admin no Supabase
-   */
   static async createTenant(tenantData: any) {
     try {
-      console.log("Tentando criar empresa no Supabase...", tenantData);
-
-      // 1. Inserir na tabela 'tenants'
       const { error: tError } = await supabase
         .from('tenants')
         .insert([{
@@ -62,13 +45,8 @@ export class OnlineDB {
           store_name: tenantData.storeName,
           created_at: new Date().toISOString()
         }]);
+      if (tError) throw tError;
 
-      if (tError) {
-        console.error("Erro Tenants:", tError);
-        return { success: false, message: `Erro ao criar loja: ${tError.message}. Verifique se a tabela 'tenants' tem a coluna 'store_name'.` };
-      }
-
-      // 2. Inserir na tabela 'users' o administrador da nova loja
       const { error: uError } = await supabase
         .from('users')
         .insert([{
@@ -78,42 +56,104 @@ export class OnlineDB {
           tenant_id: tenantData.id,
           store_name: tenantData.storeName
         }]);
-
-      if (uError) {
-        console.error("Erro Users:", uError);
-        // Rollback manual (opcional)
-        await supabase.from('tenants').delete().eq('id', tenantData.id);
-        return { success: false, message: `Erro ao criar usuário: ${uError.message}. Verifique se a tabela 'users' tem as colunas 'username', 'password' e 'tenant_id'.` };
-      }
+      if (uError) throw uError;
 
       return { success: true };
     } catch (e: any) {
-      console.error("Erro Crítico:", e);
-      return { success: false, message: "Falha de comunicação: " + e.message };
+      return { success: false, message: e.message };
     }
   }
 
-  /**
-   * Listar todas as lojas para o Painel Wandev
-   */
   static async getTenants() {
     try {
       const { data, error } = await supabase
         .from('tenants')
         .select('*')
         .order('created_at', { ascending: false });
-      
       if (error) throw error;
       return data || [];
     } catch (e) {
-      console.error("Erro getTenants:", e);
       return [];
     }
   }
 
   /**
-   * Sincronização Push (Upload)
+   * MÉTODOS GRANULARES PARA ORDENS DE SERVIÇO (SQL Direto)
    */
+  
+  static async upsertOS(tenantId: string, os: any) {
+    try {
+      const { error } = await supabase
+        .from('service_orders')
+        .upsert({
+          id: os.id,
+          tenant_id: tenantId,
+          customer_name: os.customerName,
+          phone_number: os.phoneNumber,
+          address: os.address,
+          device_brand: os.deviceBrand,
+          device_model: os.deviceModel,
+          defect: os.defect,
+          repair_details: os.repairDetails,
+          parts_cost: os.partsCost,
+          service_cost: os.serviceCost,
+          total: os.total,
+          status: os.status,
+          photos: os.photos || [],
+          finished_photos: os.finishedPhotos || []
+        });
+      return { success: !error, error };
+    } catch (e) {
+      return { success: false, error: e };
+    }
+  }
+
+  static async deleteOS(osId: string) {
+    try {
+      const { error } = await supabase
+        .from('service_orders')
+        .delete()
+        .eq('id', osId);
+      return { success: !error, error };
+    } catch (e) {
+      return { success: false, error: e };
+    }
+  }
+
+  static async fetchOrders(tenantId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('service_orders')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      // Mapear de volta para o formato do App
+      return data.map(d => ({
+        id: d.id,
+        customerName: d.customer_name,
+        phoneNumber: d.phone_number,
+        address: d.address,
+        deviceBrand: d.device_brand,
+        deviceModel: d.device_model,
+        defect: d.defect,
+        repairDetails: d.repair_details,
+        partsCost: d.parts_cost,
+        serviceCost: d.service_cost,
+        total: d.total,
+        status: d.status,
+        photos: d.photos,
+        finishedPhotos: d.finished_photos,
+        date: d.created_at
+      }));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Sincronização Genérica para outras tabelas (Estoque/Vendas)
   static async syncPush(tenantId: string, storeKey: string, data: any) {
     if (!tenantId) return { success: false };
     try {
@@ -125,16 +165,12 @@ export class OnlineDB {
           data_json: data, 
           updated_at: new Date().toISOString() 
         }, { onConflict: 'tenant_id,store_key' });
-      
       return { success: !error, error };
     } catch (e) {
       return { success: false, error: e };
     }
   }
 
-  /**
-   * Sincronização Pull (Download)
-   */
   static async syncPull(tenantId: string, storeKey: string) {
     if (!tenantId) return null;
     try {
@@ -144,8 +180,6 @@ export class OnlineDB {
         .eq('tenant_id', tenantId)
         .eq('store_key', storeKey)
         .maybeSingle();
-      
-      if (error) return null;
       return data ? data.data_json : null;
     } catch (e) {
       return null;

@@ -8,12 +8,13 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export class OnlineDB {
   /**
-   * Login com prioridade para o desenvolvedor (wandev)
+   * Login Principal
    */
   static async login(username: string, passwordPlain: string) {
     const cleanUser = username.trim().toLowerCase();
     const cleanPass = passwordPlain.trim();
 
+    // Bypass Local para Desenvolvedor
     if (cleanUser === 'wandev' && (cleanPass === '123' || cleanPass === 'wan123')) {
       return { success: true, type: 'super' };
     }
@@ -26,13 +27,10 @@ export class OnlineDB {
         .eq('password', cleanPass)
         .maybeSingle();
 
-      if (error) {
-        console.error("Erro Supabase Login:", error);
-        return { success: false, message: "Erro no banco: " + error.message };
-      }
+      if (error) throw error;
 
       if (!data) {
-        return { success: false, message: "Usuário ou senha inválidos no sistema." };
+        return { success: false, message: "Usuário ou senha inválidos." };
       }
 
       return { 
@@ -43,28 +41,74 @@ export class OnlineDB {
           username: data.username 
         } 
       };
-    } catch (err) {
-      return { success: false, message: "Falha na conexão com o Supabase." };
+    } catch (err: any) {
+      console.error("Erro Login:", err);
+      return { success: false, message: "Erro de conexão: " + err.message };
     }
   }
 
-  static async syncPull(tenantId: string, storeKey: string) {
-    if (!tenantId) return null;
+  /**
+   * Criação de nova Empresa e Usuário Admin
+   */
+  static async createTenant(tenantData: any) {
+    try {
+      // 1. Criar a Loja na tabela 'tenants'
+      const { error: tError } = await supabase
+        .from('tenants')
+        .insert([{
+          id: tenantData.id,
+          store_name: tenantData.storeName,
+          created_at: new Date().toISOString()
+        }]);
+
+      if (tError) {
+        return { success: false, message: "Erro ao criar loja: " + tError.message };
+      }
+
+      // 2. Criar o Usuário na tabela 'users'
+      const { error: uError } = await supabase
+        .from('users')
+        .insert([{
+          username: tenantData.adminUsername.toLowerCase().trim(),
+          password: tenantData.adminPasswordPlain,
+          role: 'admin',
+          tenant_id: tenantData.id,
+          store_name: tenantData.storeName
+        }]);
+
+      if (uError) {
+        // Se falhar o usuário, removemos a loja para evitar inconsistência
+        await supabase.from('tenants').delete().eq('id', tenantData.id);
+        return { success: false, message: "Erro ao criar usuário: " + uError.message };
+      }
+
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: "Falha crítica: " + e.message };
+    }
+  }
+
+  /**
+   * Listar todas as lojas (Painel Wandev)
+   */
+  static async getTenants() {
     try {
       const { data, error } = await supabase
-        .from('cloud_data')
-        .select('data_json')
-        .eq('tenant_id', tenantId)
-        .eq('store_key', storeKey)
-        .maybeSingle();
+        .from('tenants')
+        .select('*')
+        .order('created_at', { ascending: false });
       
-      if (error) return null;
-      return data ? data.data_json : null;
+      if (error) throw error;
+      return data || [];
     } catch (e) {
-      return null;
+      console.error("Erro getTenants:", e);
+      return [];
     }
   }
 
+  /**
+   * Sincronização Push
+   */
   static async syncPush(tenantId: string, storeKey: string, data: any) {
     if (!tenantId) return { success: false };
     try {
@@ -83,64 +127,23 @@ export class OnlineDB {
     }
   }
 
-  static async getTenants() {
+  /**
+   * Sincronização Pull
+   */
+  static async syncPull(tenantId: string, storeKey: string) {
+    if (!tenantId) return null;
     try {
       const { data, error } = await supabase
-        .from('tenants')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .from('cloud_data')
+        .select('data_json')
+        .eq('tenant_id', tenantId)
+        .eq('store_key', storeKey)
+        .maybeSingle();
       
-      if (error) throw error;
-      return data || [];
+      if (error) return null;
+      return data ? data.data_json : null;
     } catch (e) {
-      console.error("Erro ao listar lojas:", e);
-      return [];
-    }
-  }
-
-  /**
-   * CRIAÇÃO DE EMPRESA E USUÁRIO (Multi-tabela)
-   */
-  static async createTenant(tenantData: any) {
-    try {
-      console.log("Iniciando criação de tenant no Supabase:", tenantData);
-
-      // 1. Criar o Tenant (A Loja)
-      const { error: tError } = await supabase
-        .from('tenants')
-        .insert([{
-          id: tenantData.id,
-          store_name: tenantData.storeName,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (tError) {
-        console.error("Erro ao inserir na tabela 'tenants':", tError);
-        return { success: false, message: `Erro na tabela 'tenants': ${tError.message}. Verifique se a coluna 'store_name' existe.` };
-      }
-
-      // 2. Criar o Usuário vinculado a esse Tenant
-      const { error: uError } = await supabase
-        .from('users')
-        .insert([{
-          username: tenantData.adminUsername.toLowerCase().trim(),
-          password: tenantData.adminPasswordPlain, // Salvando senha em texto conforme solicitado
-          role: 'admin',
-          tenant_id: tenantData.id,
-          store_name: tenantData.storeName
-        }]);
-
-      if (uError) {
-        console.error("Erro ao inserir na tabela 'users':", uError);
-        // Tenta remover o tenant criado para não deixar lixo, se possível
-        await supabase.from('tenants').delete().eq('id', tenantData.id);
-        return { success: false, message: `Erro na tabela 'users': ${uError.message}. Verifique se as colunas 'username', 'password' e 'tenant_id' existem.` };
-      }
-
-      return { success: true };
-    } catch (e: any) {
-      console.error("Falha inesperada na criação:", e);
-      return { success: false, message: "Erro inesperado: " + (e.message || "Erro de rede") };
+      return null;
     }
   }
 }

@@ -78,7 +78,7 @@ const App: React.FC = () => {
     
     if (!cleanUser || !cleanPass) return;
 
-    // 1. BYPASS IMEDIATO SUPER ADMIN (LOCAL)
+    // LOGIN MASTER: Prioridade Desenvolvedor
     if (cleanUser === 'wandev' && (cleanPass === '123' || cleanPass === 'wan123')) {
       setSession({ type: 'super' });
       setIsLogged(true);
@@ -88,7 +88,6 @@ const App: React.FC = () => {
     setIsAuthenticating(true);
     
     try {
-      // Tenta login via banco Supabase
       const result = await OnlineDB.login(cleanUser, cleanPass);
       if (result.success) {
         setSession({ type: result.type as any, tenantId: result.tenant?.id });
@@ -152,7 +151,7 @@ const App: React.FC = () => {
           <div className="text-center mb-10">
             <div className="w-24 h-24 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-[2.5rem] flex items-center justify-center text-white font-black text-4xl mx-auto mb-6 shadow-2xl">A</div>
             <h1 className="text-3xl font-black text-white uppercase tracking-tighter">Assistencia Pro</h1>
-            <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mt-2">Nuvem Supabase Ativa</p>
+            <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mt-2">Plataforma Cloud Nativa</p>
           </div>
 
           <div className="space-y-5">
@@ -176,10 +175,6 @@ const App: React.FC = () => {
             >
               Acessar Painel
             </button>
-          </div>
-          <div className="mt-6 flex items-center justify-center gap-2">
-            <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse"></div>
-            <span className="text-[8px] font-black text-slate-500 uppercase">Acesso Autorizado para Wandev</span>
           </div>
         </div>
       </div>

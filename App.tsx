@@ -267,7 +267,7 @@ const App: React.FC = () => {
                 value={loginForm.username}
                 onChange={e => setLoginForm({...loginForm, username: e.target.value.toLowerCase()})}
                 className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" 
-                placeholder="Ex: wandev ou seu_login"
+                placeholder="Seu usuário"
               />
             </div>
             <div className="space-y-1">
@@ -292,7 +292,6 @@ const App: React.FC = () => {
               {isLoggingIn ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Acessar Sistema'}
             </button>
           </form>
-          <p className="text-center text-[8px] font-black text-slate-600 uppercase tracking-widest">Infraestrutura Wandev Global © 2024</p>
         </div>
       </div>
     );

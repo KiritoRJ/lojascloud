@@ -175,7 +175,7 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
               <label className="text-[9px] font-black uppercase tracking-widest text-blue-200 ml-4">Usuário para Login</label>
               <input 
                 value={formData.username} 
-                onChange={e => setFormData({...formData, username: e.target.value})}
+                onChange={e => setFormData({...formData, username: e.target.value.toLowerCase()})}
                 placeholder="Ex: joao_adm" 
                 className="w-full bg-white/10 border border-white/10 rounded-2xl p-5 font-bold outline-none text-sm" 
               />

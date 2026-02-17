@@ -182,25 +182,30 @@ export class OnlineDB {
         .select('*')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false });
+      
       if (error) throw error;
+      
       return (data || []).map(d => ({
         id: d.id,
         customerName: d.customer_name,
         phoneNumber: d.phone_number,
         address: d.address,
-        device_brand: d.device_brand,
-        device_model: d.device_model,
+        deviceBrand: d.device_brand,
+        deviceModel: d.device_model,
         defect: d.defect,
-        repair_details: d.repair_details || '', 
-        partsCost: Number(d.parts_cost),
-        serviceCost: Number(d.service_cost),
-        total: Number(d.total),
+        repairDetails: d.repair_details || '', 
+        partsCost: Number(d.parts_cost || 0),
+        serviceCost: Number(d.service_cost || 0),
+        total: Number(d.total || 0),
         status: d.status,
         photos: d.photos || [],
         finishedPhotos: d.finished_photos || [], 
         date: d.created_at
       }));
-    } catch (e) { return []; }
+    } catch (e) { 
+      console.error("Erro ao buscar ordens do Supabase:", e);
+      return []; 
+    }
   }
 
   static async fetchProducts(tenantId: string) {
@@ -211,16 +216,21 @@ export class OnlineDB {
         .select('*')
         .eq('tenant_id', tenantId)
         .order('id', { ascending: false });
+      
       if (error) throw error;
+      
       return (data || []).map(d => ({
         id: d.id,
         name: d.name,
         photo: d.photo,
-        cost_price: Number(d.cost_price),
-        sale_price: Number(d.sale_price),
-        quantity: Number(d.quantity)
+        costPrice: Number(d.cost_price || 0),
+        salePrice: Number(d.sale_price || 0),
+        quantity: Number(d.quantity || 0)
       }));
-    } catch (e) { return []; }
+    } catch (e) { 
+      console.error("Erro ao buscar produtos do Supabase:", e);
+      return []; 
+    }
   }
 
   static async upsertOrders(tenantId: string, orders: any[]) {
@@ -236,7 +246,7 @@ export class OnlineDB {
         device_model: os.deviceModel,
         defect: os.defect,
         repair_details: os.repairDetails, 
-        parts_cost: os.parts_cost,
+        parts_cost: os.partsCost,
         service_cost: os.serviceCost,
         total: os.total,
         status: os.status,
@@ -245,8 +255,12 @@ export class OnlineDB {
         created_at: os.date || new Date().toISOString()
       }));
       const { error } = await supabase.from('service_orders').upsert(payload, { onConflict: 'id' });
-      return { success: !error };
-    } catch (e) { return { success: false }; }
+      if (error) throw error;
+      return { success: true };
+    } catch (e) { 
+      console.error("Erro ao salvar ordens no Supabase:", e);
+      return { success: false }; 
+    }
   }
 
   static async upsertProducts(tenantId: string, products: any[]) {
@@ -262,8 +276,12 @@ export class OnlineDB {
         quantity: p.quantity
       }));
       const { error } = await supabase.from('products').upsert(payload, { onConflict: 'id' });
-      return { success: !error };
-    } catch (e) { return { success: false }; }
+      if (error) throw error;
+      return { success: true };
+    } catch (e) { 
+      console.error("Erro ao salvar produtos no Supabase:", e);
+      return { success: false }; 
+    }
   }
 
   static async syncPush(tenantId: string, storeKey: string, data: any) {
@@ -309,7 +327,6 @@ export class OnlineDB {
 
   static async deleteRemoteUser(id: string) {
     try {
-      // Usamos a mesma estrutura que funciona para deletar Tenant (Empresa)
       const { error } = await supabase
         .from('users')
         .delete()

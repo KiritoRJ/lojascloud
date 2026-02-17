@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   storeAddress: '',
   storePhone: '',
   logoUrl: null,
-  users: [], // Vazio por padrão, será populado pelo banco
+  users: [],
   isConfigured: true,
   themePrimary: '#2563eb',
   themeSidebar: '#0f172a',
@@ -77,6 +77,7 @@ const App: React.FC = () => {
   }, []);
 
   const loadData = useCallback(async (tenantId: string) => {
+    console.log("Iniciando sincronização completa para:", tenantId);
     try {
       const [cloudSettings, cloudOrders, cloudProducts, cloudSales, cloudUsers] = await Promise.all([
         OnlineDB.syncPull(tenantId, 'settings'),
@@ -86,32 +87,39 @@ const App: React.FC = () => {
         OnlineDB.fetchUsers(tenantId)
       ]);
 
-      const localSettings = await getData('settings', tenantId);
+      let finalSettings = cloudSettings || await getData('settings', tenantId) || DEFAULT_SETTINGS;
+      finalSettings = { ...finalSettings, users: cloudUsers || [] };
 
-      let finalSettings = DEFAULT_SETTINGS;
-      if (cloudSettings) {
-        finalSettings = { ...cloudSettings, users: cloudUsers };
-      } else if (localSettings) {
-        finalSettings = { ...localSettings, users: cloudUsers };
-      }
-
+      // Atualiza Estados do React
       setSettings(finalSettings);
       setOrders(cloudOrders || []);
       setProducts(cloudProducts || []);
       setSales(cloudSales || []);
       setIsCloudConnected(true);
 
-      // Sincroniza local se necessário
-      await saveData('settings', tenantId, finalSettings);
+      // CRITICAL: Salva no banco local (IndexedDB) para garantir que outros dispositivos fiquem iguais
+      await Promise.all([
+        saveData('settings', tenantId, finalSettings),
+        saveData('orders', tenantId, cloudOrders || []),
+        saveData('products', tenantId, cloudProducts || []),
+        saveData('sales', tenantId, cloudSales || [])
+      ]);
       
+      console.log("Sincronização concluída com sucesso.");
     } catch (e) {
-      console.error("Erro no carregamento de dados:", e);
+      console.error("Erro no carregamento de dados da nuvem:", e);
       setIsCloudConnected(false);
+      
+      // Fallback para dados locais se falhar a conexão
       const localSettings = await getData('settings', tenantId);
+      const localOrders = await getData('orders', tenantId);
+      const localProducts = await getData('products', tenantId);
+      const localSales = await getData('sales', tenantId);
+
       setSettings(localSettings || DEFAULT_SETTINGS);
-      setOrders(await getData('orders', tenantId) || []);
-      setProducts(await getData('products', tenantId) || []);
-      setSales(await getData('sales', tenantId) || []);
+      setOrders(localOrders || []);
+      setProducts(localProducts || []);
+      setSales(localSales || []);
     }
   }, []);
 
@@ -176,7 +184,6 @@ const App: React.FC = () => {
   const saveSettings = async (newSettings: AppSettings) => {
     setSettings(newSettings);
     if (session?.tenantId) {
-      // O syncPush agora remove os usuários do JSON antes de subir para cloud_data
       await saveData('settings', session.tenantId, newSettings);
       await OnlineDB.syncPush(session.tenantId, 'settings', newSettings);
     }

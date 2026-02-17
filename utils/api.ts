@@ -12,8 +12,6 @@ export class OnlineDB {
     const cleanPass = passwordPlain.trim();
 
     try {
-      // Busca usuário na tabela global de usuários do Supabase
-      // Agora o Super ADM também deve estar cadastrado nesta tabela com role 'super'
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -39,9 +37,52 @@ export class OnlineDB {
     }
   }
 
+  static async verifyAdminPassword(tenantId: string, passwordPlain: string) {
+    if (!tenantId) return { success: false, message: "ID da loja não encontrado." };
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'admin')
+        .eq('password', passwordPlain.trim())
+        .maybeSingle();
+      
+      if (error) throw error;
+      if (!data) return { success: false, message: "Senha de administrador incorreta." };
+      
+      return { success: true };
+    } catch (err: any) {
+        return { success: false, message: "Erro de comunicação com o banco de dados." };
+    }
+  }
+
+  static async fetchUsers(tenantId: string) {
+    if (!tenantId) return [];
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('role', { ascending: true });
+      
+      if (error) throw error;
+      return (data || []).map(u => ({
+        id: u.id,
+        name: u.name,
+        username: u.username,
+        role: u.role,
+        photo: u.photo,
+        password: u.password,
+        specialty: u.specialty
+      }));
+    } catch (e) {
+      return [];
+    }
+  }
+
   static async createTenant(tenantData: any) {
     try {
-      // 1. Criar a Loja (Tenant)
       const { error: tError } = await supabase
         .from('tenants')
         .insert([{
@@ -51,7 +92,6 @@ export class OnlineDB {
         }]);
       if (tError) throw tError;
 
-      // 2. Criar o Administrador da Loja
       const { error: uError } = await supabase
         .from('users')
         .insert([{
@@ -86,19 +126,21 @@ export class OnlineDB {
   }
 
   static async upsertUser(tenantId: string, storeName: string, user: any) {
-    if (!tenantId) return { success: false, message: "Tenant ID ausente." };
+    if (!tenantId) return { success: false, message: "ID da Loja ausente." };
     try {
-      const username = (user.username || user.name.toLowerCase().replace(/\s+/g, '_')).trim().toLowerCase();
+      const baseName = user.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '_');
+      const username = (user.username || baseName + '_' + Math.random().toString(36).substr(2, 4)).trim().toLowerCase();
       
-      const payload = {
+      const payload: any = {
         id: user.id,
         username: username,
-        password: user.password ? user.password.trim() : '123',
         name: user.name,
         role: user.role,
         tenant_id: tenantId,
         store_name: storeName,
-        photo: user.photo
+        photo: user.photo,
+        password: user.password || '123456',
+        specialty: user.specialty
       };
 
       const { error } = await supabase
@@ -146,10 +188,10 @@ export class OnlineDB {
         customerName: d.customer_name,
         phoneNumber: d.phone_number,
         address: d.address,
-        deviceBrand: d.device_brand,
-        deviceModel: d.device_model,
+        device_brand: d.device_brand,
+        device_model: d.device_model,
         defect: d.defect,
-        repairDetails: d.repair_details || '', 
+        repair_details: d.repair_details || '', 
         partsCost: Number(d.parts_cost),
         serviceCost: Number(d.service_cost),
         total: Number(d.total),
@@ -174,8 +216,8 @@ export class OnlineDB {
         id: d.id,
         name: d.name,
         photo: d.photo,
-        costPrice: Number(d.cost_price),
-        salePrice: Number(d.sale_price),
+        cost_price: Number(d.cost_price),
+        sale_price: Number(d.sale_price),
         quantity: Number(d.quantity)
       }));
     } catch (e) { return []; }
@@ -194,7 +236,7 @@ export class OnlineDB {
         device_model: os.deviceModel,
         defect: os.defect,
         repair_details: os.repairDetails, 
-        parts_cost: os.partsCost,
+        parts_cost: os.parts_cost,
         service_cost: os.serviceCost,
         total: os.total,
         status: os.status,
@@ -227,12 +269,18 @@ export class OnlineDB {
   static async syncPush(tenantId: string, storeKey: string, data: any) {
     if (!tenantId) return { success: false };
     try {
+      let finalData = data;
+      if (storeKey === 'settings') {
+        const { users, ...cleanSettings } = data;
+        finalData = cleanSettings;
+      }
+
       const { error } = await supabase
         .from('cloud_data')
         .upsert({ 
           tenant_id: tenantId, 
           store_key: storeKey, 
-          data_json: data, 
+          data_json: finalData, 
           updated_at: new Date().toISOString() 
         }, { onConflict: 'tenant_id,store_key' });
       return { success: !error };
@@ -261,9 +309,17 @@ export class OnlineDB {
 
   static async deleteRemoteUser(id: string) {
     try {
-      const { error } = await supabase.from('users').delete().eq('id', id);
+      // Usamos a mesma estrutura que funciona para deletar Tenant (Empresa)
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', id);
+
       if (error) throw error;
       return { success: true };
-    } catch (e) { return { success: false }; }
+    } catch (e: any) {
+      console.error("Erro Delete User:", e);
+      return { success: false, message: e.message };
+    }
   }
 }

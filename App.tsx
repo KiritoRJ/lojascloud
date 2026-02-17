@@ -18,9 +18,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   storeAddress: '',
   storePhone: '',
   logoUrl: null,
-  users: [
-    { id: 'admin_1', name: 'Administrador', role: 'admin', photo: null, password: '123' }
-  ],
+  users: [], // Vazio por padrão, será populado pelo banco
   isConfigured: true,
   themePrimary: '#2563eb',
   themeSidebar: '#0f172a',
@@ -35,7 +33,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const App: React.FC = () => {
-  const [session, setSession] = useState<{ isLoggedIn: boolean; type: 'super' | 'admin' | 'tecnico' | 'vendedor'; tenantId?: string; user?: User } | null>(null);
+  const [session, setSession] = useState<{ isLoggedIn: boolean; type: 'super' | 'admin' | 'colaborador'; tenantId?: string; user?: User } | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -80,29 +78,32 @@ const App: React.FC = () => {
 
   const loadData = useCallback(async (tenantId: string) => {
     try {
-      const [cloudSettings, cloudOrders, cloudProducts, cloudSales] = await Promise.all([
+      const [cloudSettings, cloudOrders, cloudProducts, cloudSales, cloudUsers] = await Promise.all([
         OnlineDB.syncPull(tenantId, 'settings'),
         OnlineDB.fetchOrders(tenantId),
         OnlineDB.fetchProducts(tenantId),
-        OnlineDB.syncPull(tenantId, 'sales')
+        OnlineDB.syncPull(tenantId, 'sales'),
+        OnlineDB.fetchUsers(tenantId)
       ]);
 
       const localSettings = await getData('settings', tenantId);
 
+      let finalSettings = DEFAULT_SETTINGS;
       if (cloudSettings) {
-        setSettings(cloudSettings);
+        finalSettings = { ...cloudSettings, users: cloudUsers };
       } else if (localSettings) {
-        setSettings(localSettings);
-      } else {
-        setSettings(DEFAULT_SETTINGS);
-        await saveData('settings', tenantId, DEFAULT_SETTINGS);
-        await OnlineDB.syncPush(tenantId, 'settings', DEFAULT_SETTINGS);
+        finalSettings = { ...localSettings, users: cloudUsers };
       }
 
+      setSettings(finalSettings);
       setOrders(cloudOrders || []);
       setProducts(cloudProducts || []);
       setSales(cloudSales || []);
       setIsCloudConnected(true);
+
+      // Sincroniza local se necessário
+      await saveData('settings', tenantId, finalSettings);
+      
     } catch (e) {
       console.error("Erro no carregamento de dados:", e);
       setIsCloudConnected(false);
@@ -175,6 +176,7 @@ const App: React.FC = () => {
   const saveSettings = async (newSettings: AppSettings) => {
     setSettings(newSettings);
     if (session?.tenantId) {
+      // O syncPush agora remove os usuários do JSON antes de subir para cloud_data
       await saveData('settings', session.tenantId, newSettings);
       await OnlineDB.syncPush(session.tenantId, 'settings', newSettings);
     }
@@ -228,10 +230,8 @@ const App: React.FC = () => {
       setSession({ ...session, user, type: newType });
       localStorage.setItem('currentUser_pro', JSON.stringify(user));
 
-      // Filtra as abas permitidas para o novo cargo
       const allowedTabs = navItems.filter(item => item.roles.includes(newType)).map(i => i.id);
       
-      // Se a aba atual não for permitida no novo perfil, volta para 'Ordens'
       if (!allowedTabs.includes(activeTab)) {
         setActiveTab('os');
       }
@@ -317,11 +317,11 @@ const App: React.FC = () => {
 
   const currentUser = session.user || settings.users[0];
   const navItems = [
-    { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'tecnico', 'vendedor'] },
+    { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'] },
     { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'] },
-    { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'vendedor'] },
+    { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'] },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'] },
-    { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'tecnico', 'vendedor'] },
+    { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
   ];
 
   const visibleNavItems = navItems.filter(item => item.roles.includes(currentUser.role));

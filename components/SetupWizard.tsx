@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ShieldCheck, UserPlus, Camera, CheckCircle2, Store, Lock, ArrowRight, User as UserIcon } from 'lucide-center';
+import { ShieldCheck, UserPlus, Camera, CheckCircle2, Store, Lock, ArrowRight, User as UserIcon } from 'lucide-react';
 import { AppSettings, User } from '../types';
 
 interface Props {
@@ -14,7 +14,6 @@ const SetupWizard: React.FC<Props> = ({ onComplete }) => {
   const [adminPass, setAdminPass] = useState('');
   const [adminPhoto, setAdminPhoto] = useState<string | null>(null);
   const [user2Name, setUser2Name] = useState('');
-  const [user2Role, setUser2Role] = useState<'vendedor' | 'tecnico'>('tecnico');
   const [user2Photo, setUser2Photo] = useState<string | null>(null);
   const [showGratitude, setShowGratitude] = useState(false);
 
@@ -40,8 +39,16 @@ const SetupWizard: React.FC<Props> = ({ onComplete }) => {
 
   const handleFinalize = () => {
     const admin: User = { id: 'admin_1', name: adminName, role: 'admin', password: adminPass, photo: adminPhoto };
-    const users = [admin];
-    if (user2Name) { users.push({ id: 'user_2', name: user2Name, role: user2Role, photo: user2Photo }); }
+    const users: User[] = [admin];
+    if (user2Name) { 
+      users.push({ 
+        id: 'user_2', 
+        name: user2Name, 
+        role: 'colaborador', 
+        photo: user2Photo,
+        password: '' // Colaboradores podem ter senha em branco inicialmente
+      }); 
+    }
     
     const initialSettings: AppSettings = {
       storeName: storeName || 'Minha Assistência', 
@@ -159,13 +166,6 @@ const SetupWizard: React.FC<Props> = ({ onComplete }) => {
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nome do Colaborador</label>
                     <input value={user2Name} onChange={(e) => setUser2Name(e.target.value)} placeholder="Ex: Lucas Técnico" className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-emerald-500/20" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Função Principal</label>
-                    <div className="flex gap-2">
-                      <button onClick={() => setUser2Role('tecnico')} className={`flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${user2Role === 'tecnico' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>TÉCNICO</button>
-                      <button onClick={() => setUser2Role('vendedor')} className={`flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${user2Role === 'vendedor' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>VENDEDOR</button>
-                    </div>
                   </div>
                 </div>
 

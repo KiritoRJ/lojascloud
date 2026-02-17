@@ -11,9 +11,10 @@ export interface User {
   id: string;
   name: string;
   username?: string;
-  role: 'admin' | 'vendedor' | 'tecnico';
+  role: 'admin' | 'colaborador';
   password?: string;
   photo: string | null;
+  specialty?: 'Vendedor' | 'Técnico' | 'Outros';
 }
 
 export interface ServiceOrder {

@@ -13,7 +13,6 @@ interface Props {
 const UserManagementTab: React.FC<Props> = ({ settings, setSettings, currentUser, onSwitchProfile }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState<'tecnico' | 'vendedor'>('tecnico');
   const [newPhoto, setNewPhoto] = useState<string | null>(null);
 
   const triggerUpload = () => {
@@ -39,8 +38,9 @@ const UserManagementTab: React.FC<Props> = ({ settings, setSettings, currentUser
     const newUser: User = {
       id: Math.random().toString(36).substr(2, 9),
       name: newName,
-      role: newRole,
-      photo: newPhoto
+      role: 'colaborador',
+      photo: newPhoto,
+      password: ''
     };
     setSettings({ ...settings, users: [...settings.users, newUser] });
     setIsModalOpen(false);
@@ -116,15 +116,8 @@ const UserManagementTab: React.FC<Props> = ({ settings, setSettings, currentUser
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nome Completo</label>
                   <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ex: João Silva" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold uppercase text-sm" />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Cargo</label>
-                  <div className="flex gap-2">
-                    <button onClick={() => setNewRole('tecnico')} className={`flex-1 py-3 rounded-2xl font-bold text-xs ${newRole === 'tecnico' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>TÉCNICO</button>
-                    <button onClick={() => setNewRole('vendedor')} className={`flex-1 py-3 rounded-2xl font-bold text-xs ${newRole === 'vendedor' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>VENDEDOR</button>
-                  </div>
-                </div>
               </div>
-              <button onClick={handleCreateUser} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black shadow-xl shadow-blue-200 active:scale-95 transition-all uppercase text-xs tracking-widest">Criar Perfil</button>
+              <button onClick={handleCreateUser} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black shadow-xl shadow-blue-200 active:scale-95 transition-all uppercase text-xs tracking-widest">Criar Perfil de Colaborador</button>
             </div>
           </div>
         </div>

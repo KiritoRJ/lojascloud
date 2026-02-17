@@ -204,7 +204,8 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
       drawText("DEFEITO RELATADO", currentY, 7.5, true, 'left');
       currentY += 22 * scale;
       ctx.font = `${500} ${9 * scale}px "Inter", sans-serif`;
-      const defectLines = order.defect.match(/.{1,45}/g) || [];
+      // Fix: Cast the result of match() to string[] to avoid 'never' type error when empty
+      const defectLines = (order.defect.match(/.{1,45}/g) || []) as string[];
       defectLines.forEach(line => {
         ctx.fillText(line.toUpperCase(), 25 * scale, currentY);
         currentY += 16 * scale;
@@ -214,7 +215,8 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
       if (order.repairDetails) {
         drawText("SERVIÇO REALIZADO", currentY, 7.5, true, 'left');
         currentY += 22 * scale;
-        const repairLines = order.repairDetails.match(/.{1,45}/g) || [];
+        // Fix: Cast the result of match() to string[] to avoid 'never' type error when empty
+        const repairLines = (order.repairDetails.match(/.{1,45}/g) || []) as string[];
         repairLines.forEach(line => {
           ctx.fillText(line.toUpperCase(), 25 * scale, currentY);
           currentY += 16 * scale;
@@ -265,7 +267,8 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
         drawText("TERMO DE GARANTIA", currentY, 8, true, 'left');
         currentY += 24 * scale;
         ctx.font = `${500} ${7.5 * scale}px "Inter", sans-serif`;
-        const warrantyLines = settings.pdfWarrantyText.match(/.{1,60}/g) || [];
+        // Fix: Cast the result of match() to string[] to avoid 'never' type error when empty
+        const warrantyLines = (settings.pdfWarrantyText.match(/.{1,60}/g) || []) as string[];
         warrantyLines.forEach(line => {
           ctx.fillText(line.toUpperCase(), 25 * scale, currentY);
           currentY += 13 * scale;
@@ -398,7 +401,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
 
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Defeito Relatado</label>
-                  <textarea name="defect" value={formData.defect} onChange={handleInputChange} placeholder="Descreva o problema..." className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm h-24 resize-none" />
+                  <textarea name="defect" value={formData.defect} onChange={handleInputChange} placeholder="Descreva o problem..." className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm h-24 resize-none" />
                 </div>
 
                 <div className="space-y-1">

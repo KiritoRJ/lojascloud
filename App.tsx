@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, Wallet, Settings as SettingsIcon, Package, ShoppingCart, LogOut, RefreshCw, Globe, Loader2 } from 'lucide-react';
+import { ClipboardList, Wallet, Settings as SettingsIcon, Package, ShoppingCart, LogOut, RefreshCw, Globe, Loader2, UserCircle2 } from 'lucide-react';
 import { ServiceOrder, AppSettings, Product, Sale, User } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import FinanceTab from './components/FinanceTab';
@@ -56,7 +56,7 @@ const App: React.FC = () => {
       if (localSales) setSales(localSales);
       if (localConfig) {
         setSettings(localConfig);
-        setCurrentUser(localConfig.users[0]);
+        if (!currentUser) setCurrentUser(localConfig.users[0]);
       }
 
       const remoteOrders = await OnlineDB.fetchOrders(tid);
@@ -80,7 +80,7 @@ const App: React.FC = () => {
         if (remoteConfig) {
           setSettings(remoteConfig);
           await saveData('settings', `${tid}_config`, remoteConfig);
-          setCurrentUser(remoteConfig.users[0]);
+          if (!currentUser) setCurrentUser(remoteConfig.users[0]);
         }
       }
 
@@ -143,6 +143,14 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setIsLogged(false); setSession({ type: null }); setSettings(null);
     setOrders([]); setProducts([]); setSales([]); setLoginUser(''); setLoginPass('');
+    setCurrentUser(null);
+  };
+
+  const handleSwitchProfile = (user: User) => {
+    setCurrentUser(user);
+    if (user.role !== 'admin' && (activeTab === 'financeiro' || activeTab === 'config' || activeTab === 'estoque')) {
+      setActiveTab('os');
+    }
   };
 
   const saveOrders = async (newOrders: ServiceOrder[]) => {
@@ -209,6 +217,22 @@ const App: React.FC = () => {
     }
   };
 
+  const getNavItems = () => {
+    const items = [
+      { id: 'os', label: 'Ordens', icon: ClipboardList, color: 'var(--primary)' },
+      { id: 'estoque', label: 'Estoque', icon: Package, color: '#f59e0b' },
+      { id: 'vendas', label: 'Vendas', icon: ShoppingCart, color: '#10b981' },
+      { id: 'financeiro', label: 'Financeiro', icon: Wallet, color: '#8b5cf6' },
+      { id: 'config', label: 'Ajustes', icon: SettingsIcon, color: '#64748b' }
+    ];
+
+    if (currentUser?.role === 'admin') return items;
+    
+    // Vendedores e Técnicos não acessam Estoque, Financeiro nem Ajustes (Configurações Globais)
+    // Eles acessam apenas OS e Vendas. A aba Ajustes (config) aparecerá APENAS para trocar de perfil se necessário.
+    return items.filter(item => item.id !== 'financeiro' && item.id !== 'estoque' && item.id !== 'config');
+  };
+
   if (!isLogged) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
@@ -224,9 +248,9 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-black text-white uppercase tracking-tighter">Assistencia Pro</h1>
           </div>
           <div className="space-y-4">
-            <input value={loginUser} onChange={e => setLoginUser(e.target.value)} className="w-full p-5 bg-white/5 border border-white/10 rounded-[1.5rem] font-bold text-white outline-none text-sm" placeholder="Usuário" />
+            <input value={loginUser} onChange={e => setLoginUser(e.target.value)} className="w-full p-5 bg-white/5 border border-white/10 rounded-[1.5rem] font-bold text-white outline-none text-sm" placeholder="Usuário Administrador" />
             <input type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)} className="w-full p-5 bg-white/5 border border-white/10 rounded-[1.5rem] font-bold text-white outline-none text-sm" placeholder="Senha" />
-            <button onClick={handleLogin} disabled={isAuthenticating} className="w-full py-5 bg-blue-600 text-white rounded-[1.5rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl active:scale-95 disabled:opacity-50 mt-4">Login</button>
+            <button onClick={handleLogin} disabled={isAuthenticating} className="w-full py-5 bg-blue-600 text-white rounded-[1.5rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl active:scale-95 disabled:opacity-50 mt-4">Login Master</button>
           </div>
         </div>
       </div>
@@ -235,7 +259,9 @@ const App: React.FC = () => {
 
   if (session.type === 'super') return <SuperAdminDashboard onLogout={handleLogout} />;
   
-  if (session.type === 'admin' && settings) {
+  if (session.type === 'admin' && settings && currentUser) {
+    const navItems = getNavItems();
+
     return (
       <div className="min-h-screen flex flex-col pb-20 md:pb-0 md:pl-72 transition-colors duration-500" style={{ backgroundColor: 'var(--bg-app)' }}>
         <header className="fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-xl border-b border-slate-200/50 z-40 px-6 flex items-center justify-between md:left-72">
@@ -249,27 +275,36 @@ const App: React.FC = () => {
                 {isSyncing ? <RefreshCw className="animate-spin" size={18} /> : <Globe size={18} />}
               </div>
             )}
-            <h1 className="font-black text-slate-800 text-[10px] md:text-xs uppercase tracking-tight truncate">{settings.storeName}</h1>
+            <div>
+               <h1 className="font-black text-slate-800 text-[10px] md:text-xs uppercase tracking-tight truncate">{settings.storeName}</h1>
+               <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{currentUser.name} ({currentUser.role})</p>
+            </div>
           </div>
-          <button onClick={handleLogout} className="p-3 text-slate-400 bg-white border border-slate-100 rounded-2xl active:scale-90"><LogOut size={18} /></button>
+          
+          <div className="flex items-center gap-2">
+            {currentUser.role !== 'admin' && (
+              <button 
+                onClick={() => setActiveTab('config')} 
+                className="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-600 rounded-xl font-black text-[8px] uppercase tracking-widest active:scale-95"
+              >
+                <UserCircle2 size={14} /> Trocar Perfil
+              </button>
+            )}
+            <button onClick={handleLogout} className="p-3 text-slate-400 bg-white border border-slate-100 rounded-2xl active:scale-90"><LogOut size={18} /></button>
+          </div>
         </header>
 
         <aside className="hidden md:flex fixed inset-y-0 left-0 w-72 flex-col z-50 p-6" style={{ backgroundColor: 'var(--sidebar)' }}>
           <div className="flex flex-col h-full bg-white/5 backdrop-blur-md rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
             <div className="p-10 text-center border-b border-white/5">
               <div className="w-16 h-16 bg-white/10 rounded-[1.5rem] border border-white/20 flex items-center justify-center overflow-hidden mx-auto mb-4">
-                {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <div className="font-black text-white text-2xl">{settings.storeName.charAt(0)}</div>}
+                {currentUser.photo ? <img src={currentUser.photo} className="w-full h-full object-cover" /> : <div className="font-black text-white text-2xl">{currentUser.name.charAt(0)}</div>}
               </div>
-              <p className="font-black text-white uppercase text-[10px] tracking-[0.2em] opacity-60">Admin Panel</p>
+              <p className="font-black text-white uppercase text-[10px] tracking-[0.2em]">{currentUser.name}</p>
+              <p className="text-[8px] font-bold text-white/40 uppercase tracking-widest mt-1">{currentUser.role}</p>
             </div>
             <nav className="p-6 space-y-3 flex-1">
-              {[
-                { id: 'os', label: 'Ordens', icon: ClipboardList, color: 'var(--primary)' },
-                { id: 'estoque', label: 'Estoque', icon: Package, color: '#f59e0b' },
-                { id: 'vendas', label: 'Vendas', icon: ShoppingCart, color: '#10b981' },
-                { id: 'financeiro', label: 'Financeiro', icon: Wallet, color: '#8b5cf6' },
-                { id: 'config', label: 'Ajustes', icon: SettingsIcon, color: '#64748b' }
-              ].map(item => (
+              {navItems.map(item => (
                 <button 
                   key={item.id} 
                   onClick={() => setActiveTab(item.id as any)} 
@@ -280,6 +315,15 @@ const App: React.FC = () => {
                   {activeTab === item.id && <div className="absolute right-4 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />}
                 </button>
               ))}
+              {currentUser.role !== 'admin' && (
+                 <button 
+                  onClick={() => setActiveTab('config')} 
+                  className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all relative ${activeTab === 'config' ? 'bg-white text-slate-900 shadow-xl' : 'text-white/40 hover:bg-white/5'}`}
+                >
+                  <UserCircle2 size={20} />
+                  Perfis
+                </button>
+              )}
             </nav>
           </div>
         </aside>
@@ -289,17 +333,11 @@ const App: React.FC = () => {
           {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} />}
           {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales} setSales={saveSales} settings={settings} currentUser={currentUser} />}
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} />}
-          {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser!} onSwitchProfile={setCurrentUser} />}
+          {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} />}
         </main>
 
         <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-2xl border-t border-slate-100 flex items-center justify-around p-3 md:hidden z-40 pb-8 rounded-t-[2.5rem] shadow-[0_-20px_40px_rgba(0,0,0,0.05)]">
-           {[
-             { id: 'os', icon: ClipboardList },
-             { id: 'estoque', icon: Package },
-             { id: 'vendas', icon: ShoppingCart },
-             { id: 'financeiro', icon: Wallet },
-             { id: 'config', icon: SettingsIcon }
-           ].map(item => (
+           {navItems.map(item => (
              <button 
                key={item.id}
                onClick={() => setActiveTab(item.id as any)} 
@@ -309,6 +347,15 @@ const App: React.FC = () => {
                <item.icon size={24} />
              </button>
            ))}
+           {currentUser.role !== 'admin' && (
+             <button 
+               onClick={() => setActiveTab('config')} 
+               className={`p-4 rounded-2xl transition-all duration-300 ${activeTab === 'config' ? 'text-white shadow-lg -translate-y-2' : 'text-slate-300'}`}
+               style={{ backgroundColor: activeTab === 'config' ? 'var(--active-tab)' : 'transparent' }}
+             >
+               <UserCircle2 size={24} />
+             </button>
+           )}
         </nav>
       </div>
     );

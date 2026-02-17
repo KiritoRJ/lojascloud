@@ -108,8 +108,10 @@ export class OnlineDB {
   static async deleteOS(osId: string) {
     try {
       const { error } = await supabase.from('service_orders').delete().eq('id', osId);
+      if (error) console.error("Erro Supabase OS Delete:", error);
       return { success: !error, error };
     } catch (e) {
+      console.error("Exceção ao deletar OS:", e);
       return { success: false, error: e };
     }
   }
@@ -168,8 +170,10 @@ export class OnlineDB {
   static async deleteProduct(productId: string) {
     try {
       const { error } = await supabase.from('products').delete().eq('id', productId);
+      if (error) console.error("Erro Supabase Product Delete:", error);
       return { success: !error, error };
     } catch (e) {
+      console.error("Exceção ao deletar Produto:", e);
       return { success: false, error: e };
     }
   }
@@ -188,6 +192,7 @@ export class OnlineDB {
         name: d.name || '',
         photo: d.photo || null,
         costPrice: Number(d.cost_price) || 0,
+        // Fixed: Mapped DB column 'sale_price' to 'salePrice' to match Product interface
         salePrice: Number(d.sale_price) || 0,
         quantity: Number(d.quantity) || 0
       }));

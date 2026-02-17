@@ -16,6 +16,7 @@ const App: React.FC = () => {
   const [isLogged, setIsLogged] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isCloudConnected, setIsCloudConnected] = useState(true);
   
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
@@ -26,6 +27,15 @@ const App: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+
+  useEffect(() => {
+    if (settings) {
+      document.documentElement.style.setProperty('--primary', settings.themePrimary || '#2563eb');
+      document.documentElement.style.setProperty('--sidebar', settings.themeSidebar || '#0f172a');
+      document.documentElement.style.setProperty('--bg-app', settings.themeBg || '#f8fafc');
+      document.documentElement.style.setProperty('--active-tab', settings.themeBottomTab || '#0f172a');
+    }
+  }, [settings]);
 
   useEffect(() => {
     if (isLogged && session.type === 'admin' && session.tenantId) {
@@ -49,40 +59,58 @@ const App: React.FC = () => {
         setCurrentUser(localConfig.users[0]);
       }
 
-      // 1. Sincronizar Ordens (Tabela Dedicada)
       const remoteOrders = await OnlineDB.fetchOrders(tid);
-      if (remoteOrders !== null) {
+      if (remoteOrders === null) {
+        setIsCloudConnected(false);
+      } else {
+        setIsCloudConnected(true);
         setOrders(remoteOrders);
         await saveData('orders', `${tid}_orders`, remoteOrders);
+
+        const remoteProducts = await OnlineDB.fetchProducts(tid);
+        if (remoteProducts !== null) {
+          setProducts(remoteProducts);
+          await saveData('products', `${tid}_products`, remoteProducts);
+        }
+
+        const remoteSales = await OnlineDB.syncPull(tid, 'sales');
+        const remoteConfig = await OnlineDB.syncPull(tid, 'settings');
+
+        if (remoteSales) { setSales(remoteSales); await saveData('sales', `${tid}_sales`, remoteSales); }
+        if (remoteConfig) {
+          setSettings(remoteConfig);
+          await saveData('settings', `${tid}_config`, remoteConfig);
+          setCurrentUser(remoteConfig.users[0]);
+        }
       }
 
-      // 2. Sincronizar Produtos (Tabela Dedicada - NOVO)
-      const remoteProducts = await OnlineDB.fetchProducts(tid);
-      if (remoteProducts !== null) {
-        setProducts(remoteProducts);
-        await saveData('products', `${tid}_products`, remoteProducts);
-      }
-
-      // 3. Outros dados (JSON)
-      const remoteSales = await OnlineDB.syncPull(tid, 'sales');
-      const remoteConfig = await OnlineDB.syncPull(tid, 'settings');
-
-      if (remoteSales) { setSales(remoteSales); await saveData('sales', `${tid}_sales`, remoteSales); }
-      if (remoteConfig) {
-        setSettings(remoteConfig);
-        await saveData('settings', `${tid}_config`, remoteConfig);
-        setCurrentUser(remoteConfig.users[0]);
-      } else if (!localConfig) {
+      if (!localConfig && isCloudConnected) {
         const defaultSettings: AppSettings = {
           storeName: 'Minha Loja', logoUrl: null, users: [{id:'adm_1', name: 'Administrador', role: 'admin', photo: null}], isConfigured: true,
+          themePrimary: '#2563eb', themeSidebar: '#0f172a', themeBg: '#f8fafc', themeBottomTab: '#0f172a',
           pdfWarrantyText: "Garantia de 90 dias...", pdfFontSize: 8, pdfFontFamily: 'helvetica',
-          pdfPaperWidth: 80, pdfTextColor: '#000000', pdfBgColor: '#FFFFFF'
+          pdfPaperWidth: 80, pdfTextColor: '#000000', pdfBgColor: '#FFFFFF',
+          receiptHeaderSubtitle: 'ASSISTÊNCIA TÉCNICA ESPECIALIZADA',
+          receiptLabelProtocol: 'PROTOCOLO',
+          receiptLabelDate: 'DATA',
+          receiptLabelClientSection: 'CLIENTE',
+          receiptLabelClientName: 'NOME',
+          receiptLabelClientPhone: 'FONE',
+          receiptLabelClientAddress: 'ENDEREÇO',
+          receiptLabelServiceSection: 'SERVIÇOS REALIZADOS NO APARELHO',
+          receiptLabelDevice: 'APARELHO',
+          receiptLabelDefect: 'DEFEITO',
+          receiptLabelRepair: 'REPARO',
+          receiptLabelTotal: 'VALOR TOTAL DO SERVIÇO',
+          receiptLabelEntryPhotos: 'FOTOS DE ENTRADA',
+          receiptLabelExitPhotos: 'FOTOS DE SAÍDA'
         };
         setSettings(defaultSettings);
         setCurrentUser(defaultSettings.users[0]);
       }
     } catch (e) {
       console.error("Erro na sincronização:", e);
+      setIsCloudConnected(false);
     } finally {
       setIsSyncing(false);
     }
@@ -92,113 +120,113 @@ const App: React.FC = () => {
     const cleanUser = loginUser.trim().toLowerCase();
     const cleanPass = loginPass.trim();
     if (!cleanUser || !cleanPass) return;
-
     if (cleanUser === 'wandev' && (cleanPass === '123' || cleanPass === 'wan123')) {
-      setSession({ type: 'super' });
-      setIsLogged(true);
-      return;
+      setSession({ type: 'super' }); setIsLogged(true); return;
     }
-
     setIsAuthenticating(true);
     try {
       const result = await OnlineDB.login(cleanUser, cleanPass);
       if (result.success) {
         setSession({ type: result.type as any, tenantId: result.tenant?.id });
         setIsLogged(true);
-      } else {
-        alert(result.message);
+        setIsCloudConnected(true);
+      } else { 
+        alert(result.message); 
       }
-    } catch (err) {
-      alert("Erro ao conectar com o banco de dados.");
-    } finally {
-      setIsAuthenticating(false);
+    } catch (err) { 
+      alert("Erro ao conectar com o banco de dados."); 
+    } finally { 
+      setIsAuthenticating(false); 
     }
   };
 
   const handleLogout = () => {
-    setIsLogged(false);
-    setSession({ type: null });
-    setSettings(null);
-    setOrders([]);
-    setProducts([]);
-    setSales([]);
-    setLoginUser('');
-    setLoginPass('');
+    setIsLogged(false); setSession({ type: null }); setSettings(null);
+    setOrders([]); setProducts([]); setSales([]); setLoginUser(''); setLoginPass('');
   };
 
   const saveOrders = async (newOrders: ServiceOrder[]) => {
-    const oldOrders = [...orders];
     setOrders(newOrders);
     await saveData('orders', `${session.tenantId}_orders`, newOrders);
     if (session.tenantId) {
-      const changed = newOrders.find(no => {
-        const old = oldOrders.find(oo => oo.id === no.id);
-        return !old || JSON.stringify(old) !== JSON.stringify(no);
-      });
-      if (changed) await OnlineDB.upsertOS(session.tenantId, changed);
+      const res = await OnlineDB.syncPush(session.tenantId, 'orders', newOrders);
+      setIsCloudConnected(res.success);
     }
   };
 
   const removeOrder = async (orderId: string) => {
-    if (!confirm('Deseja realmente excluir esta O.S.?')) return;
     const newOrders = orders.filter(o => o.id !== orderId);
     setOrders(newOrders);
-    await saveData('orders', `${session.tenantId}_orders`, newOrders);
-    if (session.tenantId) await OnlineDB.deleteOS(orderId);
+    try {
+      await saveData('orders', `${session.tenantId}_orders`, newOrders);
+      if (session.tenantId) {
+        const result = await OnlineDB.deleteOS(orderId);
+        setIsCloudConnected(result.success);
+      }
+    } catch (e) {
+      setIsCloudConnected(false);
+    }
   };
 
   const saveProducts = async (newProducts: Product[]) => {
-    const oldProducts = [...products];
     setProducts(newProducts);
     await saveData('products', `${session.tenantId}_products`, newProducts);
     if (session.tenantId) {
-      const changed = newProducts.find(np => {
-        const old = oldProducts.find(op => op.id === np.id);
-        return !old || JSON.stringify(old) !== JSON.stringify(np);
-      });
-      if (changed) await OnlineDB.upsertProduct(session.tenantId, changed);
+      const res = await OnlineDB.syncPush(session.tenantId, 'products', newProducts);
+      setIsCloudConnected(res.success);
     }
   };
 
   const removeProduct = async (productId: string) => {
-    if (!confirm('Deseja remover este item do estoque?')) return;
     const newProducts = products.filter(p => p.id !== productId);
     setProducts(newProducts);
-    await saveData('products', `${session.tenantId}_products`, newProducts);
-    if (session.tenantId) await OnlineDB.deleteProduct(productId);
+    try {
+      await saveData('products', `${session.tenantId}_products`, newProducts);
+      if (session.tenantId) {
+        const result = await OnlineDB.deleteProduct(productId);
+        setIsCloudConnected(result.success);
+      }
+    } catch (e) {
+      setIsCloudConnected(false);
+    }
   };
 
-  const saveSales = (newSales: Sale[]) => {
+  const saveSales = async (newSales: Sale[]) => {
     setSales(newSales);
-    saveData('sales', `${session.tenantId}_sales`, newSales);
-    if (session.tenantId) OnlineDB.syncPush(session.tenantId, 'sales', newSales);
+    await saveData('sales', `${session.tenantId}_sales`, newSales);
+    if (session.tenantId) {
+      const res = await OnlineDB.syncPush(session.tenantId, 'sales', newSales);
+      setIsCloudConnected(res.success);
+    }
   };
 
-  const saveSettings = (newSettings: AppSettings) => {
+  const saveSettings = async (newSettings: AppSettings) => {
     setSettings(newSettings);
-    saveData('settings', `${session.tenantId}_config`, newSettings);
-    if (session.tenantId) OnlineDB.syncPush(session.tenantId, 'settings', newSettings);
+    await saveData('settings', `${session.tenantId}_config`, newSettings);
+    if (session.tenantId) {
+      const res = await OnlineDB.syncPush(session.tenantId, 'settings', newSettings);
+      setIsCloudConnected(res.success);
+    }
   };
 
   if (!isLogged) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans">
-        <div className="w-full max-sm bg-white/5 backdrop-blur-2xl rounded-[3rem] border border-white/10 shadow-[0_0_100px_rgba(37,99,235,0.15)] p-10 relative overflow-hidden">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+        <div className="w-full max-sm bg-white/5 backdrop-blur-3xl rounded-[3rem] border border-white/10 p-10 relative overflow-hidden">
           {isAuthenticating && (
-            <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex flex-col items-center justify-center text-white gap-4 text-center p-6">
+            <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex flex-col items-center justify-center text-white gap-4">
               <Loader2 className="animate-spin text-blue-500" size={48} />
-              <p className="text-[10px] font-black uppercase tracking-[0.3em]">Autenticando...</p>
+              <p className="text-[10px] font-black uppercase tracking-widest">Acessando Nuvem...</p>
             </div>
           )}
           <div className="text-center mb-10">
-            <div className="w-24 h-24 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-[2.5rem] flex items-center justify-center text-white font-black text-4xl mx-auto mb-6 shadow-2xl">A</div>
-            <h1 className="text-3xl font-black text-white uppercase tracking-tighter">Assistencia Pro</h1>
-            <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mt-2">SQL Cloud Nativa</p>
+            <div className="w-20 h-20 bg-blue-600 rounded-[2rem] flex items-center justify-center text-white font-black text-3xl mx-auto mb-6 shadow-2xl">A</div>
+            <h1 className="text-2xl font-black text-white uppercase tracking-tighter">Assistencia Pro</h1>
           </div>
-          <div className="space-y-5">
-            <input value={loginUser} onChange={e => setLoginUser(e.target.value)} className="w-full p-5 bg-white/5 border border-white/10 rounded-[2rem] font-bold text-white outline-none text-sm" placeholder="Usuário" />
-            <input type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)} className="w-full p-5 bg-white/5 border border-white/10 rounded-[2rem] font-bold text-white outline-none text-sm" placeholder="Senha" />
-            <button onClick={handleLogin} disabled={isAuthenticating} className="w-full py-6 bg-blue-600 text-white rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl active:scale-95 disabled:opacity-50 mt-6">Acessar Painel</button>
+          <div className="space-y-4">
+            <input value={loginUser} onChange={e => setLoginUser(e.target.value)} className="w-full p-5 bg-white/5 border border-white/10 rounded-[1.5rem] font-bold text-white outline-none text-sm" placeholder="Usuário" />
+            <input type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)} className="w-full p-5 bg-white/5 border border-white/10 rounded-[1.5rem] font-bold text-white outline-none text-sm" placeholder="Senha" />
+            <button onClick={handleLogin} disabled={isAuthenticating} className="w-full py-5 bg-blue-600 text-white rounded-[1.5rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl active:scale-95 disabled:opacity-50 mt-4">Login</button>
           </div>
         </div>
       </div>
@@ -209,48 +237,78 @@ const App: React.FC = () => {
   
   if (session.type === 'admin' && settings) {
     return (
-      <div className="min-h-screen flex flex-col pb-20 md:pb-0 md:pl-64 bg-slate-50">
-        <header className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md border-b border-slate-200 z-40 px-6 py-3 flex items-center justify-between md:left-64">
+      <div className="min-h-screen flex flex-col pb-20 md:pb-0 md:pl-72 transition-colors duration-500" style={{ backgroundColor: 'var(--bg-app)' }}>
+        <header className="fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-xl border-b border-slate-200/50 z-40 px-6 flex items-center justify-between md:left-72">
           <div className="flex items-center gap-4">
-            <div className={`p-2 rounded-xl ${isSyncing ? 'bg-blue-50 text-blue-500' : 'bg-emerald-50 text-emerald-500'}`}>
-              {isSyncing ? <RefreshCw className="animate-spin" size={18} /> : <Globe size={18} />}
-            </div>
-            <div>
-              <h1 className="font-black text-slate-800 text-xs md:text-sm uppercase">{settings.storeName}</h1>
-              <p className="text-[8px] font-black text-slate-400 uppercase">{isSyncing ? 'Sincronizando SQL...' : 'Cloud SQL Online'}</p>
-            </div>
+            {settings.logoUrl ? (
+              <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-100 shadow-sm bg-white shrink-0 flex items-center justify-center">
+                <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div className={`p-2 rounded-xl bg-white shadow-sm text-blue-500 shrink-0`}>
+                {isSyncing ? <RefreshCw className="animate-spin" size={18} /> : <Globe size={18} />}
+              </div>
+            )}
+            <h1 className="font-black text-slate-800 text-[10px] md:text-xs uppercase tracking-tight truncate">{settings.storeName}</h1>
           </div>
-          <button onClick={handleLogout} className="p-3 text-slate-400 bg-slate-100 rounded-2xl active:scale-90"><LogOut size={20} /></button>
+          <button onClick={handleLogout} className="p-3 text-slate-400 bg-white border border-slate-100 rounded-2xl active:scale-90"><LogOut size={18} /></button>
         </header>
 
-        <aside className="hidden md:flex fixed inset-y-0 left-0 w-64 bg-slate-900 text-white flex-col z-50">
-          <div className="p-10 text-center border-b border-white/5">
-             <div className="w-16 h-16 bg-blue-600 rounded-3xl flex items-center justify-center font-black text-2xl mx-auto mb-4">{settings.storeName.charAt(0)}</div>
-             <p className="font-black uppercase text-xs tracking-widest">{settings.storeName}</p>
+        <aside className="hidden md:flex fixed inset-y-0 left-0 w-72 flex-col z-50 p-6" style={{ backgroundColor: 'var(--sidebar)' }}>
+          <div className="flex flex-col h-full bg-white/5 backdrop-blur-md rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
+            <div className="p-10 text-center border-b border-white/5">
+              <div className="w-16 h-16 bg-white/10 rounded-[1.5rem] border border-white/20 flex items-center justify-center overflow-hidden mx-auto mb-4">
+                {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <div className="font-black text-white text-2xl">{settings.storeName.charAt(0)}</div>}
+              </div>
+              <p className="font-black text-white uppercase text-[10px] tracking-[0.2em] opacity-60">Admin Panel</p>
+            </div>
+            <nav className="p-6 space-y-3 flex-1">
+              {[
+                { id: 'os', label: 'Ordens', icon: ClipboardList, color: 'var(--primary)' },
+                { id: 'estoque', label: 'Estoque', icon: Package, color: '#f59e0b' },
+                { id: 'vendas', label: 'Vendas', icon: ShoppingCart, color: '#10b981' },
+                { id: 'financeiro', label: 'Financeiro', icon: Wallet, color: '#8b5cf6' },
+                { id: 'config', label: 'Ajustes', icon: SettingsIcon, color: '#64748b' }
+              ].map(item => (
+                <button 
+                  key={item.id} 
+                  onClick={() => setActiveTab(item.id as any)} 
+                  className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all relative group ${activeTab === item.id ? 'bg-white text-slate-900 shadow-xl' : 'text-white/40 hover:bg-white/5'}`}
+                >
+                  <item.icon size={20} style={{ color: activeTab === item.id ? item.color : 'inherit' }} />
+                  {item.label}
+                  {activeTab === item.id && <div className="absolute right-4 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />}
+                </button>
+              ))}
+            </nav>
           </div>
-          <nav className="p-6 space-y-2">
-            <button onClick={() => setActiveTab('os')} className={`w-full flex items-center gap-4 p-4 rounded-xl font-black text-[10px] uppercase transition-all ${activeTab === 'os' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-white/5'}`}><ClipboardList size={20}/> Ordens</button>
-            <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-4 p-4 rounded-xl font-black text-[10px] uppercase transition-all ${activeTab === 'estoque' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-white/5'}`}><Package size={20}/> Estoque</button>
-            <button onClick={() => setActiveTab('vendas')} className={`w-full flex items-center gap-4 p-4 rounded-xl font-black text-[10px] uppercase transition-all ${activeTab === 'vendas' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-white/5'}`}><ShoppingCart size={20}/> Vendas</button>
-            <button onClick={() => setActiveTab('financeiro')} className={`w-full flex items-center gap-4 p-4 rounded-xl font-black text-[10px] uppercase transition-all ${activeTab === 'financeiro' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:bg-white/5'}`}><Wallet size={20}/> Financeiro</button>
-            <button onClick={() => setActiveTab('config')} className={`w-full flex items-center gap-4 p-4 rounded-xl font-black text-[10px] uppercase transition-all ${activeTab === 'config' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-white/5'}`}><SettingsIcon size={20}/> Ajustes</button>
-          </nav>
         </aside>
 
-        <main className="flex-1 p-6 pt-24 md:pt-24 max-w-6xl mx-auto w-full">
+        <main className="flex-1 p-6 pt-24 md:pt-24 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
           {activeTab === 'os' && <ServiceOrderTab orders={orders} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} />}
           {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} />}
           {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales} setSales={saveSales} settings={settings} currentUser={currentUser} />}
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} />}
-          {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} />}
+          {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser!} onSwitchProfile={setCurrentUser} />}
         </main>
 
-        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex items-center justify-around p-2 md:hidden z-40 pb-6">
-           <button onClick={() => setActiveTab('os')} className={`p-4 rounded-2xl ${activeTab === 'os' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}><ClipboardList size={24}/></button>
-           <button onClick={() => setActiveTab('estoque')} className={`p-4 rounded-2xl ${activeTab === 'estoque' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}><Package size={24}/></button>
-           <button onClick={() => setActiveTab('vendas')} className={`p-4 rounded-2xl ${activeTab === 'vendas' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}><ShoppingCart size={24}/></button>
-           <button onClick={() => setActiveTab('financeiro')} className={`p-4 rounded-2xl ${activeTab === 'financeiro' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}><Wallet size={24}/></button>
-           <button onClick={() => setActiveTab('config')} className={`p-4 rounded-2xl ${activeTab === 'config' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}><SettingsIcon size={24}/></button>
+        <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-2xl border-t border-slate-100 flex items-center justify-around p-3 md:hidden z-40 pb-8 rounded-t-[2.5rem] shadow-[0_-20px_40px_rgba(0,0,0,0.05)]">
+           {[
+             { id: 'os', icon: ClipboardList },
+             { id: 'estoque', icon: Package },
+             { id: 'vendas', icon: ShoppingCart },
+             { id: 'financeiro', icon: Wallet },
+             { id: 'config', icon: SettingsIcon }
+           ].map(item => (
+             <button 
+               key={item.id}
+               onClick={() => setActiveTab(item.id as any)} 
+               className={`p-4 rounded-2xl transition-all duration-300 ${activeTab === item.id ? 'text-white shadow-lg -translate-y-2' : 'text-slate-300'}`}
+               style={{ backgroundColor: activeTab === item.id ? 'var(--active-tab)' : 'transparent' }}
+             >
+               <item.icon size={24} />
+             </button>
+           ))}
         </nav>
       </div>
     );

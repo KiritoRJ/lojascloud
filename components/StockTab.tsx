@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2 } from 'lucide-react';
+import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle } from 'lucide-react';
 import { Product } from '../types';
 import { formatCurrency, parseCurrencyString } from '../utils';
 
@@ -16,6 +16,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
   const [isCompressing, setIsCompressing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<Partial<Product>>({
     name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null
@@ -64,6 +65,13 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
 
   const filtered = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
+  const confirmDelete = () => {
+    if (productToDelete) {
+      onDeleteProduct(productToDelete);
+      setProductToDelete(null);
+    }
+  };
+
   return (
     <div className="space-y-4 pb-4">
       <div className="flex items-center justify-between">
@@ -92,9 +100,19 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
           <div key={product.id} className="bg-white border border-slate-50 rounded-[2rem] overflow-hidden shadow-sm flex flex-col group animate-in fade-in duration-300">
             <div className="h-32 bg-slate-50 relative">
               {product.photo ? <img src={product.photo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-200"><PackageOpen size={32} /></div>}
-              <div className="absolute top-2 right-2 flex flex-col gap-1">
-                <button onClick={() => { setEditingProduct(product); setFormData(product); setIsModalOpen(true); }} className="p-2 bg-white/90 rounded-xl text-slate-600 shadow-sm active:scale-90 transition-all"><Edit3 size={14} /></button>
-                <button onClick={() => onDeleteProduct(product.id)} className="p-2 bg-white/90 rounded-xl text-red-500 shadow-sm active:scale-90 transition-all"><Trash2 size={14} /></button>
+              <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setFormData(product); setIsModalOpen(true); }} 
+                  className="p-2 bg-white/90 rounded-xl text-slate-600 shadow-sm active:scale-90 transition-all"
+                >
+                  <Edit3 size={14} />
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setProductToDelete(product.id); }} 
+                  className="p-2 bg-white/90 rounded-xl text-red-500 shadow-sm active:scale-90 transition-all"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
               <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-slate-900 text-white rounded-lg text-[8px] font-black uppercase tracking-widest">Qtd: {product.quantity}</div>
             </div>
@@ -105,6 +123,27 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
           </div>
         ))}
       </div>
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO CUSTOMIZADO */}
+      {productToDelete && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-xs rounded-[2rem] overflow-hidden shadow-2xl animate-in zoom-in-95">
+            <div className="p-6 text-center space-y-4">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                <AlertTriangle size={32} />
+              </div>
+              <h3 className="font-black text-slate-800 uppercase text-sm">Excluir Produto?</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                Este item será removido permanentemente do estoque e da SQL Cloud.
+              </p>
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setProductToDelete(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-black text-[9px] uppercase tracking-widest">Sair</button>
+                <button onClick={confirmDelete} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest shadow-lg shadow-red-500/20">Remover</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-950/80 z-50 flex flex-col justify-end p-2 backdrop-blur-sm">

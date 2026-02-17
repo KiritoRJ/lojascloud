@@ -41,10 +41,22 @@ const SetupWizard: React.FC<Props> = ({ onComplete }) => {
     const admin: User = { id: 'admin_1', name: adminName, role: 'admin', password: adminPass, photo: adminPhoto };
     const users = [admin];
     if (user2Name) { users.push({ id: 'user_2', name: user2Name, role: user2Role, photo: user2Photo }); }
+    // Fix: Add missing theme properties including themeBottomTab to match AppSettings interface
     const initialSettings: AppSettings = {
-      storeName: storeName || 'Minha Assistência', logoUrl: null, users: users, isConfigured: true,
+      storeName: storeName || 'Minha Assistência', 
+      logoUrl: null, 
+      users: users, 
+      isConfigured: true,
+      themePrimary: '#2563eb', 
+      themeSidebar: '#0f172a', 
+      themeBg: '#f8fafc',
+      themeBottomTab: '#0f172a',
       pdfWarrantyText: "Concede-se garantia pelo prazo de 90 (noventa) dias...",
-      pdfFontSize: 8, pdfFontFamily: 'helvetica', pdfPaperWidth: 80, pdfTextColor: '#000000', pdfBgColor: '#FFFFFF'
+      pdfFontSize: 8, 
+      pdfFontFamily: 'helvetica', 
+      pdfPaperWidth: 80, 
+      pdfTextColor: '#000000', 
+      pdfBgColor: '#FFFFFF'
     };
     setShowGratitude(true);
     setTimeout(() => { onComplete(initialSettings); }, 2500);

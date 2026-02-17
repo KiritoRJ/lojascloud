@@ -61,77 +61,113 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     }
   };
 
-  // GERAÇÃO DE CUPOM DE VENDA EM IMAGEM JPEG
   const generateSalesReceiptImage = (items: CartItem[], total: number, payment: string, seller: string) => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const scale = 2;
-    const width = 400 * scale;
-    // Altura baseada no número de itens vendidos
-    const height = (200 + items.length * 30) * scale;
+    const width = 380 * scale;
+    const thermalFont = (sz: number, bold: boolean = false) => `${bold ? '900' : '400'} ${sz * scale}px "Courier New", Courier, monospace`;
+    
+    // Estimate initial height
+    let estimatedHeight = (300 + items.length * 40) * scale;
     canvas.width = width;
-    canvas.height = height;
+    canvas.height = estimatedHeight;
 
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, width, estimatedHeight);
 
-    ctx.fillStyle = '#000000';
-    ctx.textAlign = 'center';
-    ctx.font = `bold ${18 * scale}px Arial`;
-    ctx.fillText(settings.storeName.toUpperCase(), width / 2, 40 * scale);
+    const drawText = (text: string, y: number, sz: number, b: boolean = false, al: 'center' | 'left' | 'right' = 'center') => {
+      ctx.fillStyle = '#000000';
+      ctx.font = thermalFont(sz, b);
+      ctx.textAlign = al;
+      let x = al === 'center' ? width / 2 : (al === 'left' ? 20 * scale : width - 20 * scale);
+      ctx.fillText((text || '').toUpperCase(), x, y);
+    };
+
+    const drawDashedLine = (y: number) => {
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1 * scale;
+      ctx.setLineDash([5 * scale, 3 * scale]);
+      ctx.beginPath();
+      ctx.moveTo(15 * scale, y);
+      ctx.lineTo(width - 15 * scale, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+
+    let currentY = 40 * scale;
+
+    // Header
+    drawText(settings.storeName, currentY, 18, true);
+    currentY += 25 * scale;
+    drawText("CUPOM DE VENDA BALCÃO", currentY, 10, false);
+    currentY += 30 * scale;
     
-    ctx.font = `bold ${10 * scale}px Arial`;
-    ctx.fillText('CUPOM DE VENDA (BALCÃO)', width / 2, 65 * scale);
-    
-    ctx.strokeStyle = '#F1F5F9';
-    ctx.lineWidth = 1 * scale;
-    ctx.beginPath(); ctx.moveTo(20*scale, 75*scale); ctx.lineTo((width-20*scale), 75*scale); ctx.stroke();
+    drawDashedLine(currentY);
+    currentY += 25 * scale;
 
-    ctx.textAlign = 'left';
-    ctx.font = `${10 * scale}px Arial`;
-    ctx.fillText(`DATA: ${new Date().toLocaleDateString()}`, 20 * scale, 95 * scale);
-    ctx.fillText(`VENDEDOR: ${seller}`, 20 * scale, 110 * scale);
-    ctx.fillText(`PAGAMENTO: ${payment}`, 20 * scale, 125 * scale);
+    drawText(`DATA: ${new Date().toLocaleDateString()}`, currentY, 9, false, 'left');
+    drawText(`VENDEDOR: ${seller}`, currentY, 9, false, 'right');
+    currentY += 15 * scale;
+    drawText(`PAGAMENTO: ${payment}`, currentY, 9, false, 'left');
+    currentY += 25 * scale;
 
-    let y = 160;
-    ctx.font = `bold ${9 * scale}px Arial`;
-    ctx.fillText('PRODUTO / QTD', 20 * scale, (y - 20) * scale);
-    ctx.textAlign = 'right';
-    ctx.fillText('TOTAL ITEM', (width - 20 * scale), (y - 20) * scale);
+    drawDashedLine(currentY);
+    currentY += 25 * scale;
+
+    // Items Header
+    drawText("PRODUTO / QTD", currentY, 10, true, 'left');
+    drawText("TOTAL ITEM", currentY, 10, true, 'right');
+    currentY += 25 * scale;
 
     items.forEach(item => {
-      ctx.font = `${10 * scale}px Arial`;
-      ctx.textAlign = 'left';
-      ctx.fillText(`${item.quantity}x ${item.product.name.substring(0, 22).toUpperCase()}`, 20 * scale, y * scale);
-      ctx.textAlign = 'right';
-      ctx.fillText(formatCurrency(item.product.salePrice * item.quantity), (width - 20 * scale), y * scale);
-      y += 20;
+      // Word wrap for product name if needed
+      const name = item.product.name.toUpperCase();
+      const qtyText = `${item.quantity} UN X ${formatCurrency(item.product.salePrice)}`;
+      const totalItem = formatCurrency(item.product.salePrice * item.quantity);
+      
+      drawText(name.substring(0, 25), currentY, 9, true, 'left');
+      drawText(totalItem, currentY, 9, true, 'right');
+      currentY += 14 * scale;
+      drawText(qtyText, currentY, 8, false, 'left');
+      currentY += 22 * scale;
     });
 
-    y += 10;
-    ctx.beginPath(); ctx.moveTo(20*scale, (y-10)*scale); ctx.lineTo((width-20*scale), (y-10)*scale); ctx.stroke();
+    currentY += 10 * scale;
+    drawDashedLine(currentY);
+    currentY += 35 * scale;
     
-    ctx.font = `bold ${16 * scale}px Arial`;
-    ctx.textAlign = 'left';
-    ctx.fillText('TOTAL PAGO', 20 * scale, (y + 15) * scale);
-    ctx.textAlign = 'right';
-    ctx.fillText(formatCurrency(total), (width - 20 * scale), (y + 15) * scale);
+    // Total
+    ctx.fillStyle = '#F1F5F9';
+    ctx.fillRect(15 * scale, currentY - 22 * scale, width - 30 * scale, 45 * scale);
+    drawText("VALOR TOTAL PAGO", currentY + 5 * scale, 12, true, 'left');
+    drawText(formatCurrency(total), currentY + 5 * scale, 18, true, 'right');
+    
+    currentY += 60 * scale;
+    drawDashedLine(currentY);
+    currentY += 25 * scale;
+    drawText("OBRIGADO PELA PREFERÊNCIA!", currentY, 9, true);
+    currentY += 20 * scale;
+    drawText("VOLTE SEMPRE!", currentY, 8, false);
 
-    y += 45;
-    ctx.textAlign = 'center';
-    ctx.font = `italic ${9 * scale}px Arial`;
-    ctx.fillText('AGRADECEMOS A SUA PREFERÊNCIA!', width / 2, y * scale);
+    // Final crop
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = width;
+    finalCanvas.height = currentY + 40 * scale;
+    const finalCtx = finalCanvas.getContext('2d');
+    if (finalCtx) {
+      finalCtx.drawImage(canvas, 0, 0);
+      const jpegBase64 = finalCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+      const fileName = `VENDA_${Date.now()}.jpg`;
 
-    const jpegBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-    const fileName = `Venda_${Date.now()}.jpg`;
-
-    if ((window as any).AndroidBridge) {
-      (window as any).AndroidBridge.shareFile(jpegBase64, fileName, 'image/jpeg');
-    } else {
-      const link = document.createElement('a');
-      link.download = fileName; link.href = `data:image/jpeg;base64,${jpegBase64}`; link.click();
+      if ((window as any).AndroidBridge) {
+        (window as any).AndroidBridge.shareFile(jpegBase64, fileName, 'image/jpeg');
+      } else {
+        const link = document.createElement('a');
+        link.download = fileName; link.href = `data:image/jpeg;base64,${jpegBase64}`; link.click();
+      }
     }
   };
 

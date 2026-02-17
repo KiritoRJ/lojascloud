@@ -62,10 +62,31 @@ export interface AppSettings {
   logoUrl: string | null;
   users: User[];
   isConfigured: boolean;
+  // Personalização de Cores
+  themePrimary: string;
+  themeSidebar: string;
+  themeBg: string;
+  themeBottomTab: string;
+  // PDF / Cupom
   pdfWarrantyText: string;
   pdfFontSize: number;
   pdfFontFamily: 'helvetica' | 'courier' | 'times';
   pdfPaperWidth: number;
   pdfTextColor: string;
   pdfBgColor: string;
+  // Etiquetas Customizáveis do Cupom
+  receiptHeaderSubtitle?: string;
+  receiptLabelProtocol?: string;
+  receiptLabelDate?: string;
+  receiptLabelClientSection?: string;
+  receiptLabelClientName?: string;
+  receiptLabelClientPhone?: string;
+  receiptLabelClientAddress?: string;
+  receiptLabelServiceSection?: string;
+  receiptLabelDevice?: string;
+  receiptLabelDefect?: string;
+  receiptLabelRepair?: string;
+  receiptLabelTotal?: string;
+  receiptLabelEntryPhotos?: string;
+  receiptLabelExitPhotos?: string;
 }

@@ -1,8 +1,8 @@
 
 import React from 'react';
-import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, ClipboardList } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, ClipboardList, Target, Zap, ArrowUpRight, History, BarChart3, PieChart as PieIcon } from 'lucide-react';
 import { ServiceOrder, Sale } from '../types';
-import { formatCurrency } from '../utils';
+import { formatCurrency, formatDate } from '../utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 
 interface Props {
@@ -12,97 +12,99 @@ interface Props {
 
 const FinanceTab: React.FC<Props> = ({ orders, sales }) => {
   const deliveredOrders = orders.filter(order => order.status === 'Entregue');
+  
+  // Cálculos de O.S.
   const totalOSRevenue = deliveredOrders.reduce((acc, curr) => acc + curr.total, 0);
   const totalOSPartsCost = deliveredOrders.reduce((acc, curr) => acc + curr.partsCost, 0);
   const totalOSProfit = deliveredOrders.reduce((acc, curr) => acc + curr.serviceCost, 0);
 
+  // Cálculos de Vendas
   const totalSalesRevenue = sales.reduce((acc, curr) => acc + curr.finalPrice, 0);
   const totalSalesCost = sales.reduce((acc, curr) => acc + (curr.costAtSale * curr.quantity), 0);
   const totalSalesProfit = totalSalesRevenue - totalSalesCost;
 
   const totalNetProfit = totalOSProfit + totalSalesProfit;
-  const totalOverallRevenue = totalOSRevenue + totalSalesRevenue;
+  const totalCosts = totalOSPartsCost + totalSalesCost;
 
+  // Dados para Gráfico de Barras (Lucro)
   const chartData = [
-    { name: 'Lucro OS', value: totalOSProfit, color: '#3b82f6' },
-    { name: 'Lucro Vendas', value: totalSalesProfit, color: '#10b981' },
-    { name: 'Líquido Total', value: totalNetProfit, color: '#8b5cf6' },
+    { name: 'O.S.', value: totalOSProfit, color: '#3b82f6' },
+    { name: 'VENDAS', value: totalSalesProfit, color: '#10b981' },
+    { name: 'TOTAL', value: totalNetProfit, color: '#8b5cf6' },
   ];
 
+  // Dados para Gráfico de Pizza (Faturamento)
   const sourceData = [
     { name: 'O.S.', value: totalOSRevenue },
-    { name: 'Vendas', value: totalSalesRevenue },
+    { name: 'LOJA', value: totalSalesRevenue },
   ].filter(d => d.value > 0);
 
   const COLORS = ['#3b82f6', '#10b981'];
 
+  // Últimas 6 movimentações (mais compacto para caber com gráficos)
+  const recentActivities = [
+    ...deliveredOrders.map(o => ({ 
+      id: o.id, type: 'OS', label: o.customerName, val: o.total, date: o.date, profit: o.serviceCost 
+    })),
+    ...sales.map(s => ({ 
+      id: s.id, type: 'VENDA', label: s.productName, val: s.finalPrice, date: s.date,
+      profit: s.finalPrice - (s.costAtSale * s.quantity)
+    }))
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6);
+
   return (
-    <div className="space-y-6 pb-6" style={{ minWidth: 0 }}>
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-black text-slate-800">Financeiro</h2>
-        <div className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-2">
-          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-          Dados em tempo real
+    <div className="space-y-3 pb-8 w-full max-w-full animate-in fade-in duration-500 overflow-x-hidden">
+      {/* Header Compacto */}
+      <div className="flex items-center justify-between px-1">
+        <div>
+          <h2 className="text-lg font-black text-slate-800 tracking-tighter leading-none uppercase">Financeiro</h2>
+          <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">Dashboard de Performance</p>
+        </div>
+        <div className="bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg shadow-emerald-500/20">
+          <Zap size={10} fill="currentColor" />
+          SQL Ativo
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0">
-            <ClipboardList size={22} />
+      {/* Cards Principais Otimizados */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        {[
+          { label: 'Receita O.S.', val: totalOSRevenue, icon: ClipboardList, color: 'text-blue-500', bg: 'bg-blue-50' },
+          { label: 'Vendas Loja', val: totalSalesRevenue, icon: ShoppingBag, color: 'text-emerald-500', bg: 'bg-emerald-50' },
+          { label: 'Custos Totais', val: totalCosts, icon: TrendingDown, color: 'text-red-500', bg: 'bg-red-50' },
+          { label: 'Lucro Líquido', val: totalNetProfit, icon: Target, color: 'text-white', bg: 'bg-slate-900', dark: true },
+        ].map((card, idx) => (
+          <div key={idx} className={`${card.dark ? 'bg-slate-900 border-slate-800 shadow-xl shadow-slate-900/10' : 'bg-white border-slate-100 shadow-sm'} p-3 rounded-2xl border flex items-center gap-3`}>
+            <div className={`w-8 h-8 ${card.dark ? 'bg-emerald-500' : card.bg} ${card.dark ? 'text-white' : card.color} rounded-xl flex items-center justify-center shrink-0`}>
+              <card.icon size={16} />
+            </div>
+            <div className="min-w-0">
+              <p className={`text-[7px] ${card.dark ? 'text-slate-500' : 'text-slate-400'} font-black uppercase tracking-widest mb-0.5 truncate`}>{card.label}</p>
+              <p className={`text-xs font-black ${card.dark ? 'text-white' : 'text-slate-800'} truncate`}>{formatCurrency(card.val)}</p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Receita O.S.</p>
-            <p className="text-lg font-black text-slate-800 truncate">{formatCurrency(totalOSRevenue)}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shrink-0">
-            <ShoppingBag size={22} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Vendas Balcão</p>
-            <p className="text-lg font-black text-slate-800 truncate">{formatCurrency(totalSalesRevenue)}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
-          <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center shrink-0">
-            <TrendingDown size={22} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Total Custos</p>
-            <p className="text-lg font-black text-slate-800 truncate">{formatCurrency(totalOSPartsCost + totalSalesCost)}</p>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 p-5 rounded-3xl shadow-xl shadow-emerald-900/10 flex items-center gap-4 ring-2 ring-emerald-500/20">
-          <div className="w-12 h-12 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/30">
-            <TrendingUp size={22} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] text-emerald-400 font-black uppercase tracking-wider">Lucro Líquido</p>
-            <p className="text-xl font-black text-white truncate">{formatCurrency(totalNetProfit)}</p>
-          </div>
-        </div>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ minWidth: 0 }}>
-        <div className="bg-white p-6 rounded-[40px] shadow-sm border border-slate-100 min-h-[400px]" style={{ minWidth: 0 }}>
-          <h3 className="text-xs font-black text-slate-800 mb-8 uppercase tracking-[0.2em] border-l-4 border-blue-500 pl-4">Distribuição de Lucro</h3>
-          <div className="h-72 w-full" style={{ minWidth: 0 }}>
-            <ResponsiveContainer width="100%" height="100%" minHeight={280}>
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+      {/* Seção de Gráficos Otimizada */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* Gráfico 1: Lucratividade (Barras) */}
+        <div className="bg-white p-4 rounded-3xl border border-slate-50 shadow-sm flex flex-col min-w-0">
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart3 size={12} className="text-blue-500" />
+            <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Lucratividade</h3>
+          </div>
+          <div className="w-full min-h-[180px] h-[180px] relative">
+            <ResponsiveContainer width="100%" height="100%" debounce={50}>
+              <BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" stroke="#cbd5e1" fontSize={10} fontWeight="900" axisLine={false} tickLine={false} />
-                <YAxis stroke="#cbd5e1" fontSize={10} axisLine={false} tickLine={false} tickFormatter={(val) => `R$ ${val}`} />
+                <XAxis dataKey="name" fontSize={8} fontWeight="900" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
+                <YAxis fontSize={8} axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
                 <Tooltip 
-                  formatter={(value: number) => formatCurrency(value)}
-                  contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }}
-                  cursor={{ fill: '#f8fafc' }}
+                  cursor={{fill: '#f8fafc'}}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px', fontWeight: 'bold' }}
                 />
-                <Bar dataKey="value" radius={[12, 12, 0, 0]} barSize={45}>
+                <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={25}>
                   {chartData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
@@ -112,19 +114,22 @@ const FinanceTab: React.FC<Props> = ({ orders, sales }) => {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-[40px] shadow-sm border border-slate-100 min-h-[400px]" style={{ minWidth: 0 }}>
-          <h3 className="text-xs font-black text-slate-800 mb-8 uppercase tracking-[0.2em] border-l-4 border-emerald-500 pl-4">Origem do Faturamento</h3>
-          <div className="h-72 w-full flex items-center justify-center" style={{ minWidth: 0 }}>
+        {/* Gráfico 2: Composição (Pizza) */}
+        <div className="bg-white p-4 rounded-3xl border border-slate-50 shadow-sm flex flex-col min-w-0">
+          <div className="flex items-center gap-2 mb-3">
+            <PieIcon size={12} className="text-emerald-500" />
+            <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Origem de Receita</h3>
+          </div>
+          <div className="w-full min-h-[180px] h-[180px] relative">
             {sourceData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={280}>
+              <ResponsiveContainer width="100%" height="100%" debounce={50}>
                 <PieChart>
                   <Pie
                     data={sourceData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={100}
-                    paddingAngle={10}
+                    cx="50%" cy="50%"
+                    innerRadius={45}
+                    outerRadius={65}
+                    paddingAngle={5}
                     dataKey="value"
                     stroke="none"
                   >
@@ -133,35 +138,65 @@ const FinanceTab: React.FC<Props> = ({ orders, sales }) => {
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: number) => formatCurrency(value)}
-                    contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px', fontWeight: 'bold' }}
                   />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="text-center">
-                <p className="text-slate-300 italic text-sm font-bold uppercase tracking-widest">Sem movimentações</p>
+              <div className="h-full flex items-center justify-center opacity-20">
+                <p className="text-[8px] font-black uppercase">Sem Dados</p>
               </div>
             )}
           </div>
-          <div className="flex justify-center gap-6 mt-2">
-            {sourceData.map((d, i) => (
-              <div key={d.name} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i] }} />
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{d.name} ({Math.round((d.value/totalOverallRevenue)*100)}%)</span>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
-      
-      <div className="bg-white p-6 rounded-3xl border border-slate-100 flex items-center gap-4">
-        <div className="w-10 h-10 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center shrink-0">
-          <DollarSign size={20} />
+
+      {/* Extrato de Movimentações (Slim) */}
+      <div className="bg-white rounded-[2rem] border border-slate-50 shadow-sm overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-slate-50 flex items-center justify-between bg-slate-50/20">
+          <div className="flex items-center gap-2">
+            <History size={14} className="text-slate-400" />
+            <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Fluxo Recente</h3>
+          </div>
+          <span className="text-[7px] font-black text-slate-300 uppercase tracking-widest">Últimos 6 Itens</span>
         </div>
-        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-relaxed">
-          Os valores de O.S. são processados apenas quando finalizados como "Entregue". <br/>
-          Vendas diretas são contabilizadas instantaneamente após a confirmação.
+
+        <div className="divide-y divide-slate-50">
+          {recentActivities.map((act, idx) => (
+            <div key={idx} className="p-3 flex items-center justify-between hover:bg-slate-50/30 transition-colors">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${act.type === 'OS' ? 'bg-blue-50 text-blue-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                  {act.type === 'OS' ? <ClipboardList size={14} /> : <ShoppingBag size={14} />}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-[10px] font-black text-slate-700 uppercase truncate leading-tight">{act.label}</h4>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">{act.type}</span>
+                    <span className="text-[7px] text-slate-300">•</span>
+                    <span className="text-[7px] font-bold text-slate-400">{formatDate(act.date)}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-black text-slate-800">{formatCurrency(act.val)}</p>
+                <div className="flex items-center justify-end gap-1 text-emerald-500">
+                  <ArrowUpRight size={8} />
+                  <span className="text-[8px] font-black">+{formatCurrency(act.profit)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Nota Informativa de Rodapé */}
+      <div className="bg-slate-100/50 p-3 rounded-2xl border border-slate-200/50 flex items-center gap-3">
+        <div className="w-7 h-7 bg-white shadow-sm text-slate-400 rounded-lg flex items-center justify-center shrink-0">
+          <DollarSign size={14} />
+        </div>
+        <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest leading-normal">
+          Dados sincronizados com <span className="text-blue-600">Nuvem SQL</span>. <br/>
+          As O.S. são contabilizadas no status <span className="text-slate-800">"Entregue"</span>.
         </p>
       </div>
     </div>

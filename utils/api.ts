@@ -11,13 +11,9 @@ export class OnlineDB {
     const cleanUser = username.trim().toLowerCase();
     const cleanPass = passwordPlain.trim();
 
-    // Login especial Super ADM
-    if (cleanUser === 'wandev' && (cleanPass === '123' || cleanPass === 'wan123')) {
-      return { success: true, type: 'super' };
-    }
-
     try {
       // Busca usuário na tabela global de usuários do Supabase
+      // Agora o Super ADM também deve estar cadastrado nesta tabela com role 'super'
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -31,12 +27,12 @@ export class OnlineDB {
       return { 
         success: true, 
         type: data.role || 'admin', 
-        tenant: { 
+        tenant: data.tenant_id ? { 
           id: data.tenant_id, 
           username: data.username,
           name: data.name || data.username,
           role: data.role
-        } 
+        } : null 
       };
     } catch (err: any) {
       return { success: false, message: "Erro ao conectar com o banco de dados." };
@@ -153,13 +149,13 @@ export class OnlineDB {
         deviceBrand: d.device_brand,
         deviceModel: d.device_model,
         defect: d.defect,
-        repairDetails: d.repair_details || '', // Mapeado corretamente para o camelCase
+        repairDetails: d.repair_details || '', 
         partsCost: Number(d.parts_cost),
         serviceCost: Number(d.service_cost),
         total: Number(d.total),
         status: d.status,
         photos: d.photos || [],
-        finishedPhotos: d.finished_photos || [], // Mapeado corretamente para o camelCase
+        finishedPhotos: d.finished_photos || [], 
         date: d.created_at
       }));
     } catch (e) { return []; }
@@ -197,13 +193,13 @@ export class OnlineDB {
         device_brand: os.deviceBrand,
         device_model: os.deviceModel,
         defect: os.defect,
-        repair_details: os.repairDetails, // CamelCase to snake_case
+        repair_details: os.repairDetails, 
         parts_cost: os.partsCost,
         service_cost: os.serviceCost,
         total: os.total,
         status: os.status,
         photos: os.photos,
-        finished_photos: os.finishedPhotos || [], // CamelCase to snake_case
+        finished_photos: os.finishedPhotos || [], 
         created_at: os.date || new Date().toISOString()
       }));
       const { error } = await supabase.from('service_orders').upsert(payload, { onConflict: 'id' });
@@ -265,7 +261,8 @@ export class OnlineDB {
 
   static async deleteRemoteUser(id: string) {
     try {
-      await supabase.from('users').delete().eq('id', id);
+      const { error } = await supabase.from('users').delete().eq('id', id);
+      if (error) throw error;
       return { success: true };
     } catch (e) { return { success: false }; }
   }

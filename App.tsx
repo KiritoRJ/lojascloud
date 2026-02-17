@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   storePhone: '',
   logoUrl: null,
   users: [
-    { id: 'admin_1', name: 'Administrador', role: 'admin', photo: null }
+    { id: 'admin_1', name: 'Administrador', role: 'admin', photo: null, password: '123' }
   ],
   isConfigured: true,
   themePrimary: '#2563eb',
@@ -224,8 +224,17 @@ const App: React.FC = () => {
 
   const handleSwitchProfile = (user: User) => {
     if (session) {
-      setSession({ ...session, user, type: user.role });
+      const newType = user.role;
+      setSession({ ...session, user, type: newType });
       localStorage.setItem('currentUser_pro', JSON.stringify(user));
+
+      // Filtra as abas permitidas para o novo cargo
+      const allowedTabs = navItems.filter(item => item.roles.includes(newType)).map(i => i.id);
+      
+      // Se a aba atual não for permitida no novo perfil, volta para 'Ordens'
+      if (!allowedTabs.includes(activeTab)) {
+        setActiveTab('os');
+      }
     }
   };
 
@@ -308,8 +317,8 @@ const App: React.FC = () => {
 
   const currentUser = session.user || settings.users[0];
   const navItems = [
-    { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'tecnico'] },
-    { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin', 'vendedor'] },
+    { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'tecnico', 'vendedor'] },
+    { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'] },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'vendedor'] },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'] },
     { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'tecnico', 'vendedor'] },

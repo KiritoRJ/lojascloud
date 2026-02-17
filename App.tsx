@@ -157,7 +157,7 @@ const App: React.FC = () => {
     setOrders(newOrders);
     await saveData('orders', `${session.tenantId}_orders`, newOrders);
     if (session.tenantId) {
-      const res = await OnlineDB.syncPush(session.tenantId, 'orders', newOrders);
+      const res = await OnlineDB.upsertOrders(session.tenantId, newOrders);
       setIsCloudConnected(res.success);
     }
   };
@@ -180,7 +180,7 @@ const App: React.FC = () => {
     setProducts(newProducts);
     await saveData('products', `${session.tenantId}_products`, newProducts);
     if (session.tenantId) {
-      const res = await OnlineDB.syncPush(session.tenantId, 'products', newProducts);
+      const res = await OnlineDB.upsertProducts(session.tenantId, newProducts);
       setIsCloudConnected(res.success);
     }
   };
@@ -227,9 +227,6 @@ const App: React.FC = () => {
     ];
 
     if (currentUser?.role === 'admin') return items;
-    
-    // Vendedores e Técnicos não acessam Estoque, Financeiro nem Ajustes (Configurações Globais)
-    // Eles acessam apenas OS e Vendas. A aba Ajustes (config) aparecerá APENAS para trocar de perfil se necessário.
     return items.filter(item => item.id !== 'financeiro' && item.id !== 'estoque' && item.id !== 'config');
   };
 

@@ -78,40 +78,120 @@ export class OnlineDB {
   }
 
   /** ORDENS DE SERVIÇO **/
-  static async upsertOS(tenantId: string, os: any) {
+  static async upsertOrders(tenantId: string, orders: any[]) {
+    if (!tenantId || !orders) return { success: false };
     try {
+      const payload = orders.map(os => ({
+        id: os.id,
+        tenant_id: tenantId,
+        customer_name: os.customerName,
+        phone_number: os.phoneNumber,
+        address: os.address,
+        device_brand: os.deviceBrand,
+        device_model: os.deviceModel,
+        defect: os.defect,
+        repair_details: os.repairDetails,
+        parts_cost: parseFloat(os.partsCost?.toString() || '0'),
+        service_cost: parseFloat(os.serviceCost?.toString() || '0'),
+        total: parseFloat(os.total?.toString() || '0'),
+        status: os.status,
+        photos: os.photos || [],
+        finished_photos: os.finishedPhotos || [],
+        created_at: os.date || new Date().toISOString()
+      }));
+
       const { error } = await supabase
         .from('service_orders')
-        .upsert({
-          id: os.id,
-          tenant_id: tenantId,
-          customer_name: os.customerName,
-          phone_number: os.phoneNumber,
-          address: os.address,
-          device_brand: os.deviceBrand,
-          device_model: os.deviceModel,
-          defect: os.defect,
-          repair_details: os.repairDetails,
-          parts_cost: os.partsCost,
-          service_cost: os.serviceCost,
-          total: os.total,
-          status: os.status,
-          photos: os.photos || [],
-          finished_photos: os.finishedPhotos || []
-        });
+        .upsert(payload, { onConflict: 'id' });
+      
+      if (error) {
+        console.error("Erro Supabase OS:", error.message, error.details);
+        return { success: false, error };
+      }
+      return { success: true };
+    } catch (e) {
+      console.error("Erro Crítico OS:", e);
+      return { success: false, error: e };
+    }
+  }
+
+  /** PRODUTOS (ESTOQUE) **/
+  static async upsertProducts(tenantId: string, products: any[]) {
+    if (!tenantId || !products) {
+      console.warn("Sync: TenantId ou lista de produtos ausente.");
+      return { success: false };
+    }
+    
+    try {
+      const payload = products.map(p => ({
+        id: p.id,
+        tenant_id: tenantId,
+        name: p.name,
+        photo: p.photo, // Base64 comprimido
+        cost_price: parseFloat(p.costPrice?.toString() || '0'),
+        sale_price: parseFloat(p.salePrice?.toString() || '0'),
+        quantity: parseInt(p.quantity?.toString() || '0')
+        // Removido updated_at para evitar erros caso a coluna não exista no schema do usuário
+      }));
+
+      console.log("Sincronizando produtos...", payload.length, "itens");
+
+      const { error } = await supabase
+        .from('products')
+        .upsert(payload, { onConflict: 'id' });
+
+      if (error) {
+        console.error("Erro Supabase Estoque:", error.message, error.details);
+        return { success: false, error };
+      }
+      
+      console.log("Estoque sincronizado com sucesso.");
+      return { success: true };
+    } catch (e) {
+      console.error("Erro Crítico Estoque:", e);
+      return { success: false, error: e };
+    }
+  }
+
+  static async deleteProduct(productId: string) {
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', productId);
       return { success: !error, error };
     } catch (e) {
       return { success: false, error: e };
     }
   }
 
+  static async fetchProducts(tenantId: string) {
+    if (!tenantId) return null;
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('id', { ascending: false }); // Usando 'id' como fallback seguro de ordenação
+      
+      if (error) throw error;
+      
+      return (data || []).map(d => ({
+        id: d.id,
+        name: d.name || '',
+        photo: d.photo || null,
+        costPrice: Number(d.cost_price) || 0,
+        salePrice: Number(d.sale_price) || 0,
+        quantity: Number(d.quantity) || 0
+      }));
+    } catch (e) {
+      console.error("Erro ao buscar estoque:", e);
+      return null;
+    }
+  }
+
   static async deleteOS(osId: string) {
     try {
       const { error } = await supabase.from('service_orders').delete().eq('id', osId);
-      if (error) console.error("Erro Supabase OS Delete:", error);
       return { success: !error, error };
     } catch (e) {
-      console.error("Exceção ao deletar OS:", e);
       return { success: false, error: e };
     }
   }
@@ -140,61 +220,7 @@ export class OnlineDB {
         status: d.status || 'Pendente',
         photos: d.photos || [],
         finishedPhotos: d.finished_photos || [],
-        date: d.created_at
-      }));
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /** PRODUTOS (ESTOQUE) **/
-  static async upsertProduct(tenantId: string, product: any) {
-    try {
-      const { error } = await supabase
-        .from('products')
-        .upsert({
-          id: product.id,
-          tenant_id: tenantId,
-          name: product.name,
-          photo: product.photo,
-          cost_price: product.costPrice,
-          sale_price: product.salePrice,
-          quantity: product.quantity
-        });
-      return { success: !error, error };
-    } catch (e) {
-      return { success: false, error: e };
-    }
-  }
-
-  static async deleteProduct(productId: string) {
-    try {
-      const { error } = await supabase.from('products').delete().eq('id', productId);
-      if (error) console.error("Erro Supabase Product Delete:", error);
-      return { success: !error, error };
-    } catch (e) {
-      console.error("Exceção ao deletar Produto:", e);
-      return { success: false, error: e };
-    }
-  }
-
-  static async fetchProducts(tenantId: string) {
-    if (!tenantId) return null;
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data || []).map(d => ({
-        id: d.id,
-        name: d.name || '',
-        photo: d.photo || null,
-        costPrice: Number(d.cost_price) || 0,
-        // Fixed: Mapped DB column 'sale_price' to 'salePrice' to match Product interface
-        salePrice: Number(d.sale_price) || 0,
-        quantity: Number(d.quantity) || 0
+        date: d.created_at || d.date
       }));
     } catch (e) {
       return null;

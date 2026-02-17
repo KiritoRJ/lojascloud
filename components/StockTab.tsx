@@ -22,6 +22,29 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
     name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null
   });
 
+  const compressImage = (base64Str: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 600; // Reduzindo um pouco mais para garantir performance em DB
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > MAX_DIM) { height *= MAX_DIM / width; width = MAX_DIM; }
+        } else {
+          if (height > MAX_DIM) { width *= MAX_DIM / height; height = MAX_DIM; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+    });
+  };
+
   const triggerUpload = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -31,8 +54,9 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
       if (file) {
         setIsCompressing(true);
         const reader = new FileReader();
-        reader.onloadend = () => {
-          setFormData(prev => ({ ...prev, photo: reader.result as string }));
+        reader.onloadend = async () => {
+          const compressed = await compressImage(reader.result as string);
+          setFormData(prev => ({ ...prev, photo: compressed }));
           setIsCompressing(false);
         };
         reader.readAsDataURL(file);
@@ -41,21 +65,33 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
     input.click();
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name) return alert('Nome é obrigatório.');
     setIsSaving(true);
     
-    let newList: Product[];
-    if (editingProduct) {
-      newList = products.map(p => p.id === editingProduct.id ? { ...p, ...formData } as Product : p);
-    } else {
-      newList = [{ ...formData, id: 'PROD_' + Math.random().toString(36).substr(2, 6).toUpperCase() } as Product, ...products];
+    try {
+      let newList: Product[];
+      if (editingProduct) {
+        newList = products.map(p => p.id === editingProduct.id ? { ...p, ...formData } as Product : p);
+      } else {
+        const newProd = { 
+          ...formData, 
+          id: 'PROD_' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+          quantity: formData.quantity || 0,
+          costPrice: formData.costPrice || 0,
+          salePrice: formData.salePrice || 0
+        } as Product;
+        newList = [newProd, ...products];
+      }
+      
+      await setProducts(newList);
+      setIsModalOpen(false);
+      resetForm();
+    } catch (err) {
+      alert("Erro ao salvar produto. Verifique sua conexão.");
+    } finally {
+      setIsSaving(false);
     }
-    
-    setProducts(newList);
-    setIsModalOpen(false);
-    resetForm();
-    setIsSaving(false);
   };
 
   const resetForm = () => {
@@ -75,28 +111,28 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
   return (
     <div className="space-y-4 pb-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-black text-slate-800 tracking-tight">ESTOQUE</h2>
+        <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Estoque Pro</h2>
         <button onClick={() => { resetForm(); setIsModalOpen(true); }} className="bg-slate-900 text-white p-2.5 rounded-2xl shadow-lg active:scale-95"><Plus size={20} /></button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white p-4 rounded-3xl border border-slate-50 shadow-sm flex items-center gap-3">
            <div className="w-10 h-10 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0"><PiggyBank size={20}/></div>
-           <div className="min-w-0"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">Custo</p><p className="font-black text-slate-800 text-xs truncate">{formatCurrency(products.reduce((a,p)=>a+(p.costPrice*p.quantity),0))}</p></div>
+           <div className="min-w-0"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">Custo Total</p><p className="font-black text-slate-800 text-xs truncate">{formatCurrency(products.reduce((a,p)=>a+(p.costPrice*p.quantity),0))}</p></div>
         </div>
         <div className="bg-white p-4 rounded-3xl border border-slate-50 shadow-sm flex items-center gap-3">
            <div className="w-10 h-10 bg-emerald-50 text-emerald-500 rounded-xl flex items-center justify-center shrink-0"><TrendingUp size={20}/></div>
-           <div className="min-w-0"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">Retorno</p><p className="font-black text-emerald-600 text-xs truncate">{formatCurrency(products.reduce((a,p)=>a+(p.salePrice*p.quantity),0))}</p></div>
+           <div className="min-w-0"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">Retorno Previsto</p><p className="font-black text-emerald-600 text-xs truncate">{formatCurrency(products.reduce((a,p)=>a+(p.salePrice*p.quantity),0))}</p></div>
         </div>
       </div>
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-        <input type="text" placeholder="Buscar produto..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        <input type="text" placeholder="Buscar no estoque..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        {filtered.map(product => (
+        {filtered.length > 0 ? filtered.map(product => (
           <div key={product.id} className="bg-white border border-slate-50 rounded-[2rem] overflow-hidden shadow-sm flex flex-col group animate-in fade-in duration-300">
             <div className="h-32 bg-slate-50 relative">
               {product.photo ? <img src={product.photo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-200"><PackageOpen size={32} /></div>}
@@ -114,17 +150,20 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
                   <Trash2 size={14} />
                 </button>
               </div>
-              <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-slate-900 text-white rounded-lg text-[8px] font-black uppercase tracking-widest">Qtd: {product.quantity}</div>
+              <div className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${product.quantity <= 2 ? 'bg-red-500 text-white' : 'bg-slate-900 text-white'}`}>Qtd: {product.quantity}</div>
             </div>
             <div className="p-3">
               <h3 className="font-bold text-slate-800 text-[10px] uppercase truncate mb-1">{product.name}</h3>
               <p className="font-black text-blue-600 text-xs">{formatCurrency(product.salePrice)}</p>
             </div>
           </div>
-        ))}
+        )) : (
+          <div className="col-span-2 text-center py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-100">
+             <p className="text-slate-300 font-black uppercase text-[10px] tracking-widest">Nenhum item em estoque</p>
+          </div>
+        )}
       </div>
 
-      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO CUSTOMIZADO */}
       {productToDelete && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-xs rounded-[2rem] overflow-hidden shadow-2xl animate-in zoom-in-95">
@@ -153,7 +192,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
               <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 bg-slate-50 rounded-full"><X size={20} /></button>
             </div>
             
-            <div className="p-6 space-y-6">
+            <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
               <div className="flex flex-col items-center gap-3">
                 <button onClick={triggerUpload} className="relative active:scale-95 transition-all">
                   <div className="w-24 h-24 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden">
@@ -170,12 +209,12 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
                   <input value={formData.name} onChange={(e)=>setFormData(f=>({...f,name:e.target.value}))} placeholder="Ex: Tela iPhone 11 Incell" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                   <div className="p-3 bg-slate-50 rounded-2xl">
-                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Custo Un.</p>
+                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Custo Unitário</p>
                       <input value={formatCurrency(formData.costPrice||0).replace('R$','').trim()} onChange={(e)=>setFormData(f=>({...f,costPrice:parseCurrencyString(e.target.value)}))} className="w-full bg-transparent font-black text-slate-800 outline-none text-xs" />
                    </div>
-                   <div className="p-3 bg-slate-50 rounded-2xl">
-                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Venda Un.</p>
+                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Venda Unitária</p>
                       <input value={formatCurrency(formData.salePrice||0).replace('R$','').trim()} onChange={(e)=>setFormData(f=>({...f,salePrice:parseCurrencyString(e.target.value)}))} className="w-full bg-transparent font-black text-blue-600 outline-none text-xs" />
                    </div>
                 </div>
@@ -189,7 +228,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
             <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
               <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[10px] tracking-widest">Sair</button>
               <button onClick={handleSave} disabled={isSaving || isCompressing} className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95">
-                {isSaving ? <Loader2 className="animate-spin" /> : 'Confirmar SQL'}
+                {isSaving ? <Loader2 className="animate-spin" /> : 'Confirmar no SQL'}
               </button>
             </div>
           </div>

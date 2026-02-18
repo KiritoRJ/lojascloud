@@ -223,6 +223,7 @@ export class OnlineDB {
       return (data || []).map(d => ({
         id: d.id,
         name: d.name,
+        barcode: d.barcode,
         photo: d.photo,
         costPrice: Number(d.cost_price || 0),
         salePrice: Number(d.sale_price || 0),
@@ -302,6 +303,7 @@ export class OnlineDB {
         id: p.id,
         tenant_id: tenantId,
         name: p.name,
+        barcode: p.barcode,
         photo: p.photo,
         cost_price: p.costPrice,
         sale_price: p.salePrice,

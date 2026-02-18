@@ -97,6 +97,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
   };
 
   const triggerUserPhotoUpload = () => {
+    if (!isAdmin) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -115,6 +116,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
   };
 
   const triggerUpload = () => {
+    if (!isAdmin) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -173,6 +175,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
 
   const handleConfirmDelete = async () => {
     if (!userToDelete) return;
+    if (!isAdmin) return;
     setIsDeleting(true);
     try {
       const result = await OnlineDB.deleteRemoteUser(userToDelete.id);
@@ -199,7 +202,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
             <button onClick={() => setView('main')} className="p-3 bg-white shadow-sm border border-slate-100 rounded-2xl text-slate-600 active:scale-90 transition-all">
               <ArrowLeft size={24} />
             </button>
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Equipe da Loja</h2>
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">{isAdmin ? 'Equipe da Loja' : 'Trocar de Perfil'}</h2>
           </div>
           {isAdmin && (
             <button onClick={() => setIsUserModalOpen(true)} className="p-3 bg-slate-900 text-white rounded-2xl shadow-xl active:scale-90 transition-all">
@@ -260,7 +263,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
           ))}
         </div>
 
-        {userToDelete && (
+        {userToDelete && isAdmin && (
           <div className="fixed inset-0 bg-slate-950/80 z-[200] flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100">
               <div className="p-8 text-center space-y-6">
@@ -391,9 +394,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     );
   }
 
-  if (!isAdmin) return null;
-
-  if (view === 'theme') {
+  if (view === 'theme' && isAdmin) {
     return (
       <div className="space-y-6 animate-in slide-in-from-right-10 duration-500">
         <div className="flex items-center gap-4 mb-8">
@@ -420,7 +421,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     );
   }
 
-  if (view === 'print') {
+  if (view === 'print' && isAdmin) {
     return (
       <div className="space-y-6 animate-in slide-in-from-right-10 duration-500">
         <div className="flex items-center gap-4 mb-8">
@@ -459,14 +460,18 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
               <div className="absolute right-0 mt-3 w-72 bg-white border border-slate-100 rounded-[2rem] shadow-2xl z-50 py-4 overflow-hidden animate-in zoom-in-95 origin-top-right">
-                <button onClick={() => { setView('theme'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${view === 'theme' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                  <Palette size={18} /> Aparência Global
-                </button>
-                <button onClick={() => { setView('print'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${view === 'print' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                  <FileText size={18} /> Dados do Recibo
-                </button>
+                {isAdmin && (
+                  <>
+                    <button onClick={() => { setView('theme'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${view === 'theme' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                      <Palette size={18} /> Aparência Global
+                    </button>
+                    <button onClick={() => { setView('print'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${view === 'print' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                      <FileText size={18} /> Dados do Recibo
+                    </button>
+                  </>
+                )}
                 <button onClick={() => { setView('users'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${view === 'users' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                  <Users size={18} /> Gestão de Equipe
+                  <Users size={18} /> {isAdmin ? 'Gestão de Equipe' : 'Trocar de Perfil'}
                 </button>
               </div>
             </>
@@ -480,26 +485,28 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
             <div className="w-52 h-52 bg-white rounded-[3.5rem] border-[10px] border-white shadow-2xl flex items-center justify-center overflow-hidden ring-1 ring-slate-100">
               {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <ImageIcon size={64} className="text-slate-100" />}
             </div>
-            <button onClick={triggerUpload} className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white p-5 rounded-full border-4 border-white shadow-xl hover:scale-110 transition-all">
-              <Camera size={24} />
-            </button>
+            {isAdmin && (
+              <button onClick={triggerUpload} className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white p-5 rounded-full border-4 border-white shadow-xl hover:scale-110 transition-all">
+                <Camera size={24} />
+              </button>
+            )}
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 pt-10">
           <div className="w-full space-y-3">
              <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] text-center w-full block">Nome da Empresa</label>
-             <input type="text" value={settings.storeName} onChange={(e) => updateSetting('storeName', e.target.value)} className="w-full px-8 py-6 bg-white border-none rounded-[2.5rem] font-black text-2xl text-slate-800 text-center shadow-xl shadow-slate-200/20 outline-none focus:ring-4 focus:ring-blue-50 transition-all" />
+             <input readOnly={!isAdmin} type="text" value={settings.storeName} onChange={(e) => updateSetting('storeName', e.target.value)} className={`w-full px-8 py-6 bg-white border-none rounded-[2.5rem] font-black text-2xl text-slate-800 text-center shadow-xl shadow-slate-200/20 outline-none transition-all ${isAdmin ? 'focus:ring-4 focus:ring-blue-50' : 'opacity-80'}`} />
           </div>
 
           <div className="w-full space-y-2">
              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><MapPin size={12}/> Endereço Comercial</label>
-             <input type="text" value={settings.storeAddress || ''} onChange={(e) => updateSetting('storeAddress', e.target.value)} className="w-full px-8 py-5 bg-white border-none rounded-[2rem] font-bold text-sm text-slate-800 shadow-sm outline-none focus:ring-4 focus:ring-blue-50 transition-all" />
+             <input readOnly={!isAdmin} type="text" value={settings.storeAddress || ''} onChange={(e) => updateSetting('storeAddress', e.target.value)} className={`w-full px-8 py-5 bg-white border-none rounded-[2rem] font-bold text-sm text-slate-800 shadow-sm outline-none transition-all ${isAdmin ? 'focus:ring-4 focus:ring-blue-50' : 'opacity-80'}`} />
           </div>
 
           <div className="w-full space-y-2">
              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><Phone size={12}/> Telefone de Contato</label>
-             <input type="text" value={settings.storePhone || ''} onChange={(e) => updateSetting('storePhone', e.target.value)} className="w-full px-8 py-5 bg-white border-none rounded-[2rem] font-bold text-sm text-slate-800 shadow-sm outline-none focus:ring-4 focus:ring-blue-50 transition-all" />
+             <input readOnly={!isAdmin} type="text" value={settings.storePhone || ''} onChange={(e) => updateSetting('storePhone', e.target.value)} className={`w-full px-8 py-5 bg-white border-none rounded-[2rem] font-bold text-sm text-slate-800 shadow-sm outline-none transition-all ${isAdmin ? 'focus:ring-4 focus:ring-blue-50' : 'opacity-80'}`} />
           </div>
         </div>
 

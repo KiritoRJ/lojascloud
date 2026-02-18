@@ -1,8 +1,9 @@
 
-import React, { useState, useMemo } from 'react';
-import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode } from 'lucide-react';
 import { Product, Sale, AppSettings, User } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface Props {
   products: Product[];
@@ -34,6 +35,10 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [amountReceived, setAmountReceived] = useState(0);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'Dinheiro' | 'Cartão' | 'PIX'>('Dinheiro');
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
+
+  // Estados do Scanner de Venda
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   const cartTotal = useMemo(() => {
     return cart.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0);
@@ -83,6 +88,70 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const removeFromCart = (productId: string) => {
     setCart(prevCart => prevCart.filter(item => item.product.id !== productId));
   };
+
+  // Funções do Scanner
+  const startScanner = async () => {
+    setIsScannerOpen(true);
+    setTimeout(async () => {
+      try {
+        const html5QrCode = new Html5Qrcode("sales-scanner-region");
+        scannerRef.current = html5QrCode;
+        
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 15,
+            qrbox: { width: 280, height: 160 },
+            aspectRatio: 1.777778
+          },
+          (decodedText) => {
+            handleBarcodeScanned(decodedText);
+          },
+          () => {}
+        );
+      } catch (err) {
+        console.error("Erro ao iniciar scanner de vendas:", err);
+        alert("Câmera indisponível.");
+        setIsScannerOpen(false);
+      }
+    }, 300);
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+      } catch (e) {}
+      scannerRef.current = null;
+    }
+    setIsScannerOpen(false);
+  };
+
+  const handleBarcodeScanned = (code: string) => {
+    const product = products.find(p => p.barcode === code);
+    if (product) {
+      if (product.quantity > 0) {
+        addToCart(product);
+        stopScanner();
+        // Abrir o drawer do carrinho para dar feedback visual de que foi adicionado
+        setShowCartDrawer(true);
+      } else {
+        alert(`Produto "${product.name}" está sem estoque.`);
+        stopScanner();
+      }
+    } else {
+      alert(`Código ${code} não encontrado no sistema.`);
+      stopScanner();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+      }
+    };
+  }, []);
 
   const handleFinalizeSale = () => {
     if (cart.length === 0) return;
@@ -135,7 +204,6 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       const width = (settings.pdfPaperWidth || 80) * 4.75 * scale;
       const thermalFont = (sz: number, bold: boolean = false) => `${bold ? '900' : '400'} ${sz * scale}px "Courier New", Courier, monospace`;
 
-      // Cálculo de altura dinâmica baseado na quantidade de itens
       const headerHeight = 250 * scale;
       const itemHeight = 30 * scale;
       const footerHeight = 200 * scale;
@@ -167,7 +235,6 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
       let currentY = 40 * scale;
 
-      // Header
       drawText(settings.storeName, currentY, 18, true);
       currentY += 25 * scale;
       drawText("RECIBO DE VENDA", currentY, 10, true);
@@ -175,7 +242,6 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       drawDashedLine(currentY);
       currentY += 25 * scale;
 
-      // Info
       drawText(`TRANS: #${lastTransactionId}`, currentY, 9, false, 'left');
       drawText(new Date(lastSaleDate).toLocaleDateString(), currentY, 9, false, 'right');
       currentY += 15 * scale;
@@ -184,13 +250,11 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       drawDashedLine(currentY);
       currentY += 25 * scale;
 
-      // Itens Header
       drawText("ITEM", currentY, 8, true, 'left');
       drawText("QTD", currentY, 8, true, 'center');
       drawText("TOTAL", currentY, 8, true, 'right');
       currentY += 20 * scale;
 
-      // Itens List
       lastTransactionItems.forEach(item => {
         const name = item.product.name.substring(0, 18);
         drawText(name, currentY, 9, false, 'left');
@@ -203,7 +267,6 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       drawDashedLine(currentY);
       currentY += 30 * scale;
 
-      // Totais
       drawText("PAGAMENTO:", currentY, 9, true, 'left');
       drawText(lastPaymentMethod, currentY, 10, true, 'right');
       currentY += 25 * scale;
@@ -220,7 +283,6 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       currentY += 20 * scale;
       drawText("SISTEMA ASSISTÊNCIA PRO", currentY, 7, false, 'center', '#94A3B8');
 
-      // Export
       const finalCanvas = document.createElement('canvas');
       finalCanvas.width = width;
       finalCanvas.height = currentY + 40 * scale;
@@ -249,7 +311,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
   const filteredProducts = products.filter(p => 
     p.quantity > 0 && 
-    p.name.toLowerCase().includes(productSearch.toLowerCase())
+    (p.name.toLowerCase().includes(productSearch.toLowerCase()) || (p.barcode && p.barcode.includes(productSearch)))
   );
 
   return (
@@ -285,15 +347,23 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             </button>
           </div>
 
-          <div className="relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition-colors" size={18} />
-            <input 
-              type="text" 
-              placeholder="Buscar item no estoque..." 
-              className="w-full pl-12 pr-4 py-4 bg-white border-none rounded-2xl text-xs font-bold shadow-sm focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all placeholder:text-slate-300" 
-              value={productSearch} 
-              onChange={(e) => setProductSearch(e.target.value)} 
-            />
+          <div className="flex gap-2">
+            <div className="relative group flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition-colors" size={18} />
+              <input 
+                type="text" 
+                placeholder="Nome ou código do item..." 
+                className="w-full pl-12 pr-4 py-4 bg-white border-none rounded-2xl text-xs font-bold shadow-sm focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all placeholder:text-slate-300" 
+                value={productSearch} 
+                onChange={(e) => setProductSearch(e.target.value)} 
+              />
+            </div>
+            <button 
+              onClick={startScanner}
+              className="p-4 bg-slate-900 text-white rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center"
+            >
+              <ScanBarcode size={24} />
+            </button>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -379,6 +449,40 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             </div>
           </div>
         </>
+      )}
+
+      {/* MODAL SCANNER DE VENDAS */}
+      {isScannerOpen && (
+        <div className="fixed inset-0 bg-slate-950 z-[200] flex flex-col animate-in fade-in">
+           <div className="p-6 flex items-center justify-between border-b border-white/10 bg-slate-900">
+              <div className="flex items-center gap-3">
+                 <ScanBarcode className="text-emerald-500" size={24} />
+                 <h3 className="font-black text-white uppercase text-xs tracking-widest">Leitor de Venda</h3>
+              </div>
+              <button onClick={stopScanner} className="p-2 bg-white/10 text-white rounded-full"><X size={20} /></button>
+           </div>
+           
+           <div className="flex-1 relative flex items-center justify-center bg-black">
+              <div id="sales-scanner-region" className="w-full h-full"></div>
+              
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                 <div className="w-[300px] h-[180px] border-2 border-emerald-500 rounded-3xl relative shadow-[0_0_0_1000px_rgba(0,0,0,0.7)]">
+                    <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500/50 animate-pulse"></div>
+                    <div className="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-xl"></div>
+                    <div className="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-xl"></div>
+                    <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-xl"></div>
+                    <div className="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-xl"></div>
+                 </div>
+              </div>
+           </div>
+
+           <div className="p-10 text-center bg-slate-900">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] leading-relaxed">
+                Aponte para o código do produto<br/>
+                <span className="text-emerald-500">Adição automática ao carrinho</span>
+              </p>
+           </div>
+        </div>
       )}
 
       {showCheckoutModal && (

@@ -38,6 +38,7 @@ export interface ServiceOrder {
 export interface Product {
   id: string;
   name: string;
+  barcode?: string;
   photo: string | null;
   costPrice: number;
   salePrice: number;

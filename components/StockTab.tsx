@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
-import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode } from 'lucide-react';
 import { Product } from '../types';
 import { formatCurrency, parseCurrencyString } from '../utils';
+import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 
 interface Props {
   products: Product[];
@@ -17,9 +18,13 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
   const [searchTerm, setSearchTerm] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
+  
+  // Estados do Scanner
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   const [formData, setFormData] = useState<Partial<Product>>({
-    name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null
+    name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null, barcode: ''
   });
 
   const compressImage = (base64Str: string): Promise<string> => {
@@ -54,11 +59,59 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
         const compressed = await compressImage(reader.result as string);
         setFormData(prev => ({ ...prev, photo: compressed }));
         setIsCompressing(false);
-        e.target.value = ''; // Reset do valor
+        e.target.value = ''; 
       };
       reader.readAsDataURL(file);
     }
   };
+
+  const startScanner = async () => {
+    setIsScannerOpen(true);
+    setTimeout(async () => {
+      try {
+        const html5QrCode = new Html5Qrcode("scanner-region");
+        scannerRef.current = html5QrCode;
+        
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 150 },
+            aspectRatio: 1.777778
+          },
+          (decodedText) => {
+            setFormData(prev => ({ ...prev, barcode: decodedText }));
+            stopScanner();
+          },
+          () => {
+            // Failure is normal when no barcode is in view
+          }
+        );
+      } catch (err) {
+        console.error("Erro ao iniciar scanner:", err);
+        alert("Não foi possível acessar a câmera.");
+        setIsScannerOpen(false);
+      }
+    }, 300);
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+      } catch (e) {}
+      scannerRef.current = null;
+    }
+    setIsScannerOpen(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+      }
+    };
+  }, []);
 
   const handleSave = async () => {
     if (!formData.name) return alert('Nome é obrigatório.');
@@ -74,7 +127,8 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
           id: 'PROD_' + Math.random().toString(36).substr(2, 6).toUpperCase(),
           quantity: formData.quantity || 0,
           costPrice: formData.costPrice || 0,
-          salePrice: formData.salePrice || 0
+          salePrice: formData.salePrice || 0,
+          barcode: formData.barcode || ''
         } as Product;
         newList = [newProd, ...products];
       }
@@ -91,10 +145,13 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
 
   const resetForm = () => {
     setEditingProduct(null);
-    setFormData({ name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null });
+    setFormData({ name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null, barcode: '' });
   };
 
-  const filtered = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filtered = products.filter(p => 
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.barcode && p.barcode.includes(searchTerm))
+  );
 
   const confirmDelete = () => {
     if (productToDelete) {
@@ -123,7 +180,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-        <input type="text" placeholder="Buscar no estoque..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        <input type="text" placeholder="Buscar por nome ou código..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -149,7 +206,10 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
             </div>
             <div className="p-3">
               <h3 className="font-bold text-slate-800 text-[10px] uppercase truncate mb-1">{product.name}</h3>
-              <p className="font-black text-blue-600 text-xs">{formatCurrency(product.salePrice)}</p>
+              <div className="flex items-center justify-between">
+                <p className="font-black text-blue-600 text-xs">{formatCurrency(product.salePrice)}</p>
+                {product.barcode && <ScanBarcode size={10} className="text-slate-300" />}
+              </div>
             </div>
           </div>
         )) : (
@@ -204,6 +264,25 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descrição do Produto</label>
                   <input value={formData.name} onChange={(e)=>setFormData(f=>({...f,name:e.target.value}))} placeholder="Ex: Tela iPhone 11 Incell" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
                 </div>
+
+                <div className="space-y-1">
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Código de Barras</label>
+                   <div className="flex gap-2">
+                     <input 
+                       value={formData.barcode} 
+                       onChange={(e)=>setFormData(f=>({...f,barcode:e.target.value}))} 
+                       placeholder="Leia ou digite o código" 
+                       className="flex-1 p-4 bg-slate-50 rounded-2xl outline-none font-black text-xs text-blue-600" 
+                     />
+                     <button 
+                       onClick={startScanner}
+                       className="p-4 bg-blue-600 text-white rounded-2xl shadow-lg active:scale-90 transition-all"
+                     >
+                       <ScanBarcode size={20} />
+                     </button>
+                   </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
                       <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Custo Unitário</p>
@@ -228,6 +307,35 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODAL SCANNER */}
+      {isScannerOpen && (
+        <div className="fixed inset-0 bg-slate-950 z-[200] flex flex-col animate-in fade-in">
+           <div className="p-6 flex items-center justify-between border-b border-white/10">
+              <h3 className="font-black text-white uppercase text-xs tracking-widest">Scanner de Código</h3>
+              <button onClick={stopScanner} className="p-2 bg-white/10 text-white rounded-full"><X size={20} /></button>
+           </div>
+           
+           <div className="flex-1 relative flex items-center justify-center">
+              <div id="scanner-region" className="w-full h-full max-h-[60vh]"></div>
+              
+              {/* Overlay Decorativo */}
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                 <div className="w-[280px] h-[180px] border-2 border-blue-500 rounded-3xl relative shadow-[0_0_0_1000px_rgba(0,0,0,0.6)]">
+                    <div className="absolute inset-0 animate-pulse bg-blue-500/10 rounded-3xl"></div>
+                    <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-white rounded-tl-xl"></div>
+                    <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-white rounded-tr-xl"></div>
+                    <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-white rounded-bl-xl"></div>
+                    <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-white rounded-br-xl"></div>
+                 </div>
+              </div>
+           </div>
+
+           <div className="p-10 text-center">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Posicione o código de barras no centro</p>
+           </div>
         </div>
       )}
     </div>

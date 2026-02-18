@@ -119,211 +119,166 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
       if (!ctx) return;
 
       const scale = 2;
-      const width = 400 * scale; 
-      let dynamicHeight = 2200 * scale; 
+      const width = 380 * scale; 
+      let dynamicHeight = 4000 * scale; 
       canvas.width = width;
       canvas.height = dynamicHeight;
 
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, width, dynamicHeight);
 
-      const drawText = (text: string, y: number, sz: number, b: boolean = false, al: 'center' | 'left' | 'right' = 'center', col: string = '#000000') => {
+      const drawText = (text: string, y: number, sz: number, b: boolean = false, al: 'center' | 'left' | 'right' = 'center', col: string = '#333333') => {
         ctx.fillStyle = col;
-        ctx.font = `${b ? '900' : '500'} ${sz * scale}px "Inter", sans-serif`;
+        ctx.font = `${b ? '900' : '400'} ${sz * scale}px "Inter", sans-serif`;
         ctx.textAlign = al;
-        let x = al === 'center' ? width / 2 : (al === 'left' ? 30 * scale : width - 30 * scale);
-        ctx.fillText((text || '').toUpperCase(), x, y);
+        let x = al === 'center' ? width / 2 : (al === 'left' ? 25 * scale : width - 25 * scale);
+        ctx.fillText(text, x, y);
       };
 
       const drawLine = (y: number, light: boolean = false) => {
-        ctx.strokeStyle = light ? '#EEEEEE' : '#000000';
-        ctx.lineWidth = (light ? 0.5 : 1) * scale;
+        ctx.strokeStyle = light ? '#EEEEEE' : '#999999';
+        ctx.lineWidth = 1 * scale;
         ctx.beginPath();
-        ctx.moveTo(30 * scale, y);
-        ctx.lineTo(width - 30 * scale, y);
+        ctx.moveTo(25 * scale, y);
+        ctx.lineTo(width - 25 * scale, y);
         ctx.stroke();
       };
 
-      let currentY = 50 * scale;
+      let currentY = 60 * scale;
 
-      // --- HEADER (Mais compacto) ---
-      drawText(settings.storeName, currentY, 20, true, 'center');
+      // Header (Modelo da Foto)
+      drawText(settings.storeName.toUpperCase(), currentY, 18, true, 'center');
       currentY += 22 * scale;
-      
-      if (settings.storeAddress) {
-        drawText(settings.storeAddress, currentY, 7, false, 'center', '#666666');
-        currentY += 12 * scale;
-      }
-      if (settings.storePhone) {
-        drawText(`CONTATO: ${settings.storePhone}`, currentY, 7.5, true, 'center', '#666666');
-        currentY += 14 * scale;
-      }
-      
-      currentY += 15 * scale;
-      drawLine(currentY);
-      currentY += 22 * scale;
-      drawText("ORDEM DE SERVIÇO", currentY, 9, true, 'center');
-      currentY += 22 * scale;
-      drawLine(currentY);
-      currentY += 35 * scale;
-
-      // --- INFO PROTOCOLO ---
-      drawText("PROTOCOLO", currentY, 7.5, false, 'left', '#999999');
-      drawText(`#${order.id}`, currentY, 11, true, 'right');
-      currentY += 20 * scale;
-      drawText("DATA DE ENTRADA", currentY, 7.5, false, 'left', '#999999');
-      drawText(formatDate(order.date), currentY, 9, false, 'right');
-      currentY += 20 * scale;
-      drawText("STATUS ATUAL", currentY, 7.5, false, 'left', '#999999');
-      drawText(order.status, currentY, 9, true, 'right', order.status === 'Entregue' ? '#10b981' : '#3b82f6');
-      currentY += 35 * scale;
-
-      // --- SEÇÃO CLIENTE (Compactado) ---
-      ctx.fillStyle = '#F9FAFB';
-      ctx.fillRect(30 * scale, currentY - 18 * scale, width - 60 * scale, 75 * scale);
-      currentY += 10 * scale;
-      drawText("DADOS DO CLIENTE", currentY, 6.5, true, 'left', '#999999');
-      currentY += 20 * scale;
-      drawText(order.customerName, currentY, 13, true, 'left');
+      drawText(`ORDEM DE SERVIÇO #${order.id}`, currentY, 10, true, 'center', '#555555');
       currentY += 16 * scale;
-      drawText(`FONE: ${order.phoneNumber}`, currentY, 8, false, 'left', '#333333');
-      currentY += 45 * scale;
+      drawText(`Data: ${formatDate(order.date)}`, currentY, 10, false, 'center', '#666666');
+      
+      currentY += 25 * scale;
+      drawLine(currentY);
+      currentY += 40 * scale;
 
-      // --- SEÇÃO EQUIPAMENTO ---
-      drawText("EQUIPAMENTO", currentY, 6.5, true, 'left', '#999999');
-      currentY += 20 * scale;
-      drawText(`${order.deviceBrand} ${order.deviceModel}`, currentY, 12, true, 'left');
+      // CLIENTE
+      drawText("CLIENTE", currentY, 11, true, 'left');
+      currentY += 18 * scale;
+      drawText("Nome: ", currentY, 10, true, 'left');
+      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText(order.customerName, 25 * scale + ctx.measureText("Nome: ").width, currentY);
+      
+      currentY += 16 * scale;
+      drawText("Telefone: ", currentY, 10, true, 'left');
+      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText(order.phoneNumber, 25 * scale + ctx.measureText("Telefone: ").width, currentY);
+      
+      currentY += 16 * scale;
+      drawText("Endereço: ", currentY, 10, true, 'left');
+      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText(order.address || "N/A", 25 * scale + ctx.measureText("Endereço: ").width, currentY);
+      
       currentY += 35 * scale;
 
-      // --- DEFEITO E REPARO (Menos espaçamento entre linhas) ---
-      drawLine(currentY, true);
-      currentY += 25 * scale;
-      drawText("PROBLEMA RELATADO", currentY, 6.5, true, 'left', '#999999');
+      // APARELHO
+      drawText("APARELHO", currentY, 11, true, 'left');
       currentY += 18 * scale;
-      ctx.font = `500 ${9 * scale}px "Inter", sans-serif`;
-      ctx.fillStyle = '#333333';
-      const defectLines = (order.defect.match(/.{1,45}/g) || []) as string[];
-      defectLines.forEach(line => {
-        ctx.fillText(line.toUpperCase(), 30 * scale, currentY);
-        currentY += 13 * scale;
+      drawText("Marca: ", currentY, 10, true, 'left');
+      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText(order.deviceBrand, 25 * scale + ctx.measureText("Marca: ").width, currentY);
+      
+      currentY += 16 * scale;
+      drawText("Modelo: ", currentY, 10, true, 'left');
+      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText(order.deviceModel, 25 * scale + ctx.measureText("Modelo: ").width, currentY);
+      
+      currentY += 16 * scale;
+      drawText("Defeito: ", currentY, 10, true, 'left');
+      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText(order.defect, 25 * scale + ctx.measureText("Defeito: ").width, currentY);
+      
+      currentY += 35 * scale;
+
+      // REPARO EFETUADO
+      drawText("REPARO EFETUADO", currentY, 11, true, 'left');
+      currentY += 18 * scale;
+      const repairLines = (order.repairDetails.match(/.{1,50}/g) || []) as string[];
+      repairLines.forEach(line => {
+        drawText(line, currentY, 10, false, 'left', '#444444');
+        currentY += 14 * scale;
       });
-      currentY += 15 * scale;
 
-      if (order.repairDetails) {
-        drawLine(currentY, true);
-        currentY += 25 * scale;
-        drawText("SERVIÇO EXECUTADO", currentY, 6.5, true, 'left', '#999999');
-        currentY += 18 * scale;
-        const repairLines = (order.repairDetails.match(/.{1,45}/g) || []) as string[];
-        repairLines.forEach(line => {
-          ctx.fillText(line.toUpperCase(), 30 * scale, currentY);
-          currentY += 13 * scale;
-        });
-        currentY += 15 * scale;
-      }
+      currentY += 30 * scale;
+      drawLine(currentY);
+      currentY += 40 * scale;
 
-      // --- GRADE DE FOTOS (ENTRADA) (Otimizada) ---
+      // FOTOS DE ENTRADA
+      drawText("FOTOS DE ENTRADA (ESTADO DO APARELHO)", currentY, 10, true, 'center', '#444444');
+      currentY += 25 * scale;
+      
+      const imgSize = 150 * scale;
+      const gap = 15 * scale;
+      const startX = (width - (imgSize * 2 + gap)) / 2;
+
       if (order.photos && order.photos.length > 0) {
-        currentY += 10 * scale;
-        drawText("FOTOS DE ENTRADA", currentY, 6.5, true, 'center', '#999999');
-        currentY += 18 * scale;
-
-        const imgSize = 85 * scale;
-        const gap = 8 * scale;
-        const itemsPerRow = 2;
-        const totalGridWidth = (itemsPerRow * imgSize) + ((itemsPerRow - 1) * gap);
-        const startX = (width - totalGridWidth) / 2;
-
-        for (let i = 0; i < Math.min(order.photos.length, 4); i++) {
-          const row = Math.floor(i / itemsPerRow);
-          const col = i % itemsPerRow;
-          const x = startX + (col * (imgSize + gap));
-          const y = currentY + (row * (imgSize + gap));
-
+        for (let i = 0; i < Math.min(order.photos.length, 2); i++) {
           const img = new Image();
           img.src = order.photos[i];
           await new Promise(r => img.onload = r);
-          
-          ctx.strokeStyle = '#F1F5F9';
-          ctx.lineWidth = 0.5 * scale;
-          ctx.strokeRect(x, y, imgSize, imgSize);
-          ctx.drawImage(img, x, y, imgSize, imgSize);
+          ctx.drawImage(img, startX + (i * (imgSize + gap)), currentY, imgSize, imgSize);
         }
-        const rowsCount = Math.ceil(Math.min(order.photos.length, 4) / itemsPerRow);
-        currentY += (rowsCount * (imgSize + gap)) + 20 * scale;
+        currentY += imgSize + 35 * scale;
+      } else {
+        drawText("Nenhuma foto anexada", currentY, 8, false, 'center', '#999999');
+        currentY += 35 * scale;
       }
 
-      // --- GRADE DE FOTOS (SAÍDA) (Otimizada) ---
+      // FOTOS DE SAÍDA
+      drawText("FOTOS DO SERVIÇO CONCLUÍDO", currentY, 10, true, 'center', '#444444');
+      currentY += 25 * scale;
+
       if (order.finishedPhotos && order.finishedPhotos.length > 0) {
-        currentY += 10 * scale;
-        drawText("FOTOS DE SAÍDA", currentY, 6.5, true, 'center', '#999999');
-        currentY += 18 * scale;
-
-        const imgSize = 85 * scale;
-        const gap = 8 * scale;
-        const itemsPerRow = 2;
-        const totalGridWidth = (itemsPerRow * imgSize) + ((itemsPerRow - 1) * gap);
-        const startX = (width - totalGridWidth) / 2;
-
-        for (let i = 0; i < Math.min(order.finishedPhotos.length, 4); i++) {
-          const row = Math.floor(i / itemsPerRow);
-          const col = i % itemsPerRow;
-          const x = startX + (col * (imgSize + gap));
-          const y = currentY + (row * (imgSize + gap));
-
+        for (let i = 0; i < Math.min(order.finishedPhotos.length, 2); i++) {
           const img = new Image();
           img.src = order.finishedPhotos[i];
           await new Promise(r => img.onload = r);
-          
-          ctx.strokeStyle = '#F1F5F9';
-          ctx.lineWidth = 0.5 * scale;
-          ctx.strokeRect(x, y, imgSize, imgSize);
-          ctx.drawImage(img, x, y, imgSize, imgSize);
+          ctx.drawImage(img, startX + (i * (imgSize + gap)), currentY, imgSize, imgSize);
         }
-        const rowsCount = Math.ceil(Math.min(order.finishedPhotos.length, 4) / itemsPerRow);
-        currentY += (rowsCount * (imgSize + gap)) + 20 * scale;
+        currentY += imgSize + 40 * scale;
+      } else {
+        drawText("Nenhuma foto de saída anexada", currentY, 8, false, 'center', '#999999');
+        currentY += 40 * scale;
       }
 
-      // --- VALOR TOTAL (Bloco compacto) ---
-      currentY += 15 * scale;
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(30 * scale, currentY, width - 60 * scale, 45 * scale);
-      currentY += 28 * scale;
-      drawText("TOTAL A PAGAR", currentY, 8.5, true, 'left', '#FFFFFF');
-      drawText(formatCurrency(order.total), currentY, 14, true, 'right', '#FFFFFF');
-      currentY += 35 * scale;
+      drawLine(currentY);
+      currentY += 40 * scale;
 
-      // --- TERMO DE GARANTIA (Texto mais denso) ---
+      // TOTAL (Centralizado e Grande)
+      drawText(`TOTAL DO SERVIÇO: ${formatCurrency(order.total)}`, currentY, 16, true, 'center', '#000000');
+      currentY += 40 * scale;
+      drawLine(currentY);
+      currentY += 40 * scale;
+
+      // TERMOS DE GARANTIA
+      drawText("TERMOS DE GARANTIA", currentY, 11, true, 'center');
+      currentY += 25 * scale;
+      
       if (settings.pdfWarrantyText) {
-        currentY += 15 * scale;
-        drawText("TERMO DE GARANTIA", currentY, 7, true, 'left', '#000000');
-        currentY += 18 * scale;
-        ctx.font = `500 ${7 * scale}px "Inter", sans-serif`;
-        ctx.fillStyle = '#666666';
         const warrantyLines = (settings.pdfWarrantyText.match(/.{1,65}/g) || []) as string[];
         warrantyLines.forEach(line => {
-          ctx.fillText(line.toUpperCase(), 30 * scale, currentY);
-          currentY += 10 * scale;
+          drawText(line, currentY, 8, false, 'center', '#666666');
+          currentY += 12 * scale;
         });
-        currentY += 25 * scale;
       }
 
-      // --- FOOTER ---
-      drawLine(currentY, true);
-      currentY += 25 * scale;
-      drawText("OBRIGADO PELA PREFERÊNCIA!", currentY, 9, true, 'center');
-      currentY += 14 * scale;
-      drawText("SISTEMA ASSISTÊNCIA PRO", currentY, 5.5, false, 'center', '#CCCCCC');
+      currentY += 60 * scale;
+      drawText("OBRIGADO PELA PREFERÊNCIA!", currentY, 9, true, 'center', '#999999');
 
-      // --- FINALIZAÇÃO (Canvas Ajustado) ---
+      // Corte final do Canvas
       const finalCanvas = document.createElement('canvas');
       finalCanvas.width = width;
-      finalCanvas.height = currentY + 40 * scale; // Margem final mínima
+      finalCanvas.height = currentY + 100 * scale;
       const finalCtx = finalCanvas.getContext('2d');
       if (finalCtx) {
         finalCtx.drawImage(canvas, 0, 0);
         const jpeg = finalCanvas.toDataURL('image/jpeg', 0.9);
-        const fileName = `OS_${order.id}_${order.customerName.replace(/\s+/g, '_')}.jpg`;
+        const fileName = `OS_${order.id}_CUPOM.jpg`;
         
         if ((window as any).AndroidBridge) {
           const base64 = jpeg.split(',')[1];
@@ -337,7 +292,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
       }
     } catch (err) {
       console.error("Erro ao gerar cupom O.S.:", err);
-      alert("Falha ao processar o recibo.");
+      alert("Falha ao processar o recibo térmico.");
     } finally {
       setIsGeneratingReceipt(false);
     }

@@ -201,7 +201,9 @@ export class OnlineDB {
         status: d.status,
         photos: d.photos || [],
         finishedPhotos: d.finished_photos || [], 
-        date: d.created_at
+        date: d.created_at,
+        entryDate: d.entry_date || '',
+        exitDate: d.exit_date || ''
       }));
     } catch (e) { 
       console.error("Erro ao buscar ordens do Supabase:", e);
@@ -285,7 +287,9 @@ export class OnlineDB {
         status: os.status,
         photos: os.photos,
         finished_photos: os.finishedPhotos || [], 
-        created_at: os.date || new Date().toISOString()
+        created_at: os.date || new Date().toISOString(),
+        entry_date: os.entryDate,
+        exit_date: os.exitDate
       }));
       const { error } = await supabase.from('service_orders').upsert(payload, { onConflict: 'id' });
       if (error) throw error;
@@ -325,15 +329,15 @@ export class OnlineDB {
         id: s.id,
         tenant_id: tenantId,
         product_id: s.productId,
-        product_name: s.productName,
+        product_name: s.product_name,
         date: s.date,
         quantity: s.quantity,
         original_price: s.originalPrice,
         discount: s.discount,
         final_price: s.finalPrice,
         cost_at_sale: s.costAtSale,
-        payment_method: s.paymentMethod,
-        seller_name: s.sellerName,
+        payment_method: s.payment_method,
+        seller_name: s.seller_name,
         transaction_id: s.transactionId
       }));
       const { error } = await supabase.from('sales').upsert(payload, { onConflict: 'id' });

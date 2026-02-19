@@ -462,15 +462,16 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
               <div className="absolute right-0 mt-3 w-72 bg-white border border-slate-100 rounded-[2rem] shadow-2xl z-50 py-4 overflow-hidden animate-in zoom-in-95 origin-top-right">
                 {isAdmin && (
                   <>
-                    <button onClick={() => { setView('theme'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${view === 'theme' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                    {/* Fix: Casting 'view' to any to avoid TypeScript narrowing errors caused by early returns above this line */}
+                    <button onClick={() => { setView('theme'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'theme' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
                       <Palette size={18} /> Aparência Global
                     </button>
-                    <button onClick={() => { setView('print'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${view === 'print' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                    <button onClick={() => { setView('print'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'print' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
                       <FileText size={18} /> Dados do Recibo
                     </button>
                   </>
                 )}
-                <button onClick={() => { setView('users'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${view === 'users' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                <button onClick={() => { setView('users'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'users' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
                   <Users size={18} /> {isAdmin ? 'Gestão de Equipe' : 'Trocar de Perfil'}
                 </button>
               </div>

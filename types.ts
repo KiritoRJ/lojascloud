@@ -20,6 +20,8 @@ export interface User {
 export interface ServiceOrder {
   id: string;
   date: string;
+  entryDate: string;
+  exitDate: string;
   customerName: string;
   phoneNumber: string;
   address: string;

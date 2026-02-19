@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar } from 'lucide-react';
 import { ServiceOrder, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
 
@@ -23,7 +23,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
   const [formData, setFormData] = useState<Partial<ServiceOrder>>({
     customerName: '', phoneNumber: '', address: '', deviceBrand: '', deviceModel: '',
     defect: '', repairDetails: '', partsCost: 0, serviceCost: 0, status: 'Pendente',
-    photos: [], finishedPhotos: []
+    photos: [], finishedPhotos: [], entryDate: '', exitDate: ''
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -58,7 +58,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6));
+        resolve(canvas.toDataURL('image/webp', 0.7));
       };
     });
   };
@@ -93,7 +93,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
     } else {
       const newOrder: ServiceOrder = {
         ...formData, 
-        id: 'OS_' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+        id: 'OS' + Math.random().toString(36).substr(2, 5).toUpperCase(),
         date: new Date().toISOString(), 
         total: formData.total || (formData.partsCost || 0) + (formData.serviceCost || 0),
       } as ServiceOrder;
@@ -107,8 +107,13 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
   };
 
   const resetForm = () => {
+    const today = new Date().toLocaleDateString('pt-BR');
     setEditingOrder(null);
-    setFormData({ customerName: '', phoneNumber: '', address: '', deviceBrand: '', deviceModel: '', defect: '', status: 'Pendente', photos: [], finishedPhotos: [], partsCost: 0, serviceCost: 0, total: 0 });
+    setFormData({ 
+      customerName: '', phoneNumber: '', address: '', deviceBrand: '', deviceModel: '', 
+      defect: '', status: 'Pendente', photos: [], finishedPhotos: [], 
+      partsCost: 0, serviceCost: 0, total: 0, entryDate: today, exitDate: '' 
+    });
   };
 
   const generateReceiptImage = async (order: ServiceOrder) => {
@@ -120,157 +125,202 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
 
       const scale = 2;
       const width = 380 * scale; 
-      let dynamicHeight = 4000 * scale; 
+      let dynamicHeight = 7500 * scale; 
       canvas.width = width;
       canvas.height = dynamicHeight;
 
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, width, dynamicHeight);
 
-      const drawText = (text: string, y: number, sz: number, b: boolean = false, al: 'center' | 'left' | 'right' = 'center', col: string = '#333333') => {
-        ctx.fillStyle = col;
-        ctx.font = `${b ? '900' : '400'} ${sz * scale}px "Inter", sans-serif`;
-        ctx.textAlign = al;
-        let x = al === 'center' ? width / 2 : (al === 'left' ? 25 * scale : width - 25 * scale);
-        ctx.fillText(text, x, y);
+      const wrapText = (text: string, x: number, y: number, maxWidth: number, lineHeight: number, bold: boolean = false, color: string = '#000', align: 'left' | 'center' = 'left') => {
+        ctx.font = `${bold ? '900' : '500'} ${9 * scale}px "Inter", sans-serif`;
+        ctx.fillStyle = color;
+        ctx.textAlign = align;
+        
+        const words = (text || '').split(' ');
+        let line = '';
+        let currentY = y;
+        let posX = align === 'center' ? width / 2 : x;
+
+        for (let n = 0; n < words.length; n++) {
+          let testLine = line + words[n] + ' ';
+          let metrics = ctx.measureText(testLine);
+          let testWidth = metrics.width;
+          if (testWidth > maxWidth && n > 0) {
+            ctx.fillText(line, posX, currentY);
+            line = words[n] + ' ';
+            currentY += lineHeight;
+          } else {
+            line = testLine;
+          }
+        }
+        ctx.fillText(line, posX, currentY);
+        return currentY + lineHeight;
       };
 
-      const drawLine = (y: number, light: boolean = false) => {
-        ctx.strokeStyle = light ? '#EEEEEE' : '#999999';
+      const wrapTextByChars = (text: string, x: number, y: number, charLimit: number, lineHeight: number, color: string = '#444') => {
+        ctx.font = `500 ${9 * scale}px "Inter", sans-serif`;
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left';
+        
+        const words = (text || '').split(' ');
+        let currentLine = '';
+        let currentY = y;
+
+        words.forEach((word, index) => {
+          const testLine = currentLine === '' ? word : `${currentLine} ${word}`;
+          if (testLine.length > charLimit && index > 0) {
+            ctx.fillText(currentLine, x, currentY);
+            currentLine = word;
+            currentY += lineHeight;
+          } else {
+            currentLine = testLine;
+          }
+        });
+        
+        if (currentLine) {
+          ctx.fillText(currentLine, x, currentY);
+          currentY += lineHeight;
+        }
+        
+        return currentY;
+      };
+
+      const drawSeparator = (y: number) => {
+        ctx.strokeStyle = '#DDD';
         ctx.lineWidth = 1 * scale;
+        ctx.setLineDash([4 * scale, 2 * scale]);
         ctx.beginPath();
-        ctx.moveTo(25 * scale, y);
-        ctx.lineTo(width - 25 * scale, y);
+        ctx.moveTo(20 * scale, y);
+        ctx.lineTo(width - 20 * scale, y);
         ctx.stroke();
+        ctx.setLineDash([]);
+        return y + 15 * scale;
       };
 
-      let currentY = 60 * scale;
+      let currentY = 50 * scale;
 
-      // Header (Modelo da Foto)
-      drawText(settings.storeName.toUpperCase(), currentY, 18, true, 'center');
-      currentY += 22 * scale;
-      drawText(`ORDEM DE SERVIÇO #${order.id}`, currentY, 10, true, 'center', '#555555');
-      currentY += 16 * scale;
-      drawText(`Data: ${formatDate(order.date)}`, currentY, 10, false, 'center', '#666666');
-      
+      ctx.font = `900 ${16 * scale}px "Inter", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#000';
+      ctx.fillText(settings.storeName.toUpperCase(), width / 2, currentY);
       currentY += 25 * scale;
-      drawLine(currentY);
-      currentY += 40 * scale;
 
-      // CLIENTE
-      drawText("CLIENTE", currentY, 11, true, 'left');
-      currentY += 18 * scale;
-      drawText("Nome: ", currentY, 10, true, 'left');
-      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
-      ctx.fillText(order.customerName, 25 * scale + ctx.measureText("Nome: ").width, currentY);
-      
+      ctx.font = `700 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText(`ORDEM DE SERVIÇO: #${order.id}`, width / 2, currentY);
       currentY += 16 * scale;
-      drawText("Telefone: ", currentY, 10, true, 'left');
-      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
-      ctx.fillText(order.phoneNumber, 25 * scale + ctx.measureText("Telefone: ").width, currentY);
-      
-      currentY += 16 * scale;
-      drawText("Endereço: ", currentY, 10, true, 'left');
-      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
-      ctx.fillText(order.address || "N/A", 25 * scale + ctx.measureText("Endereço: ").width, currentY);
-      
-      currentY += 35 * scale;
+      ctx.font = `500 ${9 * scale}px "Inter", sans-serif`;
+      ctx.fillText(`CRIADO EM: ${formatDate(order.date)}`, width / 2, currentY);
+      currentY += 25 * scale;
 
-      // APARELHO
-      drawText("APARELHO", currentY, 11, true, 'left');
-      currentY += 18 * scale;
-      drawText("Marca: ", currentY, 10, true, 'left');
-      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
-      ctx.fillText(order.deviceBrand, 25 * scale + ctx.measureText("Marca: ").width, currentY);
-      
-      currentY += 16 * scale;
-      drawText("Modelo: ", currentY, 10, true, 'left');
-      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
-      ctx.fillText(order.deviceModel, 25 * scale + ctx.measureText("Modelo: ").width, currentY);
-      
-      currentY += 16 * scale;
-      drawText("Defeito: ", currentY, 10, true, 'left');
-      ctx.font = `400 ${10 * scale}px "Inter", sans-serif`;
-      ctx.fillText(order.defect, 25 * scale + ctx.measureText("Defeito: ").width, currentY);
-      
-      currentY += 35 * scale;
+      currentY = drawSeparator(currentY);
 
-      // REPARO EFETUADO
-      drawText("REPARO EFETUADO", currentY, 11, true, 'left');
+      ctx.font = `900 ${10 * scale}px "Inter", sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.fillText("DADOS DO CLIENTE", 25 * scale, currentY);
       currentY += 18 * scale;
-      const repairLines = (order.repairDetails.match(/.{1,50}/g) || []) as string[];
-      repairLines.forEach(line => {
-        drawText(line, currentY, 10, false, 'left', '#444444');
+      currentY = wrapText(`Nome: ${order.customerName}`, 25 * scale, currentY, width - 50 * scale, 14 * scale);
+      currentY = wrapText(`Telefone: ${order.phoneNumber}`, 25 * scale, currentY, width - 50 * scale, 14 * scale);
+      currentY = wrapText(`Endereço: ${order.address || 'Não informado'}`, 25 * scale, currentY, width - 50 * scale, 14 * scale);
+      currentY += 10 * scale;
+      currentY = drawSeparator(currentY);
+
+      ctx.font = `900 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText("DADOS DO APARELHO", 25 * scale, currentY);
+      currentY += 18 * scale;
+      currentY = wrapText(`Marca: ${order.deviceBrand}`, 25 * scale, currentY, width - 50 * scale, 14 * scale);
+      currentY = wrapText(`Modelo: ${order.deviceModel}`, 25 * scale, currentY, width - 50 * scale, 14 * scale);
+      currentY += 14 * scale;
+      
+      // Adição das Datas no Cupom
+      ctx.font = `700 ${9 * scale}px "Inter", sans-serif`;
+      ctx.fillText(`DATA DE ENTRADA: ${order.entryDate || '-'}`, 25 * scale, currentY);
+      currentY += 14 * scale;
+      if (order.status === 'Concluído' || order.status === 'Entregue') {
+        ctx.fillText(`DATA DE SAÍDA: ${order.exitDate || '-'}`, 25 * scale, currentY);
         currentY += 14 * scale;
-      });
-
-      currentY += 30 * scale;
-      drawLine(currentY);
-      currentY += 40 * scale;
-
-      // FOTOS DE ENTRADA
-      drawText("FOTOS DE ENTRADA (ESTADO DO APARELHO)", currentY, 10, true, 'center', '#444444');
-      currentY += 25 * scale;
+      }
       
-      const imgSize = 150 * scale;
-      const gap = 15 * scale;
-      const startX = (width - (imgSize * 2 + gap)) / 2;
+      currentY += 8 * scale;
+      ctx.font = `900 ${9 * scale}px "Inter", sans-serif`;
+      ctx.fillText("Defeito informado:", 25 * scale, currentY);
+      currentY += 14 * scale;
+      currentY = wrapTextByChars(order.defect, 25 * scale, currentY, 32, 12 * scale);
+      currentY += 10 * scale;
+      currentY = drawSeparator(currentY);
 
+      ctx.font = `900 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText("REPARO EFETUADO", 25 * scale, currentY);
+      currentY += 18 * scale;
+      currentY = wrapTextByChars(order.repairDetails || 'Serviço em andamento.', 25 * scale, currentY, 32, 12 * scale);
+      currentY += 10 * scale;
+      currentY = drawSeparator(currentY);
+
+      ctx.font = `900 ${10 * scale}px "Inter", sans-serif`;
+      ctx.fillText("FOTOS DE ENTRADA", 25 * scale, currentY);
+      currentY += 20 * scale;
       if (order.photos && order.photos.length > 0) {
-        for (let i = 0; i < Math.min(order.photos.length, 2); i++) {
+        const thumbSize = 100 * scale;
+        const gap = 10 * scale;
+        for (let i = 0; i < order.photos.length; i++) {
           const img = new Image();
           img.src = order.photos[i];
           await new Promise(r => img.onload = r);
-          ctx.drawImage(img, startX + (i * (imgSize + gap)), currentY, imgSize, imgSize);
+          ctx.drawImage(img, 25 * scale + (i % 3 * (thumbSize + gap)), currentY + (Math.floor(i/3) * (thumbSize + gap)), thumbSize, thumbSize);
         }
-        currentY += imgSize + 35 * scale;
+        currentY += (Math.ceil(order.photos.length / 3) * (thumbSize + gap)) + 15 * scale;
       } else {
-        drawText("Nenhuma foto anexada", currentY, 8, false, 'center', '#999999');
-        currentY += 35 * scale;
+        ctx.font = `500 ${8 * scale}px "Inter", sans-serif`;
+        ctx.fillText("Nenhuma foto anexada.", 25 * scale, currentY);
+        currentY += 15 * scale;
       }
 
-      // FOTOS DE SAÍDA
-      drawText("FOTOS DO SERVIÇO CONCLUÍDO", currentY, 10, true, 'center', '#444444');
-      currentY += 25 * scale;
-
-      if (order.finishedPhotos && order.finishedPhotos.length > 0) {
-        for (let i = 0; i < Math.min(order.finishedPhotos.length, 2); i++) {
-          const img = new Image();
-          img.src = order.finishedPhotos[i];
-          await new Promise(r => img.onload = r);
-          ctx.drawImage(img, startX + (i * (imgSize + gap)), currentY, imgSize, imgSize);
+      if (order.status === 'Concluído' || order.status === 'Entregue') {
+        currentY = drawSeparator(currentY);
+        ctx.font = `900 ${10 * scale}px "Inter", sans-serif`;
+        ctx.fillText("FOTOS DO SERVIÇO PRONTO", 25 * scale, currentY);
+        currentY += 20 * scale;
+        if (order.finishedPhotos && order.finishedPhotos.length > 0) {
+          const thumbSize = 100 * scale;
+          const gap = 10 * scale;
+          for (let i = 0; i < order.finishedPhotos.length; i++) {
+            const img = new Image();
+            img.src = order.finishedPhotos[i];
+            await new Promise(r => img.onload = r);
+            ctx.drawImage(img, 25 * scale + (i % 3 * (thumbSize + gap)), currentY + (Math.floor(i/3) * (thumbSize + gap)), thumbSize, thumbSize);
+          }
+          currentY += (Math.ceil(order.finishedPhotos.length / 3) * (thumbSize + gap)) + 15 * scale;
+        } else {
+          ctx.font = `500 ${8 * scale}px "Inter", sans-serif`;
+          ctx.fillText("Nenhuma foto de saída.", 25 * scale, currentY);
+          currentY += 15 * scale;
         }
-        currentY += imgSize + 40 * scale;
-      } else {
-        drawText("Nenhuma foto de saída anexada", currentY, 8, false, 'center', '#999999');
-        currentY += 40 * scale;
       }
 
-      drawLine(currentY);
+      currentY = drawSeparator(currentY);
+      currentY += 10 * scale;
+      ctx.font = `900 ${12 * scale}px "Inter", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText("TOTAL DO SERVIÇO", width / 2, currentY);
+      currentY += 22 * scale;
+      ctx.font = `900 ${22 * scale}px "Inter", sans-serif`;
+      ctx.fillText(formatCurrency(order.total), width / 2, currentY);
       currentY += 40 * scale;
+      currentY = drawSeparator(currentY);
 
-      // TOTAL (Centralizado e Grande)
-      drawText(`TOTAL DO SERVIÇO: ${formatCurrency(order.total)}`, currentY, 16, true, 'center', '#000000');
-      currentY += 40 * scale;
-      drawLine(currentY);
-      currentY += 40 * scale;
+      ctx.font = `900 ${10 * scale}px "Inter", sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.fillText("GARANTIA", 25 * scale, currentY);
+      currentY += 18 * scale;
+      const warrantyText = settings.pdfWarrantyText || 'Garantia legal de 90 dias.';
+      const cleanWarranty = warrantyText.replace(/\[\/?(B|C|J|COLOR.*?|U)\]/g, '');
+      currentY = wrapText(cleanWarranty, 25 * scale, currentY, width - 50 * scale, 12 * scale, false, '#666');
 
-      // TERMOS DE GARANTIA
-      drawText("TERMOS DE GARANTIA", currentY, 11, true, 'center');
-      currentY += 25 * scale;
-      
-      if (settings.pdfWarrantyText) {
-        const warrantyLines = (settings.pdfWarrantyText.match(/.{1,65}/g) || []) as string[];
-        warrantyLines.forEach(line => {
-          drawText(line, currentY, 8, false, 'center', '#666666');
-          currentY += 12 * scale;
-        });
-      }
+      currentY += 50 * scale;
+      ctx.font = `900 ${10 * scale}px "Inter", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText("OBRIGADO PELA PREFERÊNCIA!", width / 2, currentY);
 
-      currentY += 60 * scale;
-      drawText("OBRIGADO PELA PREFERÊNCIA!", currentY, 9, true, 'center', '#999999');
-
-      // Corte final do Canvas
       const finalCanvas = document.createElement('canvas');
       finalCanvas.width = width;
       finalCanvas.height = currentY + 100 * scale;
@@ -278,21 +328,16 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
       if (finalCtx) {
         finalCtx.drawImage(canvas, 0, 0);
         const jpeg = finalCanvas.toDataURL('image/jpeg', 0.9);
-        const fileName = `OS_${order.id}_CUPOM.jpg`;
-        
+        const fileName = `OS_${order.id}.jpg`;
         if ((window as any).AndroidBridge) {
-          const base64 = jpeg.split(',')[1];
-          (window as any).AndroidBridge.shareFile(base64, fileName, 'image/jpeg');
+          (window as any).AndroidBridge.shareFile(jpeg.split(',')[1], fileName, 'image/jpeg');
         } else {
-          const a = document.createElement('a');
-          a.href = jpeg;
-          a.download = fileName;
-          a.click();
+          const a = document.createElement('a'); a.href = jpeg; a.download = fileName; a.click();
         }
       }
     } catch (err) {
-      console.error("Erro ao gerar cupom O.S.:", err);
-      alert("Falha ao processar o recibo térmico.");
+      console.error("Erro cupom:", err);
+      alert("Erro ao gerar imagem.");
     } finally {
       setIsGeneratingReceipt(false);
     }
@@ -309,34 +354,41 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-        <input type="text" placeholder="Pesquisar cliente ou modelo..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        <input type="text" placeholder="Pesquisar..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
       </div>
 
       <div className="grid gap-3">
         {filtered.length > 0 ? filtered.map(order => (
           <div key={order.id} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-50 flex items-center justify-between group animate-in fade-in">
             <div className="flex items-center gap-4 flex-1 min-w-0 cursor-pointer" onClick={() => { setEditingOrder(order); setFormData(order); setIsModalOpen(true); }}>
-              <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-custom-primary">
-                <Smartphone size={24} />
+              <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-custom-primary overflow-hidden border border-slate-100 shrink-0">
+                {order.photos && order.photos.length > 0 ? (
+                  <img src={order.photos[0]} className="w-full h-full object-cover" />
+                ) : (
+                  <Smartphone size={24} />
+                )}
               </div>
               <div className="min-w-0">
                 <h3 className="font-bold text-slate-800 text-sm truncate uppercase">{order.customerName}</h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{order.deviceBrand} {order.deviceModel}</p>
-                <span className={`text-[8px] font-black px-2 py-0.5 rounded-full ${order.status === 'Entregue' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'} uppercase mt-1 inline-block`}>{order.status}</span>
+                <div className="flex items-center gap-2 mt-1">
+                   <span className={`text-[8px] font-black px-2 py-0.5 rounded-full ${order.status === 'Entregue' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'} uppercase`}>{order.status}</span>
+                   {(order.photos?.length || 0) > 0 && <ImageIcon size={10} className="text-slate-300" />}
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={(e) => { e.stopPropagation(); generateReceiptImage(order); }} disabled={isGeneratingReceipt} title="Ver/Baixar Cupom" className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md active:scale-90 disabled:opacity-50">
+              <button onClick={(e) => { e.stopPropagation(); generateReceiptImage(order); }} disabled={isGeneratingReceipt} className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md active:scale-90 disabled:opacity-50">
                 {isGeneratingReceipt ? <Loader2 className="animate-spin" size={18} /> : <Eye size={18} />}
               </button>
-              <button onClick={(e) => { e.stopPropagation(); setOrderToDelete(order.id); }} title="Excluir O.S." className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90">
+              <button onClick={(e) => { e.stopPropagation(); setOrderToDelete(order.id); }} className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90">
                 <Trash2 size={18} />
               </button>
             </div>
           </div>
         )) : (
           <div className="text-center py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-100">
-            <p className="text-slate-300 font-black uppercase text-xs tracking-widest">Nenhuma O.S. encontrada</p>
+            <p className="text-slate-300 font-black uppercase text-xs">Nenhuma O.S. encontrada</p>
           </div>
         )}
       </div>
@@ -352,35 +404,47 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
             <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto pb-10">
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cliente</label>
-                  <input name="customerName" value={formData.customerName} onChange={handleInputChange} placeholder="Nome Completo" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente</label>
+                  <input name="customerName" value={formData.customerName} onChange={handleInputChange} placeholder="Nome" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Telefone</label>
                     <input name="phoneNumber" value={formData.phoneNumber} onChange={handleInputChange} placeholder="(00) 00000-0000" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Endereço do Cliente</label>
-                    <input name="address" value={formData.address} onChange={handleInputChange} placeholder="Cidade/Rua" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Endereço</label>
+                    <input name="address" value={formData.address} onChange={handleInputChange} placeholder="Endereço" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Marca</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Marca</label>
                     <input name="deviceBrand" value={formData.deviceBrand} onChange={handleInputChange} placeholder="Marca" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Modelo</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Modelo</label>
                     <input name="deviceModel" value={formData.deviceModel} onChange={handleInputChange} placeholder="Modelo" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
+                  </div>
+                </div>
+
+                {/* Campos de Data Adicionados */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Calendar size={12}/> Entrada</label>
+                    <input name="entryDate" value={formData.entryDate} onChange={handleInputChange} placeholder="DD/MM/AAAA" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Calendar size={12}/> Saída</label>
+                    <input name="exitDate" value={formData.exitDate} onChange={handleInputChange} placeholder="DD/MM/AAAA" className={`w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm ${!(formData.status === 'Concluído' || formData.status === 'Entregue') ? 'opacity-50' : ''}`} />
                   </div>
                 </div>
                 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Status do Serviço</label>
-                  <select name="status" value={formData.status} onChange={handleInputChange} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm appearance-none">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</label>
+                  <select name="status" value={formData.status} onChange={handleInputChange} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm appearance-none border-none">
                     <option value="Pendente">Pendente</option>
                     <option value="Concluído">Concluído</option>
                     <option value="Entregue">Entregue</option>
@@ -388,23 +452,22 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Defeito Relatado</label>
-                  <textarea name="defect" value={formData.defect} onChange={handleInputChange} placeholder="Descreva o problem..." className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm h-24 resize-none" />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Defeito</label>
+                  <textarea name="defect" value={formData.defect} onChange={handleInputChange} placeholder="Defeito..." className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm h-20 resize-none" />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Detalhes do Reparo</label>
-                  <textarea name="repairDetails" value={formData.repairDetails} onChange={handleInputChange} placeholder="O que foi feito?" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm h-24 resize-none" />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reparo</label>
+                  <textarea name="repairDetails" value={formData.repairDetails} onChange={handleInputChange} placeholder="Reparo..." className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm h-20 resize-none" />
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fotos de Entrada (Aparelho)</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Camera size={12}/> Fotos de Entrada</label>
                   <div className="grid grid-cols-4 gap-2">
-                    <label htmlFor="photos-input-entry" className="aspect-square bg-blue-50 border-2 border-dashed border-blue-100 rounded-2xl flex flex-col items-center justify-center text-blue-500 active:scale-95 transition-all cursor-pointer">
-                      {isCompressing ? <Loader2 className="animate-spin" size={24} /> : <Camera size={24} />}
-                      <span className="text-[7px] font-black uppercase mt-1">Anexar</span>
+                    <label className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center text-slate-400 cursor-pointer active:scale-95 transition-all">
+                      {isCompressing ? <Loader2 className="animate-spin" size={18} /> : <Plus size={24} />}
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, 'photos')} />
                     </label>
-                    <input id="photos-input-entry" type="file" accept="image/*" className="sr-only" onChange={(e) => handleFileChange(e, 'photos')} />
                     {formData.photos?.map((p, i) => (
                       <div key={i} className="relative aspect-square rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
                         <img src={p} className="w-full h-full object-cover" />
@@ -414,17 +477,14 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
                   </div>
                 </div>
 
-                {formData.status === 'Entregue' && (
-                  <div className="space-y-2 p-4 bg-emerald-50/30 rounded-3xl border border-emerald-100/50 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-1 flex items-center gap-1.5">
-                      <CheckCircle size={12} /> Fotos do Aparelho Pronto (Entrega)
-                    </label>
+                {(formData.status === 'Concluído' || formData.status === 'Entregue') && (
+                   <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                    <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1.5"><CheckCircle size={12}/> Fotos do Serviço Pronto</label>
                     <div className="grid grid-cols-4 gap-2">
-                      <label htmlFor="photos-input-exit" className="aspect-square bg-emerald-100 border-2 border-dashed border-emerald-200 rounded-2xl flex flex-col items-center justify-center text-emerald-600 active:scale-95 transition-all cursor-pointer">
-                        <Camera size={24} />
-                        <span className="text-[7px] font-black uppercase mt-1">Anexar</span>
+                      <label className="aspect-square bg-emerald-50 border-2 border-dashed border-emerald-100 rounded-2xl flex items-center justify-center text-emerald-400 cursor-pointer active:scale-95 transition-all">
+                        {isCompressing ? <Loader2 className="animate-spin" size={18} /> : <Plus size={24} />}
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, 'finishedPhotos')} />
                       </label>
-                      <input id="photos-input-exit" type="file" accept="image/*" className="sr-only" onChange={(e) => handleFileChange(e, 'finishedPhotos')} />
                       {formData.finishedPhotos?.map((p, i) => (
                         <div key={i} className="relative aspect-square rounded-2xl overflow-hidden border border-emerald-100 shadow-sm">
                           <img src={p} className="w-full h-full object-cover" />
@@ -436,57 +496,53 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
                 )}
 
                 <div className="space-y-3 pt-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1.5">
-                    <Calculator size={12} /> Gestão de Valores (Uso Interno)
-                  </label>
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Custo da Peça</p>
-                      <input 
-                        name="partsCost" 
-                        value={formatCurrency(formData.partsCost || 0).replace('R$', '').trim()} 
-                        onChange={handleInputChange} 
-                        className="w-full bg-transparent font-black text-slate-800 outline-none text-xs"
-                        placeholder="0,00"
-                      />
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor da Peça</label>
+                      <div className="p-4 bg-slate-50 rounded-2xl flex items-center gap-2 border border-slate-100">
+                        <span className="text-[10px] font-black text-slate-400">R$</span>
+                        <input 
+                          name="partsCost" 
+                          value={formatCurrency(formData.partsCost || 0).replace('R$', '').trim()} 
+                          onChange={handleInputChange} 
+                          className="w-full bg-transparent font-bold text-sm outline-none"
+                          placeholder="0,00"
+                        />
+                      </div>
                     </div>
-                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Mão de Obra</p>
-                      <input 
-                        name="serviceCost" 
-                        value={formatCurrency(formData.serviceCost || 0).replace('R$', '').trim()} 
-                        onChange={handleInputChange} 
-                        className="w-full bg-transparent font-black text-slate-800 outline-none text-xs"
-                        placeholder="0,00"
-                      />
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Serviço</label>
+                      <div className="p-4 bg-slate-50 rounded-2xl flex items-center gap-2 border border-slate-100">
+                        <span className="text-[10px] font-black text-slate-400">R$</span>
+                        <input 
+                          name="serviceCost" 
+                          value={formatCurrency(formData.serviceCost || 0).replace('R$', '').trim()} 
+                          onChange={handleInputChange} 
+                          className="w-full bg-transparent font-bold text-sm outline-none"
+                          placeholder="0,00"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="p-5 bg-blue-600 rounded-[1.5rem] shadow-xl shadow-blue-500/20 flex items-center justify-between border border-blue-500">
-                    <div className="w-full">
-                      <p className="text-[9px] font-black text-blue-100 uppercase tracking-widest mb-0.5">Valor Final para o Cliente</p>
-                      <input 
-                        name="total" 
-                        value={formatCurrency(formData.total || 0).replace('R$', '').trim()} 
-                        onChange={handleInputChange} 
-                        className="w-full bg-transparent font-black text-white outline-none text-2xl"
-                        placeholder="0,00"
-                        readOnly={false}
-                      />
-                    </div>
-                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-white">
-                      <Calculator size={20} />
-                    </div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Calculator size={12}/> Total Geral</label>
+                  <div className="p-5 bg-blue-600 rounded-[1.5rem] shadow-xl flex items-center justify-between border border-blue-500">
+                    <input 
+                      name="total" 
+                      value={formatCurrency(formData.total || 0).replace('R$', '').trim()} 
+                      onChange={handleInputChange} 
+                      className="w-full bg-transparent font-black text-white outline-none text-2xl"
+                      placeholder="0,00"
+                    />
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="p-6 border-t border-slate-50 bg-slate-50 flex gap-3">
-              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[10px] tracking-widest">Cancelar</button>
-              <button onClick={handleSave} disabled={isSaving} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95">
-                {isSaving ? <Loader2 className="animate-spin" size={20} /> : 'Salvar no Banco SQL'}
+              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[10px]">Sair</button>
+              <button onClick={handleSave} disabled={isSaving} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-xl active:scale-95">
+                {isSaving ? <Loader2 className="animate-spin" size={20} /> : 'Salvar'}
               </button>
             </div>
           </div>
@@ -494,19 +550,15 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
       )}
 
       {orderToDelete && (
-        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-xs rounded-[2rem] overflow-hidden shadow-2xl animate-in zoom-in-95">
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-xs rounded-[2rem] overflow-hidden shadow-2xl">
             <div className="p-8 text-center space-y-4">
-              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2">
-                <AlertTriangle size={32} />
-              </div>
-              <h3 className="font-black text-slate-800 uppercase text-sm">Excluir O.S.?</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed px-2">
-                Essa ação removerá o registro permanentemente do SQL.
-              </p>
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><AlertTriangle size={32} /></div>
+              <h3 className="font-black text-slate-800 uppercase text-sm">Excluir?</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Essa ação é permanente.</p>
               <div className="flex gap-2 pt-2">
-                <button onClick={() => setOrderToDelete(null)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-xl font-black text-[9px] uppercase tracking-widest">Sair</button>
-                <button onClick={() => { onDeleteOrder(orderToDelete); setOrderToDelete(null); }} className="flex-1 py-4 bg-red-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest shadow-lg shadow-red-500/20">Remover</button>
+                <button onClick={() => setOrderToDelete(null)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-xl font-black text-[9px]">Sair</button>
+                <button onClick={() => { onDeleteOrder(orderToDelete); setOrderToDelete(null); }} className="flex-1 py-4 bg-red-600 text-white rounded-xl font-black text-[9px] shadow-lg">Remover</button>
               </div>
             </div>
           </div>

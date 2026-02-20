@@ -92,6 +92,7 @@ export class OnlineDB {
         .insert([{
           id: tenantData.id,
           store_name: tenantData.storeName,
+          logo_url: tenantData.logoUrl, // Novo campo para o SQL
           created_at: new Date().toISOString()
         }]);
       if (tError) throw tError;
@@ -105,7 +106,8 @@ export class OnlineDB {
           name: tenantData.storeName,
           role: 'admin',
           tenant_id: tenantData.id,
-          store_name: tenantData.storeName
+          store_name: tenantData.storeName,
+          photo: tenantData.logoUrl // Opcional: define logo da loja como foto do admin
         }]);
       if (uError) throw uError;
 

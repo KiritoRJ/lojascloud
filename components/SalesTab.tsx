@@ -36,7 +36,84 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'Dinheiro' | 'Cartão' | 'PIX'>('Dinheiro');
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
 
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  const startScanner = async () => {
+    setIsScannerOpen(true);
+    setTimeout(async () => {
+      try {
+        const html5QrCode = new Html5Qrcode("scanner-region-sales");
+        scannerRef.current = html5QrCode;
+        
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 20,
+            qrbox: { width: 280, height: 180 },
+            aspectRatio: 1.777778
+          },
+          (decodedText) => {
+            setProductSearch(decodedText);
+            stopScanner();
+          },
+          () => {}
+        );
+
+        // Tentar forçar o foco contínuo se o navegador suportar
+        try {
+          // Em versões mais antigas do html5-qrcode, getRunningTrack pode não existir
+          // Vamos tentar pegar diretamente do elemento de vídeo
+          const videoElement = document.querySelector("#scanner-region-sales video") as HTMLVideoElement;
+          const stream = videoElement?.srcObject as MediaStream;
+          const track = stream?.getVideoTracks()[0];
+          
+          if (track) {
+            const capabilities = track.getCapabilities() as any;
+            const constraints: any = {};
+            
+            if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+              constraints.focusMode = 'continuous';
+            }
+            
+            // Tentar aplicar 2x de zoom se disponível
+            if (capabilities.zoom) {
+              const maxZoom = capabilities.zoom.max || 1;
+              constraints.zoom = Math.min(2, maxZoom);
+            }
+            
+            if (Object.keys(constraints).length > 0) {
+              await track.applyConstraints({ advanced: [constraints] } as any);
+            }
+          }
+        } catch (focusErr) {
+          console.warn("Não foi possível ajustar o foco automaticamente:", focusErr);
+        }
+      } catch (err) {
+        console.error("Erro ao iniciar scanner:", err);
+        alert("Não foi possível acessar a câmera.");
+        setIsScannerOpen(false);
+      }
+    }, 300);
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+      } catch (e) {}
+      scannerRef.current = null;
+    }
+    setIsScannerOpen(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+      }
+    };
+  }, []);
 
   const cartTotal = useMemo(() => {
     return cart.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0);
@@ -150,7 +227,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
               <input type="text" placeholder="Nome ou código..." className="w-full pl-12 pr-4 py-4 bg-white border-none rounded-2xl text-xs font-bold shadow-sm outline-none" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
             </div>
-            <button className="p-4 bg-slate-900 text-white rounded-2xl shadow-xl active:scale-95 transition-all"><ScanBarcode size={24} /></button>
+            <button onClick={startScanner} className="p-4 bg-slate-900 text-white rounded-2xl shadow-xl active:scale-95 transition-all"><ScanBarcode size={24} /></button>
           </div>
 
           {/* --- GRID DE VENDAS: MODIFICADO PARA PC (Muito Mais Colunas e Cards Menores) --- */}
@@ -245,6 +322,22 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             <h3 className="text-xl font-black text-slate-800 uppercase mb-10">Venda Realizada!</h3>
             <button onClick={() => setShowSuccess(false)} className="w-full py-5 bg-slate-900 text-white font-black rounded-2xl text-[10px] uppercase shadow-xl">NOVA VENDA</button>
           </div>
+        </div>
+      )}
+
+      {/* MODAL SCANNER */}
+      {isScannerOpen && (
+        <div className="fixed inset-0 bg-slate-950 z-[200] flex flex-col animate-in fade-in">
+           <div className="p-6 flex items-center justify-between border-b border-white/10">
+              <h3 className="font-black text-white uppercase text-xs tracking-widest">Scanner de Código</h3>
+              <button onClick={stopScanner} className="p-2 bg-white/10 text-white rounded-full"><X size={20} /></button>
+           </div>
+           <div className="flex-1 relative flex items-center justify-center">
+              <div id="scanner-region-sales" className="w-full h-full max-h-[60vh]"></div>
+              <div className="absolute bottom-10 left-0 right-0 text-center px-6 pointer-events-none">
+                <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest bg-black/40 py-2 px-4 rounded-full inline-block">Aproxime o código lentamente para focar</p>
+              </div>
+           </div>
         </div>
       )}
     </div>

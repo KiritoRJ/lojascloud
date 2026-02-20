@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X } from 'lucide-react';
+import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera } from 'lucide-react';
 import { OnlineDB } from '../utils/api';
 
 interface Props {
@@ -13,8 +13,9 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ storeName: '', username: '', password: '' });
+  const [formData, setFormData] = useState({ storeName: '', username: '', password: '', logoUrl: null as string | null });
   const [tenantToDelete, setTenantToDelete] = useState<{ id: string, name: string } | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
 
   useEffect(() => {
     loadTenants();
@@ -32,6 +33,48 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
     }
   };
 
+  const compressImage = (base64Str: string, size: number = 500): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > size) { height *= size / width; width = size; }
+        } else {
+          if (height > size) { width *= size / height; height = size; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/webp', 0.7));
+      };
+    });
+  };
+
+  const handleLogoUpload = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = (e: any) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        setIsCompressing(true);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const compressed = await compressImage(reader.result as string);
+          setFormData(prev => ({ ...prev, logoUrl: compressed }));
+          setIsCompressing(false);
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
+  };
+
   const handleCreateTenant = async () => {
     setErrorMsg(null);
     if (!formData.storeName || !formData.username || !formData.password) {
@@ -46,11 +89,12 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
         storeName: formData.storeName,
         adminUsername: formData.username,
         adminPasswordPlain: formData.password,
+        logoUrl: formData.logoUrl, // Foto anexada
         createdAt: new Date().toISOString()
       });
 
       if (result.success) {
-        setFormData({ storeName: '', username: '', password: '' });
+        setFormData({ storeName: '', username: '', password: '', logoUrl: null });
         await loadTenants();
       } else {
         setErrorMsg(result.message);
@@ -122,8 +166,8 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
             {tenants.map(t => (
               <div key={t.id} className="bg-white/5 border border-white/5 p-6 rounded-[2rem] flex items-center justify-between group hover:border-blue-500/30 transition-all">
                 <div className="flex items-center gap-5">
-                  <div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center text-blue-500 border border-white/5">
-                    <Store size={24} />
+                  <div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center text-blue-500 border border-white/5 overflow-hidden">
+                    {t.logo_url ? <img src={t.logo_url} className="w-full h-full object-cover" /> : <Store size={24} />}
                   </div>
                   <div>
                     <h3 className="font-black text-slate-100 uppercase text-sm">{t.store_name}</h3>
@@ -154,10 +198,17 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
         </div>
 
         <div className="bg-blue-600 rounded-[3rem] p-10 space-y-8 shadow-2xl h-fit sticky top-10 border border-white/20">
-          <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center mb-2 shadow-inner">
-            <Plus size={32} />
+          <div className="flex flex-col items-center">
+            <button onClick={handleLogoUpload} className="relative group">
+              <div className="w-24 h-24 bg-white/20 rounded-3xl flex items-center justify-center mb-2 shadow-inner overflow-hidden border-2 border-dashed border-white/30 group-hover:border-white transition-all">
+                {isCompressing ? <Loader2 className="animate-spin text-white" /> : formData.logoUrl ? <img src={formData.logoUrl} className="w-full h-full object-cover" /> : <Plus size={32} />}
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-white text-blue-600 p-1.5 rounded-lg shadow-lg"><Camera size={14} /></div>
+            </button>
+            <p className="text-[9px] font-black uppercase tracking-widest text-blue-100 mt-2">Logotipo da Loja</p>
           </div>
-          <h2 className="text-2xl font-black tracking-tighter">Cadastrar Loja</h2>
+
+          <h2 className="text-2xl font-black tracking-tighter text-center">Cadastrar Loja</h2>
           <div className="space-y-5">
             <div className="space-y-2">
               <label className="text-[9px] font-black uppercase tracking-widest text-blue-200 ml-4">Nome da Loja</label>
@@ -190,7 +241,7 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
           </div>
           <button 
             onClick={handleCreateTenant} 
-            disabled={isSaving}
+            disabled={isSaving || isCompressing}
             className="w-full bg-white text-blue-600 py-6 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl active:scale-95 transition-all mt-4 disabled:opacity-50 flex items-center justify-center gap-3"
           >
             {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Autorizar Acesso'}

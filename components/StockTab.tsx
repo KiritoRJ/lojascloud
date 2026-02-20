@@ -75,8 +75,8 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
         await html5QrCode.start(
           { facingMode: "environment" },
           {
-            fps: 10,
-            qrbox: { width: 250, height: 150 },
+            fps: 20,
+            qrbox: { width: 280, height: 180 },
             aspectRatio: 1.777778
           },
           (decodedText) => {
@@ -85,6 +85,36 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
           },
           () => {}
         );
+
+        // Tentar forçar o foco contínuo se o navegador suportar
+        try {
+          // Em versões mais antigas do html5-qrcode, getRunningTrack pode não existir
+          // Vamos tentar pegar diretamente do elemento de vídeo
+          const videoElement = document.querySelector("#scanner-region video") as HTMLVideoElement;
+          const stream = videoElement?.srcObject as MediaStream;
+          const track = stream?.getVideoTracks()[0];
+          
+          if (track) {
+            const capabilities = track.getCapabilities() as any;
+            const constraints: any = {};
+            
+            if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+              constraints.focusMode = 'continuous';
+            }
+            
+            // Tentar aplicar 2x de zoom se disponível
+            if (capabilities.zoom) {
+              const maxZoom = capabilities.zoom.max || 1;
+              constraints.zoom = Math.min(2, maxZoom);
+            }
+            
+            if (Object.keys(constraints).length > 0) {
+              await track.applyConstraints({ advanced: [constraints] } as any);
+            }
+          }
+        } catch (focusErr) {
+          console.warn("Não foi possível ajustar o foco automaticamente:", focusErr);
+        }
       } catch (err) {
         console.error("Erro ao iniciar scanner:", err);
         alert("Não foi possível acessar a câmera.");
@@ -311,6 +341,9 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
            </div>
            <div className="flex-1 relative flex items-center justify-center">
               <div id="scanner-region" className="w-full h-full max-h-[60vh]"></div>
+              <div className="absolute bottom-10 left-0 right-0 text-center px-6 pointer-events-none">
+                <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest bg-black/40 py-2 px-4 rounded-full inline-block">Aproxime o código lentamente para focar</p>
+              </div>
            </div>
         </div>
       )}

@@ -40,7 +40,7 @@ const App: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('os');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); // NOVO: Controle da barra lateral no PC
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isCloudConnected, setIsCloudConnected] = useState(true);
   const [isInitializing, setIsInitializing] = useState(true);
 
@@ -78,7 +78,6 @@ const App: React.FC = () => {
   }, []);
 
   const loadData = useCallback(async (tenantId: string) => {
-    console.log("Iniciando sincronização completa para:", tenantId);
     try {
       const [cloudSettings, cloudOrders, cloudProducts, cloudSales, cloudUsers] = await Promise.all([
         OnlineDB.syncPull(tenantId, 'settings'),
@@ -103,12 +102,8 @@ const App: React.FC = () => {
         saveData('products', tenantId, cloudProducts || []),
         saveData('sales', tenantId, cloudSales || [])
       ]);
-      
-      console.log("Sincronização concluída com sucesso.");
     } catch (e) {
-      console.error("Erro no carregamento de dados da nuvem:", e);
       setIsCloudConnected(false);
-      
       const localSettings = await getData('settings', tenantId);
       const localOrders = await getData('orders', tenantId);
       const localProducts = await getData('products', tenantId);
@@ -202,8 +197,6 @@ const App: React.FC = () => {
       const dbResult = await OnlineDB.deleteOS(id);
       if (dbResult.success) {
         await saveData('orders', session.tenantId, updated);
-      } else {
-        alert("Não foi possível excluir do banco de dados SQL.");
       }
     }
   };
@@ -217,15 +210,12 @@ const App: React.FC = () => {
   };
 
   const removeProduct = async (id: string) => {
-    console.log(`[APP] Removendo produto: ${id}`);
     const updated = products.filter(p => p.id !== id);
     setProducts(updated);
     if (session?.tenantId) {
       const dbResult = await OnlineDB.deleteProduct(id);
       if (dbResult.success) {
         await saveData('products', session.tenantId, updated);
-      } else {
-        alert("Erro ao excluir produto no banco de dados.");
       }
     }
   };
@@ -240,40 +230,22 @@ const App: React.FC = () => {
 
   const removeSale = async (sale: Sale) => {
     if (!session?.tenantId) return;
-    
-    console.log(`[APP] LOG DE EXCLUSÃO - Iniciando processo para venda ID: ${sale.id}`);
-    
-    // 1. Tentar deletar do SQL primeiro (Lógica igual a de produtos)
     const dbResult = await OnlineDB.deleteSale(sale.id);
-
     if (dbResult.success) {
-      console.log(`[APP] LOG DE EXCLUSÃO - Sucesso no Banco SQL para o ID: ${sale.id}`);
-      
-      // Atualiza localmente
       const updatedSales = sales.filter(s => s.id !== sale.id);
       setSales(updatedSales);
-
-      // Estorna estoque
       const updatedProducts = products.map(p => {
         if (p.id === sale.productId) {
-          console.log(`[APP] LOG DE EXCLUSÃO - Estornando estoque do produto: ${p.name}`);
           return { ...p, quantity: p.quantity + sale.quantity };
         }
         return p;
       });
       setProducts(updatedProducts);
-
-      // Salva em background
       await Promise.all([
         saveData('sales', session.tenantId, updatedSales),
         saveData('products', session.tenantId, updatedProducts),
         OnlineDB.upsertProducts(session.tenantId, updatedProducts)
       ]);
-      
-      console.log(`[APP] LOG DE EXCLUSÃO - Processo local finalizado.`);
-    } else {
-      console.error(`[APP] LOG DE EXCLUSÃO - FALHA NO BANCO SQL:`, dbResult);
-      throw new Error(dbResult.message || 'Falha na comunicação com o servidor Supabase.');
     }
   };
 
@@ -282,9 +254,7 @@ const App: React.FC = () => {
       const newType = user.role;
       setSession({ ...session, user, type: newType });
       localStorage.setItem('currentUser_pro', JSON.stringify(user));
-
       const allowedTabs = navItems.filter(item => item.roles.includes(newType)).map(i => i.id);
-      
       if (!allowedTabs.includes(activeTab)) {
         setActiveTab('os');
       }
@@ -311,37 +281,21 @@ const App: React.FC = () => {
             <h1 className="text-3xl font-black text-white tracking-tighter uppercase">Assistência Pro</h1>
             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Login Centralizado SQL Cloud</p>
           </div>
-
           <form onSubmit={handleLogin} className="bg-white/5 p-8 rounded-[3rem] border border-white/10 space-y-4 shadow-2xl">
             <div className="space-y-1">
               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Usuário / Login</label>
-              <input 
-                type="text" 
-                autoFocus
-                value={loginForm.username}
-                onChange={e => setLoginForm({...loginForm, username: e.target.value.toLowerCase()})}
-                className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" 
-                placeholder="Seu usuário"
-              />
+              <input type="text" autoFocus value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value.toLowerCase()})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="Seu usuário" />
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Senha</label>
-              <input 
-                type="password" 
-                value={loginForm.password}
-                onChange={e => setLoginForm({...loginForm, password: e.target.value})}
-                className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" 
-                placeholder="••••••"
-              />
+              <input type="password" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="••••••" />
             </div>
-            
             {loginError && (
               <div className="flex items-center gap-2 text-red-400 bg-red-400/10 p-3 rounded-xl border border-red-400/20">
                 <ShieldCheck size={14} className="shrink-0" />
                 <p className="text-[9px] font-black uppercase tracking-tight">{loginError}</p>
               </div>
             )}
-
             <button type="submit" disabled={isLoggingIn} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-2xl active:scale-95 transition-all mt-4 disabled:opacity-50">
               {isLoggingIn ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Acessar Sistema'}
             </button>
@@ -351,18 +305,13 @@ const App: React.FC = () => {
     );
   }
 
-  if (session.type === 'super') {
-    return <SuperAdminDashboard onLogout={handleLogout} />;
-  }
+  if (session.type === 'super') return <SuperAdminDashboard onLogout={handleLogout} />;
 
   if (!settings) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-6 p-10 text-center">
         <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-        <div className="space-y-2">
-          <p className="text-white font-black uppercase tracking-[0.3em] text-xs">Sincronizando Dados</p>
-          <p className="text-slate-500 text-[9px] font-bold uppercase">Carregando tabelas SQL da loja</p>
-        </div>
+        <p className="text-white font-black uppercase tracking-[0.3em] text-xs">Sincronizando Dados</p>
         <button onClick={handleLogout} className="text-[10px] font-black text-red-400 uppercase tracking-widest mt-10">Sair</button>
       </div>
     );
@@ -376,14 +325,11 @@ const App: React.FC = () => {
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'] },
     { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
   ];
-
   const visibleNavItems = navItems.filter(item => item.roles.includes(currentUser.role));
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans flex flex-col md:flex-row">
-      {/* BARRA LATERAL PC - ATUALIZADA PARA SER RETRÁTIL */}
       <aside className={`hidden md:flex flex-col ${isSidebarCollapsed ? 'w-24' : 'w-72'} bg-slate-900 text-white p-6 h-screen sticky top-0 overflow-y-auto transition-all duration-300 ease-in-out`}>
-        {/* CABEÇALHO DA BARRA LATERAL COM BOTÃO DE TOGGLE */}
         <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} mb-12`}>
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-4 overflow-hidden animate-in fade-in">
@@ -393,31 +339,18 @@ const App: React.FC = () => {
               <h1 className="text-sm font-black tracking-tighter uppercase leading-tight truncate">{settings.storeName}</h1>
             </div>
           )}
-          <button 
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
-            className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all"
-            title={isSidebarCollapsed ? "Expandir Menu" : "Recolher Menu"}
-          >
+          <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all">
             {isSidebarCollapsed ? <Menu size={24} /> : <X size={20} />}
           </button>
         </div>
-
-        {/* NAVEGAÇÃO */}
         <nav className="flex-1 space-y-2">
           {visibleNavItems.map(item => (
-            <button 
-              key={item.id} 
-              onClick={() => setActiveTab(item.id as Tab)} 
-              title={isSidebarCollapsed ? item.label : ''}
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-4 px-6'} py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-xl' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
-            >
+            <button key={item.id} onClick={() => setActiveTab(item.id as Tab)} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-4 px-6'} py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-xl' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
               <item.icon size={20} className="shrink-0" />
               {!isSidebarCollapsed && <span className="animate-in fade-in whitespace-nowrap">{item.label}</span>}
             </button>
           ))}
         </nav>
-        
-        {/* RODAPÉ DA BARRA LATERAL COM PERFIL */}
         <div className="mt-8 pt-8 border-t border-white/5">
           <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-4'} mb-6`}>
             <div className="w-10 h-10 bg-slate-800 rounded-xl overflow-hidden border border-white/10 shrink-0">
@@ -426,22 +359,17 @@ const App: React.FC = () => {
             {!isSidebarCollapsed && (
               <div className="min-w-0 animate-in fade-in">
                 <p className="text-[9px] font-black uppercase text-white truncate">{currentUser.name}</p>
-                <p className="text-[7px] font-bold uppercase text-slate-500">{currentUser.role}</p>
+                <p className="text-[7px] font-bold uppercase text-slate-500 truncate">{currentUser.specialty || (currentUser.role === 'admin' ? 'Administrador' : 'Colaborador')}</p>
               </div>
             )}
           </div>
-          <button 
-            onClick={handleLogout} 
-            title={isSidebarCollapsed ? 'Sair do Sistema' : ''}
-            className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-4 px-6'} py-4 text-slate-500 hover:text-red-400 font-black text-[10px] uppercase tracking-widest transition-colors`}
-          >
+          <button onClick={handleLogout} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-4 px-6'} py-4 text-slate-500 hover:text-red-400 font-black text-[10px] uppercase tracking-widest transition-colors`}>
             <LogOut size={20} className="shrink-0" />
             {!isSidebarCollapsed && <span className="animate-in fade-in">Sair</span>}
           </button>
         </div>
       </aside>
 
-      {/* CABEÇALHO MOBILE (Permanece igual) */}
       <header className="md:hidden fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md z-40 px-6 py-4 flex items-center justify-between border-b border-slate-100">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
@@ -452,7 +380,6 @@ const App: React.FC = () => {
         <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-400"><Menu size={24} /></button>
       </header>
 
-      {/* ÁREA DE CONTEÚDO PRINCIPAL */}
       <main className="flex-1 p-4 pt-24 md:pt-10 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
         {activeTab === 'os' && <ServiceOrderTab orders={orders} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} />}
         {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} />}
@@ -461,7 +388,6 @@ const App: React.FC = () => {
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} />}
       </main>
 
-      {/* NAVEGAÇÃO MOBILE (Permanece igual) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">
         {visibleNavItems.map(item => (
           <button key={item.id} onClick={() => setActiveTab(item.id as Tab)} className={`p-2 transition-all ${activeTab === item.id ? 'text-blue-600 scale-110' : 'text-slate-300'}`}>
@@ -470,7 +396,6 @@ const App: React.FC = () => {
         ))}
       </nav>
 
-      {/* MENU LATERAL MOBILE (Permanece igual) */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 animate-in fade-in">
           <div className="absolute right-0 top-0 bottom-0 w-72 bg-slate-900 p-8 flex flex-col animate-in slide-in-from-right">
@@ -478,9 +403,9 @@ const App: React.FC = () => {
             <div className="space-y-4">
               <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl mb-8">
                 {currentUser.photo ? <img src={currentUser.photo} className="w-12 h-12 rounded-xl object-cover" /> : <div className="w-12 h-12 bg-slate-800 rounded-xl" />}
-                <div>
-                  <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Acesso Ativo</p>
+                <div className="min-w-0">
                   <p className="text-xs font-black text-white uppercase truncate max-w-[120px]">{currentUser.name}</p>
+                  <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest truncate">{currentUser.specialty || (currentUser.role === 'admin' ? 'Administrador' : 'Colaborador')}</p>
                 </div>
               </div>
               <nav className="space-y-2 mb-10">

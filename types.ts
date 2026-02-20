@@ -5,6 +5,7 @@ export interface Tenant {
   adminUsername: string;
   adminPasswordHash: string;
   createdAt: string;
+  logoUrl?: string | null;
 }
 
 export interface User {

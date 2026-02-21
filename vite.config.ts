@@ -26,7 +26,32 @@ export default defineConfig(({ mode }) => {
             icons: [
               {
                 src: 'https://cdn-icons-png.flaticon.com/512/7075/7075336.png',
+                sizes: '64x64',
+                type: 'image/png'
+              },
+              {
+                src: 'https://cdn-icons-png.flaticon.com/512/7075/7075336.png',
+                sizes: '128x128',
+                type: 'image/png'
+              },
+              {
+                src: 'https://cdn-icons-png.flaticon.com/512/7075/7075336.png',
+                sizes: '144x144',
+                type: 'image/png'
+              },
+              {
+                src: 'https://cdn-icons-png.flaticon.com/512/7075/7075336.png',
+                sizes: '152x152',
+                type: 'image/png'
+              },
+              {
+                src: 'https://cdn-icons-png.flaticon.com/512/7075/7075336.png',
                 sizes: '192x192',
+                type: 'image/png'
+              },
+              {
+                src: 'https://cdn-icons-png.flaticon.com/512/7075/7075336.png',
+                sizes: '384x384',
                 type: 'image/png'
               },
               {
@@ -38,7 +63,7 @@ export default defineConfig(({ mode }) => {
                 src: 'https://cdn-icons-png.flaticon.com/512/7075/7075336.png',
                 sizes: '512x512',
                 type: 'image/png',
-                purpose: 'any maskable'
+                purpose: 'maskable'
               }
             ]
           }

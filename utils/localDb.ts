@@ -1,6 +1,6 @@
 
 import Dexie, { Table } from 'dexie';
-import { ServiceOrder, Product, Sale, Transaction, AppSettings } from '../types';
+import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from '../types';
 
 export interface SyncItem {
   id?: number;
@@ -17,6 +17,7 @@ export class AssistenciaProDB extends Dexie {
   sales!: Table<Sale & { tenantId: string }, string>;
   transactions!: Table<Transaction & { tenantId: string }, string>;
   settings!: Table<AppSettings & { tenantId: string }, string>;
+  users!: Table<User & { tenantId: string }, string>;
   syncQueue!: Table<SyncItem, number>;
 
   constructor() {
@@ -27,6 +28,7 @@ export class AssistenciaProDB extends Dexie {
       sales: 'id, tenantId, productId, date, isDeleted',
       transactions: 'id, tenantId, type, date, isDeleted',
       settings: 'tenantId',
+      users: 'id, tenantId, username, role',
       syncQueue: '++id, tenantId, type, action, timestamp'
     });
   }

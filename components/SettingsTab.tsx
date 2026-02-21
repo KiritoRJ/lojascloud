@@ -3,6 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone } from 'lucide-react';
 import { AppSettings, User } from '../types';
 import { OnlineDB } from '../utils/api';
+import { OfflineSync } from '../utils/offlineSync';
+import { db } from '../utils/localDb';
 
 interface Props {
   settings: AppSettings;
@@ -157,8 +159,10 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
       const res = await OnlineDB.upsertUser(tenantId, settings.storeName, newUser);
       
       if (res.success) {
-        const updatedUsers = [...settings.users, { ...newUser, username: res.username }];
+        const newUserWithUsername = { ...newUser, username: res.username };
+        const updatedUsers = [...settings.users, newUserWithUsername];
         setSettings({ ...settings, users: updatedUsers });
+        await OfflineSync.saveUser(tenantId, newUserWithUsername);
         
         setIsUserModalOpen(false);
         setNewUserName('');
@@ -184,6 +188,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
       if (result.success) {
         const updatedUsers = settings.users.filter(u => u.id !== userToDelete.id);
         setSettings({ ...settings, users: updatedUsers });
+        await OfflineSync.deleteUser(tenantId, userToDelete.id);
         setUserToDelete(null);
         triggerSaveFeedback("Perfil Removido!");
       } else {

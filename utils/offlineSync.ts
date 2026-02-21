@@ -1,7 +1,7 @@
 
 import { db, SyncItem } from './localDb';
 import { OnlineDB } from './api';
-import { ServiceOrder, Product, Sale, Transaction, AppSettings } from '../types';
+import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from '../types';
 
 export class OfflineSync {
   private static isSyncing = false;
@@ -223,6 +223,15 @@ export class OfflineSync {
     });
   }
 
+  static async saveUser(tenantId: string, user: User) {
+    await db.users.put({ ...user, tenantId });
+    // Users are currently managed mostly online, but we keep them local for switching
+  }
+
+  static async deleteUser(tenantId: string, userId: string) {
+    await db.users.delete(userId);
+  }
+
   static async saveSettings(tenantId: string, settings: AppSettings) {
     await db.settings.put({ ...settings, tenantId });
     if (navigator.onLine) {
@@ -242,15 +251,20 @@ export class OfflineSync {
     if (!navigator.onLine) return;
 
     try {
-      const [cloudSettings, cloudOrders, cloudProducts, cloudSales, cloudTransactions] = await Promise.all([
+      const [cloudSettings, cloudOrders, cloudProducts, cloudSales, cloudTransactions, cloudUsers] = await Promise.all([
         OnlineDB.syncPull(tenantId, 'settings'),
         OnlineDB.fetchOrders(tenantId),
         OnlineDB.fetchProducts(tenantId),
         OnlineDB.fetchSales(tenantId),
-        OnlineDB.fetchTransactions(tenantId)
+        OnlineDB.fetchTransactions(tenantId),
+        OnlineDB.fetchUsers(tenantId)
       ]);
 
       if (cloudSettings) await db.settings.put({ ...cloudSettings, tenantId });
+      if (cloudUsers) {
+        await db.users.where('tenantId').equals(tenantId).delete();
+        await db.users.bulkPut(cloudUsers.map((u: any) => ({ ...u, tenantId })));
+      }
       if (cloudOrders) {
         await db.orders.where('tenantId').equals(tenantId).delete();
         await db.orders.bulkPut(cloudOrders.map((o: any) => ({ ...o, tenantId })));
@@ -273,7 +287,8 @@ export class OfflineSync {
         orders: cloudOrders,
         products: cloudProducts,
         sales: cloudSales,
-        transactions: cloudTransactions
+        transactions: cloudTransactions,
+        users: cloudUsers
       };
     } catch (e) {
       console.error('Error pulling data from cloud:', e);
@@ -282,14 +297,15 @@ export class OfflineSync {
   }
 
   static async getLocalData(tenantId: string) {
-    const [settings, orders, products, sales, transactions] = await Promise.all([
+    const [settings, orders, products, sales, transactions, users] = await Promise.all([
       db.settings.get(tenantId),
       db.orders.where('tenantId').equals(tenantId).toArray(),
       db.products.where('tenantId').equals(tenantId).toArray(),
       db.sales.where('tenantId').equals(tenantId).toArray(),
-      db.transactions.where('tenantId').equals(tenantId).toArray()
+      db.transactions.where('tenantId').equals(tenantId).toArray(),
+      db.users.where('tenantId').equals(tenantId).toArray()
     ]);
 
-    return { settings, orders, products, sales, transactions };
+    return { settings, orders, products, sales, transactions, users };
   }
 }

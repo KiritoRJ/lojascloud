@@ -119,7 +119,9 @@ const App: React.FC = () => {
       if (navigator.onLine) {
         const cloudData = await OfflineSync.pullAllData(tenantId);
         if (cloudData) {
-          setSettings({ ...DEFAULT_SETTINGS, ...cloudData.settings });
+          const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
+          finalSettings.users = cloudData.users || [];
+          setSettings(finalSettings);
           setOrders(cloudData.orders || []);
           setProducts(cloudData.products || []);
           setSales(cloudData.sales || []);
@@ -130,7 +132,9 @@ const App: React.FC = () => {
 
       // Se offline ou falha no pull, carrega local
       const localData = await OfflineSync.getLocalData(tenantId);
-      setSettings({ ...DEFAULT_SETTINGS, ...(localData.settings || {}) });
+      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+      finalSettings.users = localData.users || [];
+      setSettings(finalSettings);
       setOrders(localData.orders || []);
       setProducts(localData.products || []);
       setSales(localData.sales || []);
@@ -139,7 +143,9 @@ const App: React.FC = () => {
       console.error("Erro ao carregar dados:", e);
       setIsCloudConnected(false);
       const localData = await OfflineSync.getLocalData(tenantId);
-      setSettings({ ...DEFAULT_SETTINGS, ...(localData.settings || {}) });
+      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+      finalSettings.users = localData.users || [];
+      setSettings(finalSettings);
       setOrders(localData.orders || []);
       setProducts(localData.products || []);
       setSales(localData.sales || []);

@@ -509,6 +509,20 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><Phone size={12}/> Telefone de Contato</label>
              <input readOnly={!isAdmin} type="text" value={settings.storePhone || ''} onChange={(e) => updateSetting('storePhone', e.target.value)} className={`w-full px-8 py-5 bg-white border-none rounded-[2rem] font-bold text-sm text-slate-800 shadow-sm outline-none transition-all ${isAdmin ? 'focus:ring-4 focus:ring-blue-50' : 'opacity-80'}`} />
           </div>
+
+          <div className="w-full space-y-3 pt-4">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><Layout size={12}/> Itens por Página</label>
+            <div className="grid grid-cols-4 gap-2">
+              {[4, 8, 16, 999].map(num => (
+                <button 
+                  key={num}
+                  onClick={() => updateSetting('itemsPerPage', num)}
+                  className={`py-4 rounded-2xl text-xs font-black uppercase transition-all ${settings.itemsPerPage === num ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-500'}`}>
+                  {num === 999 ? 'Todos' : num}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className={`p-8 rounded-[3rem] border flex items-center gap-5 transition-all ${isCloudConnected ? 'bg-emerald-50/50 border-emerald-100' : 'bg-red-50/50 border-red-100'} mt-12 shadow-sm`}>

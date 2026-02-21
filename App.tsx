@@ -29,7 +29,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   pdfFontFamily: 'helvetica',
   pdfPaperWidth: 80,
   pdfTextColor: '#000000',
-  pdfBgColor: '#FFFFFF'
+  pdfBgColor: '#FFFFFF',
+  itemsPerPage: 8
 };
 
 const App: React.FC = () => {
@@ -89,8 +90,8 @@ const App: React.FC = () => {
         OnlineDB.fetchTransactions(tenantId)
       ]);
 
-      let finalSettings = cloudSettings || await getData('settings', tenantId) || DEFAULT_SETTINGS;
-      finalSettings = { ...finalSettings, users: cloudUsers || [] };
+      let finalSettings = { ...DEFAULT_SETTINGS, ...(cloudSettings || await getData('settings', tenantId) || {}) };
+      finalSettings.users = cloudUsers || [];
 
       setSettings(finalSettings);
       setOrders(cloudOrders || []);
@@ -114,7 +115,7 @@ const App: React.FC = () => {
       const localSales = await getData('sales', tenantId);
       const localTransactions = await getData('transactions', tenantId);
 
-      setSettings(localSettings || DEFAULT_SETTINGS);
+      setSettings({ ...DEFAULT_SETTINGS, ...(localSettings || {}) });
       setOrders(localOrders || []);
       setProducts(localProducts || []);
       setSales(localSales || []);
@@ -404,9 +405,9 @@ const App: React.FC = () => {
         <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-400"><Menu size={24} /></button>
       </header>
 
-      <main className="flex-1 p-4 pt-24 md:pt-10 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
+      <main className="flex-1 p-4 pt-24 pb-28 md:pt-10 md:pb-4 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
         {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} />}
-        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} />}
+        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} />}
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} />}
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} />}

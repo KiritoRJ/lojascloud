@@ -64,7 +64,8 @@ const SetupWizard: React.FC<Props> = ({ onComplete }) => {
       pdfFontFamily: 'helvetica', 
       pdfPaperWidth: 80, 
       pdfTextColor: '#000000', 
-      pdfBgColor: '#FFFFFF'
+      pdfBgColor: '#FFFFFF',
+      itemsPerPage: 8
     };
     setShowGratitude(true);
     setTimeout(() => { onComplete(initialSettings); }, 2500);

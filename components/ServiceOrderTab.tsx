@@ -25,6 +25,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
   const [passwordInput, setPasswordInput] = useState('');
   const [verifyingPassword, setVerifyingPassword] = useState(false);
   const [authError, setAuthError] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // --- ESTADO DO FORMULÁRIO (DADOS DA O.S.) ---
   const [formData, setFormData] = useState<Partial<ServiceOrder>>({
@@ -404,6 +405,12 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
 
   const filtered = orders.filter(o => o.customerName.toLowerCase().includes(searchTerm.toLowerCase()));
 
+  const paginatedOrders = filtered.slice(0, settings.itemsPerPage === 999 ? filtered.length : settings.itemsPerPage * currentPage);
+
+  const loadMore = () => {
+    setCurrentPage(prev => prev + 1);
+  };
+
   return (
     <div className="space-y-4 pb-4">
       {/* CABEÇALHO DA TAB */}
@@ -420,7 +427,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
 
       {/* LISTA DE ORDENS */}
       <div className="grid gap-3">
-        {filtered.length > 0 ? filtered.map(order => (
+        {paginatedOrders.length > 0 ? paginatedOrders.map(order => (
           <div key={order.id} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-50 flex items-center justify-between group animate-in fade-in">
             <div className="flex items-center gap-4 flex-1 min-w-0 cursor-pointer" onClick={() => { setEditingOrder(order); setFormData(order); setIsModalOpen(true); }}>
               <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-custom-primary overflow-hidden border border-slate-100 shrink-0">
@@ -453,6 +460,14 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
           </div>
         )}
       </div>
+
+      {settings.itemsPerPage !== 999 && filtered.length > paginatedOrders.length && (
+        <button 
+          onClick={loadMore}
+          className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest mt-4 active:scale-95 transition-transform">
+          Carregar Mais
+        </button>
+      )}
 
       {/* MODAL DE EDIÇÃO / CRIAÇÃO */}
       {isModalOpen && (

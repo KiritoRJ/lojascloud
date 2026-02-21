@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle } from 'lucide-react';
-import { Product } from '../types';
+import { Product, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString } from '../utils';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 
@@ -9,15 +9,17 @@ interface Props {
   products: Product[];
   setProducts: (products: Product[]) => void;
   onDeleteProduct: (id: string) => void;
+  settings: AppSettings;
 }
 
-const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) => {
+const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -181,6 +183,12 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
     (p.barcode && p.barcode.includes(searchTerm))
   );
 
+  const paginatedProducts = filtered.slice(0, settings.itemsPerPage === 999 ? filtered.length : settings.itemsPerPage * currentPage);
+
+  const loadMore = () => {
+    setCurrentPage(prev => prev + 1);
+  };
+
   const confirmDelete = () => {
     if (productToDelete) {
       onDeleteProduct(productToDelete);
@@ -216,7 +224,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
 
       {/* --- GRID DE PRODUTOS: MODIFICADO PARA PC (Miniaturas Menores e Mais Colunas) --- */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-        {filtered.length > 0 ? filtered.map(product => (
+        {paginatedProducts.length > 0 ? paginatedProducts.map(product => (
           <div key={product.id} className="bg-white border border-slate-50 rounded-[2rem] overflow-hidden shadow-sm flex flex-col group animate-in fade-in duration-300">
             {/* Altura da imagem reduzida de h-32 para h-28/h-24 no PC para visual mais compacto */}
             <div className="h-28 md:h-24 bg-slate-50 relative">
@@ -251,6 +259,14 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct }) =
           </div>
         )}
       </div>
+
+      {settings.itemsPerPage !== 999 && filtered.length > paginatedProducts.length && (
+        <button 
+          onClick={loadMore}
+          className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest mt-4 active:scale-95 transition-transform">
+          Carregar Mais
+        </button>
+      )}
 
       {/* MODAL DE EXCLUSÃO */}
       {productToDelete && (

@@ -30,6 +30,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [lastPaymentMethod, setLastPaymentMethod] = useState('');
   const [lastTransactionId, setLastTransactionId] = useState('');
   const [lastSaleDate, setLastSaleDate] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [isCancelling, setIsCancelling] = useState<string | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -161,6 +162,10 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     };
   }, []);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [showHistory, productSearch]);
+
   const cartTotal = useMemo(() => {
     return cart.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0);
   }, [cart]);
@@ -236,6 +241,14 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     (p.name.toLowerCase().includes(productSearch.toLowerCase()) || (p.barcode && p.barcode.includes(productSearch)))
   );
 
+  const paginatedProducts = filteredProducts.slice(0, settings.itemsPerPage === 999 ? filteredProducts.length : settings.itemsPerPage * currentPage);
+
+  const paginatedSales = sales.slice(0, settings.itemsPerPage === 999 ? sales.length : settings.itemsPerPage * currentPage);
+
+  const loadMore = () => {
+    setCurrentPage(prev => prev + 1);
+  };
+
   return (
     <div className="space-y-4 pb-32">
       {showHistory ? (
@@ -246,7 +259,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           </div>
           {/* Histórico permanece igual */}
           <div className="grid gap-2">
-            {sales.map(sale => (
+            {paginatedSales.map(sale => (
               <div key={sale.id} className="bg-white p-4 border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-emerald-50 text-emerald-500 rounded-lg flex items-center justify-center shrink-0">
@@ -270,6 +283,14 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
               </div>
             ))}
           </div>
+
+          {settings.itemsPerPage !== 999 && sales.length > paginatedSales.length && (
+            <button 
+              onClick={loadMore}
+              className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest mt-4 active:scale-95 transition-transform">
+              Carregar Mais
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -292,7 +313,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
           {/* --- GRID DE VENDAS: MODIFICADO PARA PC (Muito Mais Colunas e Cards Menores) --- */}
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
-            {filteredProducts.map(product => (
+            {paginatedProducts.map(product => (
               <button key={product.id} onClick={() => addToCart(product)} className="bg-white border border-slate-50 rounded-[2rem] overflow-hidden shadow-sm text-left active:scale-95 transition-all flex flex-col group hover:border-b-emerald-500 border-b-4 border-transparent">
                 {/* Altura reduzida de h-28 para h-24/h-20 para ser mais compacto no PC */}
                 <div className="h-24 md:h-20 bg-slate-50 relative overflow-hidden">
@@ -312,6 +333,14 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
               </button>
             ))}
           </div>
+
+          {settings.itemsPerPage !== 999 && filteredProducts.length > paginatedProducts.length && (
+            <button 
+              onClick={loadMore}
+              className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest my-4 active:scale-95 transition-transform">
+              Carregar Mais
+            </button>
+          )}
 
           {/* BARRA DE CARRINHO (RODAPÉ) */}
           <div className="fixed bottom-20 left-0 right-0 p-4 z-40 bg-gradient-to-t from-slate-50 via-slate-50/80 to-transparent">

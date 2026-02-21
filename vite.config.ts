@@ -19,20 +19,23 @@ export default defineConfig(({ mode }) => {
             name: 'Assistência Técnica Pro',
             short_name: 'Assistência Pro',
             description: 'Sistema de Gestão para Assistência Técnica',
-            theme_color: '#0f172a',
+            theme_color: '#2563eb',
+            background_color: '#2563eb',
+            display: 'standalone',
+            orientation: 'portrait',
             icons: [
               {
-                src: 'pwa-192x192.png',
+                src: 'https://picsum.photos/seed/blue-app-icon/192/192',
                 sizes: '192x192',
                 type: 'image/png'
               },
               {
-                src: 'pwa-512x512.png',
+                src: 'https://picsum.photos/seed/blue-app-icon/512/512',
                 sizes: '512x512',
                 type: 'image/png'
               },
               {
-                src: 'pwa-512x512.png',
+                src: 'https://picsum.photos/seed/blue-app-icon/512/512',
                 sizes: '512x512',
                 type: 'image/png',
                 purpose: 'any maskable'

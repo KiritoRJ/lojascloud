@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase } from 'lucide-react';
+import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone } from 'lucide-react';
 import { AppSettings, User } from '../types';
 import { OnlineDB } from '../utils/api';
 
@@ -11,9 +11,11 @@ interface Props {
   currentUser: User;
   onSwitchProfile: (user: User) => void;
   tenantId?: string; 
+  deferredPrompt?: any;
+  onInstallApp?: () => void;
 }
 
-const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId }) => {
+const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
   
   const [view, setView] = useState<'main' | 'print' | 'theme' | 'users'>('main');
@@ -523,6 +525,19 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
               ))}
             </div>
           </div>
+
+          {deferredPrompt && (
+            <div className="w-full pt-6">
+              <button 
+                onClick={onInstallApp}
+                className="w-full py-6 bg-blue-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-widest shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3"
+              >
+                <Smartphone size={20} />
+                Instalar Aplicativo Pro
+              </button>
+              <p className="text-center text-[8px] text-slate-400 font-black uppercase tracking-widest mt-3">Instale para usar em tela cheia e offline</p>
+            </div>
+          )}
         </div>
 
         <div className={`p-8 rounded-[3rem] border flex items-center gap-5 transition-all ${isCloudConnected ? 'bg-emerald-50/50 border-emerald-100' : 'bg-red-50/50 border-red-100'} mt-12 shadow-sm`}>

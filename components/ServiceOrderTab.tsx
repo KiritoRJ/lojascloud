@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar } from 'lucide-react';
+import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar, KeyRound, Lock } from 'lucide-react';
 import { ServiceOrder, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
 
@@ -9,9 +9,10 @@ interface Props {
   setOrders: (orders: ServiceOrder[]) => void;
   settings: AppSettings;
   onDeleteOrder: (id: string) => void;
+  tenantId: string;
 }
 
-const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDeleteOrder }) => {
+const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDeleteOrder, tenantId }) => {
   // --- ESTADOS DE CONTROLE DE INTERFACE ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -20,6 +21,10 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
   const [isCompressing, setIsCompressing] = useState(false);
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<string | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [verifyingPassword, setVerifyingPassword] = useState(false);
+  const [authError, setAuthError] = useState(false);
 
   // --- ESTADO DO FORMULÁRIO (DADOS DA O.S.) ---
   const [formData, setFormData] = useState<Partial<ServiceOrder>>({
@@ -367,6 +372,36 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
     }
   };
 
+  const initiateDelete = (id: string) => {
+    setOrderToDelete(id);
+    setIsAuthModalOpen(true);
+    setPasswordInput('');
+    setAuthError(false);
+  };
+
+  const confirmDeletion = async () => {
+    if (!orderToDelete || !passwordInput || !tenantId) return;
+    setVerifyingPassword(true);
+    setAuthError(false);
+
+    try {
+      const { OnlineDB } = await import('../utils/api');
+      const authResult = await OnlineDB.verifyAdminPassword(tenantId, passwordInput);
+      if (authResult.success) {
+        onDeleteOrder(orderToDelete);
+        setIsAuthModalOpen(false);
+        setOrderToDelete(null);
+      } else {
+        setAuthError(true);
+        setTimeout(() => setAuthError(false), 2000);
+      }
+    } catch (err) {
+      alert("Falha de rede ao verificar autorização.");
+    } finally {
+      setVerifyingPassword(false);
+    }
+  };
+
   const filtered = orders.filter(o => o.customerName.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
@@ -407,7 +442,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
               <button onClick={(e) => { e.stopPropagation(); generateReceiptImage(order); }} disabled={isGeneratingReceipt} className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md active:scale-90 disabled:opacity-50">
                 {isGeneratingReceipt ? <Loader2 className="animate-spin" size={18} /> : <Eye size={18} />}
               </button>
-              <button onClick={(e) => { e.stopPropagation(); setOrderToDelete(order.id); }} className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90">
+              <button onClick={(e) => { e.stopPropagation(); initiateDelete(order.id); }} className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90">
                 <Trash2 size={18} />
               </button>
             </div>
@@ -561,17 +596,31 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
         </div>
       )}
 
-      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
-      {orderToDelete && (
-        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-xs rounded-[2rem] overflow-hidden shadow-2xl">
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO COM SENHA */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
+          <div className={`bg-white w-full max-w-xs rounded-[2rem] overflow-hidden shadow-2xl transition-all duration-300 ${authError ? 'animate-shake' : ''}`}>
             <div className="p-8 text-center space-y-4">
               <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><AlertTriangle size={32} /></div>
-              <h3 className="font-black text-slate-800 uppercase text-sm">Excluir?</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Essa ação é permanente.</p>
+              <h3 className="font-black text-slate-800 uppercase text-sm">Excluir O.S.?</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Digite a senha do Administrador para confirmar.</p>
+              <div className="relative">
+                <KeyRound size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input 
+                  type="password"
+                  value={passwordInput}
+                  onChange={e => setPasswordInput(e.target.value)}
+                  onKeyPress={e => e.key === 'Enter' && confirmDeletion()}
+                  placeholder="Senha do ADM"
+                  className="w-full pl-10 pr-4 py-3 bg-slate-100 border-2 border-slate-200 rounded-xl font-mono text-sm tracking-widest text-center outline-none focus:ring-2 focus:ring-red-500"
+                />
+                {authError && <Lock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-red-500" />}
+              </div>
               <div className="flex gap-2 pt-2">
-                <button onClick={() => setOrderToDelete(null)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-xl font-black text-[9px]">Sair</button>
-                <button onClick={() => { onDeleteOrder(orderToDelete); setOrderToDelete(null); }} className="flex-1 py-4 bg-red-600 text-white rounded-xl font-black text-[9px] shadow-lg">Remover</button>
+                <button onClick={() => setIsAuthModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-xl font-black text-[9px]">Sair</button>
+                <button onClick={confirmDeletion} disabled={verifyingPassword} className="flex-1 py-4 bg-red-600 text-white rounded-xl font-black text-[9px] shadow-lg flex items-center justify-center gap-2">
+                  {verifyingPassword ? <Loader2 className="animate-spin" size={14} /> : 'Remover'}
+                </button>
               </div>
             </div>
           </div>

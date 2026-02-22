@@ -16,8 +16,8 @@ export default defineConfig(({ mode }) => {
           registerType: 'autoUpdate',
           injectRegister: false,
           includeAssets: [
-                         'icon-192.png',
-                         'icon-512.png'
+                         'pwa-192x192.png',
+                         'pwa-512x512.png'
                          ],
           workbox: {
             globPatterns: ['**/*.{js,css,html,png,svg,ico}'],

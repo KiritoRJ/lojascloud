@@ -14,8 +14,14 @@ export default defineConfig(({ mode }) => {
         react(),
         VitePWA({
           registerType: 'autoUpdate',
-          injectRegister: 'auto',
+          injectRegister: false,
           includeAssets: ['pwa-512x512.png'],
+          workbox: {
+            globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
+            cleanupOutdatedCaches: true,
+            clientsClaim: true,
+            skipWaiting: true
+          },
           manifest: {
             name: 'Assistência Técnica Pro',
             short_name: 'Assistência Pro',
@@ -29,7 +35,7 @@ export default defineConfig(({ mode }) => {
             icons: [
               {
                 src: 'pwa-512x512.png',
-                sizes: '512x512',
+                sizes: '192x192',
                 type: 'image/png',
                 purpose: 'any'
               },

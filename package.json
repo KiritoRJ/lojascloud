@@ -11,11 +11,14 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "2.39.7",
+    "@types/react-datepicker": "^6.2.0",
+    "date-fns": "^4.1.0",
     "dexie": "^4.3.0",
     "html5-qrcode": "2.3.8",
     "jspdf": "2.5.1",
     "lucide-react": "^0.564.0",
     "react": "^19.2.4",
+    "react-datepicker": "^9.1.0",
     "react-dom": "^19.2.4",
     "recharts": "^3.7.0",
     "vite-plugin-pwa": "^1.2.0"

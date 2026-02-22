@@ -7,6 +7,65 @@ const SUPABASE_KEY = 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export class OnlineDB {
+  // Busca configurações globais do sistema
+  static async getGlobalSettings() {
+    try {
+      const { data, error } = await supabase
+        .from('cloud_data')
+        .select('data_json')
+        .eq('tenant_id', 'SYSTEM')
+        .eq('store_key', 'global_plans')
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data?.data_json || {
+        monthly: 49.90,
+        quarterly: 129.90,
+        yearly: 499.00
+      };
+    } catch (e) {
+      return { monthly: 49.90, quarterly: 129.90, yearly: 499.00 };
+    }
+  }
+
+  // Atualiza configurações globais do sistema
+  static async updateGlobalSettings(plans: { monthly: number, quarterly: number, yearly: number }) {
+    try {
+      const { error } = await supabase
+        .from('cloud_data')
+        .upsert({
+          tenant_id: 'SYSTEM',
+          store_key: 'global_plans',
+          data_json: plans,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'tenant_id,store_key' });
+      
+      if (error) throw error;
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
+
+  // Atualiza preços customizados de uma loja
+  static async updateTenantCustomPrices(tenantId: string, prices: { monthly?: number, quarterly?: number, yearly?: number }) {
+    try {
+      const { error } = await supabase
+        .from('tenants')
+        .update({
+          custom_monthly_price: prices.monthly,
+          custom_quarterly_price: prices.quarterly,
+          custom_yearly_price: prices.yearly
+        })
+        .eq('id', tenantId);
+      
+      if (error) throw error;
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
+
   // Realiza o login do usuário verificando no banco SQL
   static async login(username: string, passwordPlain: string) {
     const cleanUser = username.trim().toLowerCase();
@@ -15,13 +74,17 @@ export class OnlineDB {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('*')
+        .select('*, tenants(*)')
         .eq('username', cleanUser)
         .eq('password', cleanPass)
         .maybeSingle();
 
       if (error) throw error;
       if (!data) return { success: false, message: "Usuário ou senha incorretos." };
+
+      const tenant = data.tenants;
+      const expiresAt = tenant?.subscription_expires_at;
+      const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
 
       return { 
         success: true, 
@@ -30,7 +93,13 @@ export class OnlineDB {
           id: data.tenant_id, 
           username: data.username,
           name: data.name || data.username,
-          role: data.role
+          role: data.role,
+          subscriptionStatus: isExpired ? 'expired' : (tenant?.subscription_status || 'trial'),
+          subscriptionExpiresAt: expiresAt,
+          customMonthlyPrice: tenant?.custom_monthly_price,
+          customQuarterlyPrice: tenant?.custom_quarterly_price,
+          customYearlyPrice: tenant?.custom_yearly_price,
+          lastPlanType: tenant?.last_plan_type
         } : null 
       };
     } catch (err: any) {
@@ -87,13 +156,19 @@ export class OnlineDB {
   // Cria uma nova loja e seu usuário administrador
   static async createTenant(tenantData: any) {
     try {
+      const trialDays = 7;
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + trialDays);
+
       const { error: tError } = await supabase
         .from('tenants')
         .insert([{
           id: tenantData.id,
           store_name: tenantData.storeName,
-          logo_url: tenantData.logoUrl, // Novo campo para o SQL
-          created_at: new Date().toISOString()
+          logo_url: tenantData.logoUrl,
+          created_at: new Date().toISOString(),
+          subscription_status: 'trial',
+          subscription_expires_at: expiresAt.toISOString()
         }]);
       if (tError) throw tError;
 
@@ -112,6 +187,47 @@ export class OnlineDB {
       if (uError) throw uError;
 
       return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
+
+  // Atualiza a assinatura de uma loja para uma data específica
+  static async setSubscriptionDate(tenantId: string, date: string, status: 'trial' | 'active' | 'expired' = 'active', planType?: 'monthly' | 'quarterly' | 'yearly') {
+    try {
+      const { error } = await supabase
+        .from('tenants')
+        .update({
+          subscription_status: status,
+          subscription_expires_at: date,
+          last_plan_type: planType
+        })
+        .eq('id', tenantId);
+      
+      if (error) throw error;
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
+
+  // Atualiza a assinatura de uma loja
+  static async updateSubscription(tenantId: string, months: number, planType: 'monthly' | 'quarterly' | 'yearly') {
+    try {
+      const expiresAt = new Date();
+      expiresAt.setMonth(expiresAt.getMonth() + months);
+
+      const { error } = await supabase
+        .from('tenants')
+        .update({
+          subscription_status: 'active',
+          subscription_expires_at: expiresAt.toISOString(),
+          last_plan_type: planType
+        })
+        .eq('id', tenantId);
+      
+      if (error) throw error;
+      return { success: true, expiresAt: expiresAt.toISOString() };
     } catch (e: any) {
       return { success: false, message: e.message };
     }

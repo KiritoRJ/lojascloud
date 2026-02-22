@@ -6,6 +6,12 @@ export interface Tenant {
   adminPasswordHash: string;
   createdAt: string;
   logoUrl?: string | null;
+  subscriptionStatus?: 'trial' | 'active' | 'expired';
+  subscriptionExpiresAt?: string;
+  customMonthlyPrice?: number;
+  customQuarterlyPrice?: number;
+  customYearlyPrice?: number;
+  lastPlanType?: 'monthly' | 'quarterly' | 'yearly';
 }
 
 export interface User {
@@ -16,6 +22,7 @@ export interface User {
   password?: string;
   photo: string | null;
   specialty?: 'Vendedor' | 'Técnico' | 'Outros';
+  tenantId?: string;
 }
 
 // Interface que define a estrutura de uma Ordem de Serviço

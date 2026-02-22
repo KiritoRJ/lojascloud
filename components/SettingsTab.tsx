@@ -15,9 +15,11 @@ interface Props {
   tenantId?: string; 
   deferredPrompt?: any;
   onInstallApp?: () => void;
+  subscriptionStatus?: string;
+  subscriptionExpiresAt?: string;
 }
 
-const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp }) => {
+const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
   
   const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup'>('main');
@@ -685,6 +687,28 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
       </div>
 
       <div className="max-w-2xl mx-auto space-y-6 py-10 relative">
+        {isAdmin && subscriptionStatus && (
+          <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex items-center justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${subscriptionStatus === 'trial' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                <Shield size={24} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Plano Atual</p>
+                <h3 className="font-black text-slate-800 uppercase text-sm">
+                  {subscriptionStatus === 'trial' ? 'Período de Teste' : 'Assinatura Ativa'}
+                </h3>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expira em</p>
+              <p className="font-black text-slate-800 text-sm">
+                {subscriptionExpiresAt ? new Date(subscriptionExpiresAt).toLocaleDateString('pt-BR') : 'N/A'}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col items-center gap-6 mb-4">
           <div className="relative group active:scale-95 transition-transform">
             <div className="w-52 h-52 bg-white rounded-[3.5rem] border-[10px] border-white shadow-2xl flex items-center justify-center overflow-hidden ring-1 ring-slate-100">

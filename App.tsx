@@ -8,6 +8,7 @@ import SalesTab from './components/SalesTab';
 import FinanceTab from './components/FinanceTab';
 import SettingsTab from './components/SettingsTab';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
+import SubscriptionView from './components/SubscriptionView';
 import { OnlineDB } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { db } from './utils/localDb';
@@ -35,7 +36,17 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const App: React.FC = () => {
-  const [session, setSession] = useState<{ isLoggedIn: boolean; type: 'super' | 'admin' | 'colaborador'; tenantId?: string; user?: User } | null>(null);
+  const [session, setSession] = useState<{ 
+    isLoggedIn: boolean; 
+    type: 'super' | 'admin' | 'colaborador'; 
+    tenantId?: string; 
+    user?: User; 
+    subscriptionStatus?: string; 
+    subscriptionExpiresAt?: string;
+    customMonthlyPrice?: number;
+    customQuarterlyPrice?: number;
+    customYearlyPrice?: number;
+  } | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -86,8 +97,43 @@ const App: React.FC = () => {
   };
 
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({ storeName: '', username: '', password: '' });
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!registerForm.storeName || !registerForm.username || !registerForm.password) {
+      setLoginError("Preencha todos os campos.");
+      return;
+    }
+    setIsRegistering(true);
+    setLoginError(null);
+    try {
+      const tenantId = 'T_' + Math.random().toString(36).substr(2, 6).toUpperCase();
+      const res = await OnlineDB.createTenant({
+        id: tenantId,
+        storeName: registerForm.storeName,
+        adminUsername: registerForm.username,
+        adminPasswordPlain: registerForm.password,
+        logoUrl: null
+      });
+
+      if (res.success) {
+        setLoginForm({ username: registerForm.username, password: registerForm.password });
+        setIsRegisterMode(false);
+        setLoginError("Loja criada com sucesso! Faça login para começar seus 7 dias grátis.");
+      } else {
+        setLoginError(res.message || "Erro ao criar loja.");
+      }
+    } catch (e) {
+      setLoginError("Erro de conexão.");
+    } finally {
+      setIsRegistering(false);
+    }
+  };
 
   useEffect(() => {
     const restoreSession = async () => {
@@ -105,7 +151,12 @@ const App: React.FC = () => {
               isLoggedIn: true,
               type: parsed.type || 'admin',
               tenantId: parsed.tenantId,
-              user: user
+              user: user,
+              subscriptionStatus: parsed.subscriptionStatus,
+              subscriptionExpiresAt: parsed.subscriptionExpiresAt,
+              customMonthlyPrice: parsed.customMonthlyPrice,
+              customQuarterlyPrice: parsed.customQuarterlyPrice,
+              customYearlyPrice: parsed.customYearlyPrice
             });
           }
         }
@@ -181,12 +232,17 @@ const App: React.FC = () => {
           setSession(superSession as any);
         } else {
           const tenantId = result.tenant?.id;
-          const newSession = { 
-            isLoggedIn: true, 
-            type: result.type as any, 
-            tenantId: tenantId,
-            isSuper: false
-          };
+            const newSession = { 
+              isLoggedIn: true, 
+              type: result.type as any, 
+              tenantId: tenantId,
+              isSuper: false,
+              subscriptionStatus: result.tenant?.subscriptionStatus,
+              subscriptionExpiresAt: result.tenant?.subscriptionExpiresAt,
+              customMonthlyPrice: result.tenant?.customMonthlyPrice,
+              customQuarterlyPrice: result.tenant?.customQuarterlyPrice,
+              customYearlyPrice: result.tenant?.customYearlyPrice
+            };
           const finalUser = { 
             id: result.tenant?.id || 'temp', 
             name: result.tenant?.name || result.tenant?.username || 'Administrador', 
@@ -337,33 +393,87 @@ const App: React.FC = () => {
               <Smartphone size={40} className="text-white" />
             </div>
             <h1 className="text-3xl font-black text-white tracking-tighter uppercase">Assistência Pro</h1>
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Login Centralizado SQL Cloud</p>
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+              {isRegisterMode ? 'Crie sua loja grátis por 7 dias' : 'Login Centralizado SQL Cloud'}
+            </p>
           </div>
-          <form onSubmit={handleLogin} className="bg-white/5 p-8 rounded-[3rem] border border-white/10 space-y-4 shadow-2xl">
-            <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Usuário / Login</label>
-              <input type="text" autoFocus value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value.toLowerCase()})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="Seu usuário" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Senha</label>
-              <input type="password" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="••••••" />
-            </div>
-            {loginError && (
-              <div className="flex items-center gap-2 text-red-400 bg-red-400/10 p-3 rounded-xl border border-red-400/20">
-                <ShieldCheck size={14} className="shrink-0" />
-                <p className="text-[9px] font-black uppercase tracking-tight">{loginError}</p>
+
+          {isRegisterMode ? (
+            <form onSubmit={handleRegister} className="bg-white/5 p-8 rounded-[3rem] border border-white/10 space-y-4 shadow-2xl">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Nome da Loja</label>
+                <input type="text" value={registerForm.storeName} onChange={e => setRegisterForm({...registerForm, storeName: e.target.value})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="Ex: Tech Cell" />
               </div>
-            )}
-            <button type="submit" disabled={isLoggingIn} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-2xl active:scale-95 transition-all mt-4 disabled:opacity-50">
-              {isLoggingIn ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Acessar Sistema'}
-            </button>
-          </form>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Usuário Administrador</label>
+                <input type="text" value={registerForm.username} onChange={e => setRegisterForm({...registerForm, username: e.target.value.toLowerCase()})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="Seu usuário" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Senha</label>
+                <input type="password" value={registerForm.password} onChange={e => setRegisterForm({...registerForm, password: e.target.value})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="••••••" />
+              </div>
+              {loginError && (
+                <div className="flex items-center gap-2 text-red-400 bg-red-400/10 p-3 rounded-xl border border-red-400/20">
+                  <ShieldCheck size={14} className="shrink-0" />
+                  <p className="text-[9px] font-black uppercase tracking-tight">{loginError}</p>
+                </div>
+              )}
+              <button type="submit" disabled={isRegistering} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-2xl active:scale-95 transition-all mt-4 disabled:opacity-50">
+                {isRegistering ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Criar Minha Loja'}
+              </button>
+              <button type="button" onClick={() => { setIsRegisterMode(false); setLoginError(null); }} className="w-full text-slate-500 font-black uppercase text-[9px] tracking-widest hover:text-white transition-colors">
+                Já tenho uma conta
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleLogin} className="bg-white/5 p-8 rounded-[3rem] border border-white/10 space-y-4 shadow-2xl">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Usuário / Login</label>
+                <input type="text" autoFocus value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value.toLowerCase()})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="Seu usuário" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Senha</label>
+                <input type="password" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="••••••" />
+              </div>
+              {loginError && (
+                <div className={`flex items-center gap-2 ${loginError.includes('sucesso') ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' : 'text-red-400 bg-red-400/10 border-red-400/20'} p-3 rounded-xl border`}>
+                  <ShieldCheck size={14} className="shrink-0" />
+                  <p className="text-[9px] font-black uppercase tracking-tight">{loginError}</p>
+                </div>
+              )}
+              <button type="submit" disabled={isLoggingIn} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-2xl active:scale-95 transition-all mt-4 disabled:opacity-50">
+                {isLoggingIn ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Acessar Sistema'}
+              </button>
+              <button type="button" onClick={() => { setIsRegisterMode(true); setLoginError(null); }} className="w-full text-slate-500 font-black uppercase text-[9px] tracking-widest hover:text-white transition-colors">
+                Criar nova loja grátis
+              </button>
+            </form>
+          )}
         </div>
       </div>
     );
   }
 
   if (session.type === 'super') return <SuperAdminDashboard onLogout={handleLogout} />;
+
+  if (session.subscriptionStatus === 'expired') {
+    return (
+      <SubscriptionView 
+        tenantId={session.tenantId!} 
+        storeName={settings?.storeName || 'Sua Loja'} 
+        expiresAt={session.subscriptionExpiresAt!}
+        customMonthlyPrice={session.customMonthlyPrice}
+        customQuarterlyPrice={session.customQuarterlyPrice}
+        customYearlyPrice={session.customYearlyPrice}
+        onLogout={handleLogout}
+        onSuccess={(newExpiresAt) => {
+          const updatedSession = { ...session, subscriptionStatus: 'active', subscriptionExpiresAt: newExpiresAt };
+          setSession(updatedSession);
+          localStorage.setItem('session_pro', JSON.stringify(updatedSession));
+        }}
+      />
+    );
+  }
 
   if (!settings) {
     return (
@@ -443,7 +553,7 @@ const App: React.FC = () => {
         {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} />}
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} />}
-        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} />}
+        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} />}
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">

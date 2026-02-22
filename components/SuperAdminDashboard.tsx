@@ -1,6 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera } from 'lucide-react';
+import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2 } from 'lucide-react';
+import DatePicker, { registerLocale } from 'react-datepicker';
+import { ptBR } from 'date-fns/locale/pt-BR';
+import 'react-datepicker/dist/react-datepicker.css';
+
+registerLocale('pt-BR', ptBR);
 import { OnlineDB } from '../utils/api';
 
 interface Props {
@@ -15,11 +20,48 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [formData, setFormData] = useState({ storeName: '', username: '', password: '', logoUrl: null as string | null });
   const [tenantToDelete, setTenantToDelete] = useState<{ id: string, name: string } | null>(null);
+  const [tenantToEditSub, setTenantToEditSub] = useState<{ id: string, name: string, expiresAt: string, status: string, planType?: string } | null>(null);
+  const [tenantToEditPrices, setTenantToEditPrices] = useState<{ id: string, name: string, monthly?: number, quarterly?: number, yearly?: number } | null>(null);
+  const [globalPlans, setGlobalPlans] = useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
+  const [isEditingGlobal, setIsEditingGlobal] = useState(false);
+  const [newSubDate, setNewSubDate] = useState('');
+  const [newPlanType, setNewPlanType] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
   const [isCompressing, setIsCompressing] = useState(false);
+
+  // Corrige o problema de fuso horário ao converter string YYYY-MM-DD para Date
+  const parseDate = (dateString: string) => {
+    if (!dateString) return new Date();
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
 
   useEffect(() => {
     loadTenants();
+    loadGlobalSettings();
   }, []);
+
+  const formatDateBR = (dateStr: string | null | undefined) => {
+    if (!dateStr) return 'N/A';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      // Usando Intl para garantir o formato DD/MM/YYYY independente do ambiente
+      return new Intl.DateTimeFormat('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        timeZone: 'UTC' // Força UTC para evitar problemas de fuso com datas puras
+      }).format(date);
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  const loadGlobalSettings = async () => {
+    const settings = await OnlineDB.getGlobalSettings();
+    setGlobalPlans(settings);
+  };
 
   const loadTenants = async () => {
     setIsLoading(true);
@@ -106,6 +148,59 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
     }
   };
 
+  const handleUpdateGlobalPlans = async () => {
+    setIsSaving(true);
+    const res = await OnlineDB.updateGlobalSettings(globalPlans);
+    if (res.success) {
+      setIsEditingGlobal(false);
+    } else {
+      setErrorMsg(res.message || "Erro ao salvar planos.");
+    }
+    setIsSaving(false);
+  };
+
+  const handleUpdateCustomPrices = async () => {
+    if (!tenantToEditPrices) return;
+    setIsSaving(true);
+    const res = await OnlineDB.updateTenantCustomPrices(tenantToEditPrices.id, {
+      monthly: tenantToEditPrices.monthly,
+      quarterly: tenantToEditPrices.quarterly,
+      yearly: tenantToEditPrices.yearly
+    });
+    if (res.success) {
+      setTenantToEditPrices(null);
+      await loadTenants();
+    } else {
+      setErrorMsg(res.message || "Erro ao salvar preços.");
+    }
+    setIsSaving(false);
+  };
+
+  const handleUpdateSubscription = async () => {
+    if (!tenantToEditSub || !newSubDate) return;
+    setIsSaving(true);
+    try {
+      // Ajusta para o final do dia selecionado para evitar expiração precoce
+      const expirationDate = new Date(newSubDate + 'T23:59:59');
+      const status = expirationDate < new Date() ? 'expired' : 'active';
+      
+      const result = await OnlineDB.setSubscriptionDate(tenantToEditSub.id, expirationDate.toISOString(), status, newPlanType);
+      if (result.success) {
+        setTenantToEditSub(null);
+        // Pequeno delay para garantir que o Supabase processou antes de recarregar
+        setTimeout(async () => {
+          await loadTenants();
+        }, 500);
+      } else {
+        setErrorMsg(result.message || "Erro ao atualizar assinatura.");
+      }
+    } catch (e) {
+      setErrorMsg("Erro ao processar data.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleDeleteTenant = async () => {
     if (!tenantToDelete) return;
     setIsDeleting(true);
@@ -152,7 +247,15 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
             <div>
                <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">Empresas Cadastradas</h2>
             </div>
-            {isLoading ? <Loader2 className="animate-spin text-blue-500" /> : <Globe className="text-blue-500 animate-pulse" size={32} />}
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setIsEditingGlobal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-600/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all"
+              >
+                <Settings2 size={14} /> Planos Globais
+              </button>
+              {isLoading ? <Loader2 className="animate-spin text-blue-500" /> : <Globe className="text-blue-500 animate-pulse" size={32} />}
+            </div>
           </div>
 
           {errorMsg && (
@@ -171,15 +274,60 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
                   </div>
                   <div>
                     <h3 className="font-black text-slate-100 uppercase text-sm">{t.store_name}</h3>
-                    <div className="flex items-center gap-3 mt-1 text-[9px] font-black text-slate-500 uppercase">
-                       <span>ID: {t.id}</span>
-                       <span>•</span>
-                       <span>{new Date(t.created_at).toLocaleDateString()}</span>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[9px] font-black text-slate-500 uppercase">
+                       <span className="text-slate-400">ID: {t.id}</span>
+                       <span className="hidden sm:inline opacity-30">•</span>
+                       <div className="flex items-center gap-1">
+                         <Plus size={10} className="text-blue-500" />
+                         <span>CRIADO: {formatDateBR(t.created_at)}</span>
+                       </div>
+                       <span className="hidden sm:inline opacity-30">•</span>
+                       <div className="flex items-center gap-1">
+                         <Clock size={10} className={t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date() ? "text-red-500" : "text-emerald-500"} />
+                         <span>EXPIRA: {formatDateBR(t.subscription_expires_at)}</span>
+                         {t.last_plan_type && (
+                           <span className="ml-1 px-1.5 bg-blue-500/10 text-blue-400 rounded-sm border border-blue-500/10">
+                             {t.last_plan_type === 'monthly' ? 'MENSAL' : t.last_plan_type === 'quarterly' ? 'TRIMESTRAL' : 'ANUAL'}
+                           </span>
+                         )}
+                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="px-4 py-1.5 bg-emerald-500/10 text-emerald-500 rounded-full text-[8px] font-black uppercase tracking-widest border border-emerald-500/20">Online</div>
+                  <button 
+                    onClick={() => setTenantToEditPrices({ 
+                      id: t.id, 
+                      name: t.store_name, 
+                      monthly: t.custom_monthly_price, 
+                      quarterly: t.custom_quarterly_price, 
+                      yearly: t.custom_yearly_price 
+                    })}
+                    className="p-3 bg-blue-500/10 text-blue-500 rounded-xl hover:bg-blue-500 hover:text-white transition-all active:scale-90"
+                    title="Preços Customizados"
+                  >
+                    <DollarSign size={18} />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setTenantToEditSub({ 
+                        id: t.id, 
+                        name: t.store_name, 
+                        expiresAt: t.subscription_expires_at || new Date().toISOString(),
+                        status: t.subscription_status || 'trial',
+                        planType: t.last_plan_type
+                      });
+                      setNewSubDate(t.subscription_expires_at ? new Date(t.subscription_expires_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+                      setNewPlanType(t.last_plan_type || 'monthly');
+                    }}
+                    className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all ${
+                      (t.subscription_status === 'expired' || (t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date()))
+                      ? 'bg-red-500/10 text-red-500 border-red-500/20' 
+                      : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                    }`}
+                  >
+                    { (t.subscription_status === 'expired' || (t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date())) ? 'Expirado' : 'Ativo' }
+                  </button>
                   <button 
                     onClick={() => setTenantToDelete({ id: t.id, name: t.store_name })}
                     className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
@@ -248,6 +396,144 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
           </button>
         </div>
       </main>
+
+      {isEditingGlobal && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100">
+            <div className="p-8 text-center space-y-6">
+              <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                <Settings2 size={40} />
+              </div>
+              <h3 className="font-black text-slate-800 uppercase text-lg">Planos Globais</h3>
+              
+              <div className="space-y-4 text-left">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Mensal (R$)</label>
+                  <input type="number" value={globalPlans.monthly} onChange={e => setGlobalPlans({...globalPlans, monthly: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Trimestral (R$)</label>
+                  <input type="number" value={globalPlans.quarterly} onChange={e => setGlobalPlans({...globalPlans, quarterly: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Anual (R$)</label>
+                  <input type="number" value={globalPlans.yearly} onChange={e => setGlobalPlans({...globalPlans, yearly: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm" />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 pt-4">
+                <button onClick={handleUpdateGlobalPlans} disabled={isSaving} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3">
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Alterações'}
+                </button>
+                <button onClick={() => setIsEditingGlobal(false)} disabled={isSaving} className="w-full py-5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tenantToEditPrices && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100">
+            <div className="p-8 text-center space-y-6">
+              <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                <DollarSign size={40} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-black text-slate-800 uppercase text-lg">Preços Customizados</h3>
+                <p className="text-slate-400 text-sm font-bold uppercase leading-tight px-4">Loja: <span className="text-blue-600 font-black">{tenantToEditPrices.name}</span></p>
+                <p className="text-[8px] text-blue-400 font-black uppercase tracking-widest">Estes valores serão fixos para esta loja.</p>
+              </div>
+              
+              <div className="space-y-4 text-left">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Mensal (R$)</label>
+                  <input type="number" value={tenantToEditPrices.monthly || ''} onChange={e => setTenantToEditPrices({...tenantToEditPrices, monthly: e.target.value ? Number(e.target.value) : undefined})} placeholder="Usar Global" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Trimestral (R$)</label>
+                  <input type="number" value={tenantToEditPrices.quarterly || ''} onChange={e => setTenantToEditPrices({...tenantToEditPrices, quarterly: e.target.value ? Number(e.target.value) : undefined})} placeholder="Usar Global" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Anual (R$)</label>
+                  <input type="number" value={tenantToEditPrices.yearly || ''} onChange={e => setTenantToEditPrices({...tenantToEditPrices, yearly: e.target.value ? Number(e.target.value) : undefined})} placeholder="Usar Global" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm" />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 pt-4">
+                <button onClick={handleUpdateCustomPrices} disabled={isSaving} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3">
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Fixar Preços'}
+                </button>
+                <button onClick={() => setTenantToEditPrices(null)} disabled={isSaving} className="w-full py-5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tenantToEditSub && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100">
+            <div className="p-8 text-center space-y-6">
+              <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                <Calendar size={40} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-black text-slate-800 uppercase text-lg">Gerenciar Assinatura</h3>
+                <p className="text-slate-400 text-sm font-bold uppercase leading-tight px-4">
+                  Loja: <span className="text-blue-600 font-black">{tenantToEditSub.name}</span>
+                </p>
+              </div>
+              
+              <div className="space-y-4 text-left">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Nova Data de Expiração</label>
+                  <DatePicker
+                    selected={parseDate(newSubDate)}
+                    onChange={(date: Date) => setNewSubDate(date.toISOString().split('T')[0])}
+                    dateFormat="dd/MM/yyyy"
+                    locale="pt-BR"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Tipo de Plano</label>
+                  <select 
+                    value={newPlanType}
+                    onChange={e => setNewPlanType(e.target.value as any)}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                  >
+                    <option value="monthly">Mensal</option>
+                    <option value="quarterly">Trimestral</option>
+                    <option value="yearly">Anual</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 pt-4">
+                <button 
+                  onClick={handleUpdateSubscription} 
+                  disabled={isSaving}
+                  className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Alteração'}
+                </button>
+                <button 
+                  onClick={() => setTenantToEditSub(null)} 
+                  disabled={isSaving}
+                  className="w-full py-5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {tenantToDelete && (
         <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">

@@ -62,10 +62,17 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handler = (e: any) => {
+      console.log('beforeinstallprompt event fired');
       e.preventDefault();
       setDeferredPrompt(e);
     };
     window.addEventListener('beforeinstallprompt', handler);
+    
+    // Debug: check if app is already installed or standalone
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      console.log('App is running in standalone mode');
+    }
+
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 

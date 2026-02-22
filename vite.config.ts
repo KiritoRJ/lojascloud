@@ -14,30 +14,9 @@ export default defineConfig(({ mode }) => {
         react(),
         VitePWA({
           registerType: 'autoUpdate',
-          injectRegister: false,
-          includeAssets: ['pwa-512x512.png', 'favicon.ico', 'apple-touch-icon.png'],
-          workbox: {
-            globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
-            cleanupOutdatedCaches: true,
-            runtimeCaching: [
-              {
-                urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-                handler: 'CacheFirst',
-                options: {
-                  cacheName: 'google-fonts-cache',
-                  expiration: {
-                    maxEntries: 10,
-                    maxAgeSeconds: 60 * 60 * 24 * 365
-                  },
-                  cacheableResponse: {
-                    statuses: [0, 200]
-                  }
-                }
-              }
-            ]
-          },
+          injectRegister: 'auto',
+          includeAssets: ['pwa-512x512.png'],
           manifest: {
-            id: '/',
             name: 'Assistência Técnica Pro',
             short_name: 'Assistência Pro',
             description: 'Sistema de Gestão para Assistência Técnica',
@@ -45,21 +24,23 @@ export default defineConfig(({ mode }) => {
             background_color: '#ffffff',
             display: 'standalone',
             orientation: 'portrait',
+            start_url: '.',
             scope: '/',
-            start_url: '/',
             icons: [
               {
-                src: '/pwa-512x512.png',
+                src: 'pwa-512x512.png',
                 sizes: '192x192',
                 type: 'image/png',
+                purpose: 'any'
               },
               {
-                src: '/pwa-512x512.png',
+                src: 'pwa-512x512.png',
                 sizes: '512x512',
                 type: 'image/png',
+                purpose: 'any'
               },
               {
-                src: '/pwa-512x512.png',
+                src: 'pwa-512x512.png',
                 sizes: '512x512',
                 type: 'image/png',
                 purpose: 'maskable'
@@ -67,8 +48,7 @@ export default defineConfig(({ mode }) => {
             ]
           },
           devOptions: {
-            enabled: true,
-            type: 'module'
+            enabled: true
           }
         })
       ],

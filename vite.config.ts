@@ -15,10 +15,7 @@ export default defineConfig(({ mode }) => {
         VitePWA({
           registerType: 'autoUpdate',
           injectRegister: false,
-          includeAssets: [
-                         '/pwa-192x192.png',
-                         '/pwa-512x512.png'
-                         ],
+          includeAssets: ['icon.svg'],
           workbox: {
             globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
             cleanupOutdatedCaches: true,
@@ -39,27 +36,21 @@ export default defineConfig(({ mode }) => {
             id: '/',
             icons: [
               {
-                src: '/pwa-192x192.png',
+                src: 'icon.svg',
                 sizes: '192x192',
-                type: 'image/png',
+                type: 'image/svg+xml',
                 purpose: 'any'
               },
               {
-                src: '/pwa-192x192.png',
-                sizes: '192x192',
-                type: 'image/png',
-                purpose: 'maskable'
-              },
-              {
-                src: '/pwa-512x512.png',
+                src: 'icon.svg',
                 sizes: '512x512',
-                type: 'image/png',
+                type: 'image/svg+xml',
                 purpose: 'any'
               },
               {
-                src: '/pwa-512x512.png',
+                src: 'icon.svg',
                 sizes: '512x512',
-                type: 'image/png',
+                type: 'image/svg+xml',
                 purpose: 'maskable'
               }
             ]

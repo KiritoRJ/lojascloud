@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2 } from 'lucide-react';
+import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -10,15 +10,16 @@ import { OnlineDB } from '../utils/api';
 
 interface Props {
   onLogout: () => void;
+  onLoginAs: (tenantId: string) => void;
 }
 
-const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
+const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
   const [tenants, setTenants] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ storeName: '', username: '', password: '', logoUrl: null as string | null });
+  const [formData, setFormData] = useState({ storeName: '', username: '', password: '', logoUrl: null as string | null, phoneNumber: '' });
   const [tenantToDelete, setTenantToDelete] = useState<{ id: string, name: string } | null>(null);
   const [tenantToEditSub, setTenantToEditSub] = useState<{ id: string, name: string, expiresAt: string, status: string, planType?: string } | null>(null);
   const [tenantToEditPrices, setTenantToEditPrices] = useState<{ id: string, name: string, monthly?: number, quarterly?: number, yearly?: number } | null>(null);
@@ -28,6 +29,8 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
   const [newSubDate, setNewSubDate] = useState('');
   const [newPlanType, setNewPlanType] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
   const [isCompressing, setIsCompressing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Corrige o problema de fuso horário ao converter string YYYY-MM-DD para Date
   const parseDate = (dateString: string) => {
@@ -149,12 +152,12 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
         storeName: formData.storeName,
         adminUsername: formData.username,
         adminPasswordPlain: formData.password,
-        logoUrl: formData.logoUrl, // Foto anexada
-        createdAt: new Date().toISOString()
+        logoUrl: formData.logoUrl,
+        phoneNumber: formData.phoneNumber
       });
 
       if (result.success) {
-        setFormData({ storeName: '', username: '', password: '', logoUrl: null });
+        setFormData({ storeName: '', username: '', password: '', logoUrl: null, phoneNumber: '' });
         await loadTenants();
       } else {
         setErrorMsg(result.message);
@@ -259,6 +262,22 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
     }
   };
 
+  const filteredTenants = tenants.filter(t => 
+    t.store_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleCopyToClipboard = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const stats = {
+    active: tenants.filter(t => t.subscription_status === 'active' && new Date(t.subscription_expires_at) >= new Date()).length,
+    expired: tenants.filter(t => t.subscription_status === 'expired' || new Date(t.subscription_expires_at) < new Date()).length,
+    trial: tenants.filter(t => t.subscription_status === 'trial').length
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-8 font-sans">
       <header className="max-w-6xl mx-auto flex items-center justify-between mb-16">
@@ -282,7 +301,12 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
         <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between bg-white/5 p-6 rounded-3xl border border-white/10">
             <div>
-               <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">Empresas Cadastradas</h2>
+               <div>
+                 <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">Empresas Cadastradas</h2>
+                 <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                   Mostrando {filteredTenants.length} de {tenants.length} empresas
+                 </p>
+               </div>
             </div>
             <div className="flex items-center gap-4">
               <button 
@@ -295,6 +319,21 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
             </div>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-3xl p-6">
+              <h3 className="text-sm font-black uppercase tracking-widest text-emerald-400">Ativas</h3>
+              <p className="text-4xl font-black text-white mt-2">{stats.active}</p>
+            </div>
+            <div className="bg-red-500/10 border border-red-500/20 rounded-3xl p-6">
+              <h3 className="text-sm font-black uppercase tracking-widest text-red-400">Expiradas</h3>
+              <p className="text-4xl font-black text-white mt-2">{stats.expired}</p>
+            </div>
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-3xl p-6">
+              <h3 className="text-sm font-black uppercase tracking-widest text-amber-400">Em Teste</h3>
+              <p className="text-4xl font-black text-white mt-2">{stats.trial}</p>
+            </div>
+          </div>
+
           {errorMsg && (
             <div className="bg-red-500/10 border border-red-500/20 p-5 rounded-3xl flex items-center gap-3 text-red-500 text-xs font-bold uppercase animate-in slide-in-from-top-2">
               <AlertCircle size={18} />
@@ -302,45 +341,21 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
             </div>
           )}
 
-          <div className="bg-slate-800 rounded-[3rem] p-10 space-y-6 border border-slate-700">
-              <h3 className="text-lg font-black text-center text-slate-300">Configurações dos Planos</h3>
-              <div className="space-y-4">
-                {['trial', 'monthly', 'quarterly', 'yearly'].map(planId => {
-                  const plan = globalPlans[planId as keyof typeof globalPlans] || {};
-                  return (
-                    <div key={planId} className="bg-slate-900 p-4 rounded-2xl border border-slate-700">
-                      <h4 className="font-bold text-blue-400 uppercase text-xs mb-3">Plano {planId === 'trial' ? 'Teste' : planId.charAt(0).toUpperCase() + planId.slice(1)}</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {planId !== 'trial' && (
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-slate-400">Preço (R$)</label>
-                            <input type="number" value={plan.price || ''} onChange={e => handlePlanChange(planId, 'price', Number(e.target.value))} className="w-full bg-slate-800 border-slate-700 rounded-lg p-2 text-xs" />
-                          </div>
-                        )}
-                        <div className="space-y-1">
-                          <label className="text-[9px] font-bold text-slate-400">Usuários</label>
-                          <input type="number" value={plan.maxUsers || ''} onChange={e => handlePlanChange(planId, 'maxUsers', Number(e.target.value))} className="w-full bg-slate-800 border-slate-700 rounded-lg p-2 text-xs" />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[9px] font-bold text-slate-400">O.S.</label>
-                          <input type="number" value={plan.maxOS || ''} onChange={e => handlePlanChange(planId, 'maxOS', Number(e.target.value))} className="w-full bg-slate-800 border-slate-700 rounded-lg p-2 text-xs" />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[9px] font-bold text-slate-400">Produtos</label>
-                          <input type="number" value={plan.maxProducts || ''} onChange={e => handlePlanChange(planId, 'maxProducts', Number(e.target.value))} className="w-full bg-slate-800 border-slate-700 rounded-lg p-2 text-xs" />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <button onClick={handleUpdateGlobalPlans} disabled={isSaving} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest mt-4 flex items-center justify-center gap-2">
-                {isSaving ? <Loader2 className="animate-spin" /> : 'Salvar Planos Globais'}
-              </button>
+
+
+            <div className="relative">
+              <Search size={18} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input 
+                type="text"
+                placeholder="Buscar empresa por nome..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm font-bold text-white placeholder-slate-500 outline-none focus:border-blue-500 transition-colors"
+              />
             </div>
 
             <div className="grid gap-4">
-            {tenants.map(t => (
+            {filteredTenants.map(t => (
               <div key={t.id} className="bg-white/5 border border-white/5 p-4 sm:p-6 rounded-[2rem] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 group hover:border-blue-500/30 transition-all">
                 <div className="flex items-center gap-4 sm:gap-5 w-full sm:w-auto">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 bg-slate-900 rounded-2xl flex items-center justify-center text-blue-500 border border-white/5 overflow-hidden shrink-0">
@@ -349,7 +364,19 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                   <div className="min-w-0 flex-1">
                     <h3 className="font-black text-slate-100 uppercase text-xs sm:text-sm truncate">{t.store_name}</h3>
                     <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 mt-1 text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">
-                       <span className="text-slate-400">ID: {t.id}</span>
+                       <div className="flex items-center gap-2">
+                         <span className="text-slate-400">ID: {t.id}</span>
+                         <button 
+                        onClick={() => onLoginAs(t.id)}
+                        className="p-2.5 bg-yellow-500/10 text-yellow-500 rounded-xl hover:bg-yellow-500 hover:text-white transition-all active:scale-90"
+                        title="Login como Admin"
+                      >
+                        <KeySquare size={16} />
+                      </button>
+                      <button onClick={() => handleCopyToClipboard(t.id)} className="text-slate-500 hover:text-white">
+                           {copiedId === t.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                         </button>
+                       </div>
                        <span className="opacity-30">•</span>
                        <div className="flex items-center gap-1">
                          <Clock size={10} className={t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date() ? "text-red-500" : "text-emerald-500"} />
@@ -408,6 +435,17 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                     >
                       <ShieldCheck size={16} />
                     </button>
+                    {t.phone_number && (
+                      <a
+                        href={`https://wa.me/55${t.phone_number.replace(/\D/g, '')}?text=Olá, ${t.store_name}! Temos uma novidade para você.`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl hover:bg-emerald-500 hover:text-white transition-all active:scale-90"
+                        title="WhatsApp"
+                      >
+                        <Phone size={16} />
+                      </a>
+                    )}
                     <button 
                       onClick={() => setTenantToDelete({ id: t.id, name: t.store_name })}
                       className="p-2.5 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
@@ -468,6 +506,15 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                 className="w-full bg-white/10 border border-white/10 rounded-2xl p-5 font-bold outline-none text-sm" 
               />
             </div>
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase tracking-widest text-blue-200 ml-4">Telefone (WhatsApp)</label>
+              <input 
+                value={formData.phoneNumber} 
+                onChange={e => setFormData({...formData, phoneNumber: e.target.value})}
+                placeholder="Ex: 11987654321" 
+                className="w-full bg-white/10 border border-white/10 rounded-2xl p-5 font-bold outline-none text-sm" 
+              />
+            </div>
           </div>
           <button 
             onClick={handleCreateTenant} 
@@ -481,34 +528,54 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
 
       {isEditingGlobal && (
         <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100">
-            <div className="p-8 text-center space-y-6">
-              <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2">
+          <div className="bg-white w-full max-w-2xl rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100 flex flex-col max-h-[90vh]">
+            <div className="p-8 pb-4 text-center shrink-0">
+              <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
                 <Settings2 size={40} />
               </div>
-              <h3 className="font-black text-slate-800 uppercase text-lg">Planos Globais</h3>
-              
-              <div className="space-y-4 text-left">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Mensal (R$)</label>
-                  <input type="number" value={globalPlans.monthly} onChange={e => setGlobalPlans({...globalPlans, monthly: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Trimestral (R$)</label>
-                  <input type="number" value={globalPlans.quarterly} onChange={e => setGlobalPlans({...globalPlans, quarterly: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Anual (R$)</label>
-                  <input type="number" value={globalPlans.yearly} onChange={e => setGlobalPlans({...globalPlans, yearly: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm" />
-                </div>
+              <h3 className="font-black text-slate-800 uppercase text-lg mt-4">Configurações dos Planos</h3>
+            </div>
+            
+            <div className="px-6 sm:px-8 overflow-y-auto flex-grow">
+              <div className="space-y-4">
+                {['trial', 'monthly', 'quarterly', 'yearly'].map(planId => {
+                  const plan = globalPlans[planId as keyof typeof globalPlans] || {};
+                  return (
+                    <div key={planId} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      <h4 className="font-bold text-blue-600 uppercase text-xs mb-3">Plano {planId === 'trial' ? 'Teste' : planId.charAt(0).toUpperCase() + planId.slice(1)}</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {planId !== 'trial' && (
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400">Preço (R$)</label>
+                            <input type="number" value={plan.price || ''} onChange={e => handlePlanChange(planId, 'price', Number(e.target.value))} className="w-full bg-white border-slate-200 rounded-lg p-2 text-xs text-slate-800 font-bold" />
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400">Usuários</label>
+                          <input type="number" value={plan.maxUsers || ''} onChange={e => handlePlanChange(planId, 'maxUsers', Number(e.target.value))} className="w-full bg-white border-slate-200 rounded-lg p-2 text-xs text-slate-800 font-bold" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400">O.S.</label>
+                          <input type="number" value={plan.maxOS || ''} onChange={e => handlePlanChange(planId, 'maxOS', Number(e.target.value))} className="w-full bg-white border-slate-200 rounded-lg p-2 text-xs text-slate-800 font-bold" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400">Produtos</label>
+                          <input type="number" value={plan.maxProducts || ''} onChange={e => handlePlanChange(planId, 'maxProducts', Number(e.target.value))} className="w-full bg-white border-slate-200 rounded-lg p-2 text-xs text-slate-800 font-bold" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
+            </div>
 
-              <div className="flex flex-col gap-3 pt-4">
+            <div className="p-8 pt-6 mt-auto shrink-0 border-t border-slate-100 bg-white">
+              <div className="flex flex-col sm:flex-row-reverse gap-3">
                 <button onClick={handleUpdateGlobalPlans} disabled={isSaving} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3">
-                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Alterações'}
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Planos Globais'}
                 </button>
-                <button onClick={() => setIsEditingGlobal(false)} disabled={isSaving} className="w-full py-5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">
-                  Cancelar
+                <button onClick={() => setIsEditingGlobal(false)} disabled={isSaving} className="w-full sm:w-auto sm:px-10 py-5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">
+                  Fechar
                 </button>
               </div>
             </div>

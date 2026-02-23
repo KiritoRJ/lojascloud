@@ -129,7 +129,8 @@ const App: React.FC = () => {
         storeName: registerForm.storeName,
         adminUsername: registerForm.username,
         adminPasswordPlain: registerForm.password,
-        logoUrl: null
+        logoUrl: null,
+        phoneNumber: ''
       });
 
       if (res.success) {
@@ -282,6 +283,36 @@ const App: React.FC = () => {
       setLoginError("Erro de rede. Verifique sua conexão.");
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleLoginAs = async (tenantId: string) => {
+    const tenant = await OnlineDB.getTenantById(tenantId);
+    if (tenant) {
+      const newSession = {
+        isLoggedIn: true,
+        type: 'admin' as const,
+        tenantId: tenant.id,
+        isSuper: false,
+        subscriptionStatus: tenant.subscription_status,
+        subscriptionExpiresAt: tenant.subscription_expires_at,
+        customMonthlyPrice: tenant.custom_monthly_price,
+        customQuarterlyPrice: tenant.custom_quarterly_price,
+        customYearlyPrice: tenant.custom_yearly_price,
+        enabledFeatures: tenant.enabled_features,
+        maxUsers: tenant.max_users,
+        maxOS: tenant.tenant_limits?.max_os,
+        maxProducts: tenant.tenant_limits?.max_products,
+      };
+      const finalUser = {
+        id: tenant.users.find((u: any) => u.role === 'admin')?.id || 'admin',
+        name: tenant.users.find((u: any) => u.role === 'admin')?.name || 'Admin',
+        role: 'admin' as const,
+        photo: null,
+      };
+      localStorage.setItem('session_pro', JSON.stringify(newSession));
+      localStorage.setItem('currentUser_pro', JSON.stringify(finalUser));
+      setSession({ ...newSession, user: finalUser });
     }
   };
 
@@ -476,7 +507,7 @@ const App: React.FC = () => {
     );
   }
 
-  if (session.type === 'super') return <SuperAdminDashboard onLogout={handleLogout} />;
+  if (session.type === 'super') return <SuperAdminDashboard onLogout={handleLogout} onLoginAs={handleLoginAs} />;
 
   if (session.subscriptionStatus === 'expired') {
     return (

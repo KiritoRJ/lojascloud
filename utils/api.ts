@@ -215,7 +215,14 @@ export class OnlineDB {
   }
 
   // Cria uma nova loja e seu usuário administrador
-  static async createTenant(tenantData: any) {
+  static async createTenant(tenantData: { 
+    id: string; 
+    storeName: string; 
+    adminUsername: string; 
+    adminPasswordPlain: string; 
+    logoUrl: string | null; 
+    phoneNumber: string; 
+  }) {
     try {
       const trialDays = 7;
       const expiresAt = new Date();
@@ -233,6 +240,7 @@ export class OnlineDB {
           created_at: new Date().toISOString(),
           subscription_status: 'trial',
           subscription_expires_at: expiresAt.toISOString(),
+          phone_number: tenantData.phoneNumber, // Adiciona o telefone
           enabled_features: {
             osTab: true,
             stockTab: true,
@@ -425,6 +433,23 @@ export class OnlineDB {
       return data || [];
     } catch (e) {
       return [];
+    }
+  }
+
+  // Busca uma loja pelo ID
+  static async getTenantById(tenantId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('tenants')
+        .select('*, tenant_limits(*), users(*)')
+        .eq('id', tenantId)
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data || null;
+    } catch (e) {
+      console.error("Erro ao buscar loja por ID:", e);
+      return null;
     }
   }
 

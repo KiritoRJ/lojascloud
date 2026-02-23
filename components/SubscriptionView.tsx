@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { CreditCard, Check, ShieldCheck, Clock, Calendar, Smartphone, LogOut, Loader2 } from 'lucide-react';
-import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
+import { initMercadoPago, CardPayment } from '@mercadopago/sdk-react';
 import { OnlineDB } from '../utils/api';
 
 initMercadoPago(import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY || '', { locale: 'pt-BR' });
@@ -23,8 +23,9 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
 }) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [globalPlans, setGlobalPlans] = React.useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
-    const [selectedPlan, setSelectedPlan] = useState<any>(null);
+        const [selectedPlan, setSelectedPlan] = useState<any>(null);
   const [pixPayment, setPixPayment] = useState<any>(null);
+  const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
 
   React.useEffect(() => {
     OnlineDB.getGlobalSettings().then(setGlobalPlans);
@@ -197,19 +198,51 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
             <p className="text-slate-400">Você selecionou o <strong className="text-white">{selectedPlan.name}</strong> por {selectedPlan.price}.</p>
           </div>
 
-          <div className="bg-white rounded-2xl p-4">
-            <Payment
-              initialization={{ amount: getPrice(selectedPlan.id) }}
-              customization={{
-                paymentMethods: {
-                  bankTransfer: 'all',
-                  creditCard: 'all'
-                },
-              }}
-              onSubmit={onSubmit}
-              onReady={onReady}
-              onError={onError}
-            />
+                    <div className="bg-white rounded-2xl p-4">
+                        {paymentMethod === 'card' && (
+              <>
+                <button 
+                  onClick={() => setPaymentMethod(null)}
+                  className="mb-4 text-slate-500 hover:text-slate-800 text-xs font-bold uppercase tracking-wider flex items-center gap-1"
+                >
+                  ← Trocar forma de pagamento
+                </button>
+              <CardPayment
+                initialization={{
+                  amount: getPrice(selectedPlan.id),
+                }}
+                customization={{
+                  visual: {
+                    showCardholderName: true,
+                  },
+                  paymentMethods: {
+                    maxInstallments: 1
+                  }
+                }}
+                onSubmit={onSubmit}
+                onReady={onReady}
+                onError={onError}
+              />
+              </>
+            )}
+
+            {!paymentMethod && (
+              <div className="flex flex-col space-y-4 p-4">
+                <h3 className='text-center text-slate-800 font-bold text-lg mb-2'>Escolha como pagar</h3>
+                <button 
+                  onClick={() => setPaymentMethod('card')}
+                  className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-all duration-300"
+                >
+                  Cartão de Crédito
+                </button>
+                <button 
+                  onClick={() => onSubmit({ selectedPaymentMethod: 'pix', formData: { transaction_amount: getPrice(selectedPlan.id), payer: { email: tenantId } } })}
+                  className="w-full bg-emerald-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-emerald-600 transition-all duration-300"
+                >
+                  PIX
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,10 +1,7 @@
 
 import React, { useState } from 'react';
 import { CreditCard, Check, ShieldCheck, Clock, Calendar, Smartphone, LogOut, Loader2 } from 'lucide-react';
-import { initMercadoPago, Wallet } from '@mercadopago/sdk-react';
 import { OnlineDB } from '../utils/api';
-
-initMercadoPago(import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY || '', { locale: 'pt-BR' });
 
 interface SubscriptionViewProps {
   tenantId: string;
@@ -23,7 +20,6 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
 }) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [globalPlans, setGlobalPlans] = React.useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
-  const [preferenceId, setPreferenceId] = useState<string | null>(null);
 
   React.useEffect(() => {
     OnlineDB.getGlobalSettings().then(setGlobalPlans);
@@ -83,15 +79,16 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
         }),
       });
       const data = await response.json();
-      if (data.id) {
-        setPreferenceId(data.id);
+      if (data.init_point) {
+        window.location.href = data.init_point;
+        // Don't set loading to null here, let the page redirect
       } else {
         alert(`Erro ao criar preferência de pagamento: ${data.error || 'Erro desconhecido'}`);
+        setLoading(null);
       }
     } catch (error) {
       console.error('Payment error:', error);
       alert('Erro de conexão ao processar pagamento.');
-    } finally {
       setLoading(null);
     }
   };
@@ -162,29 +159,20 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
                 ))}
               </ul>
 
-              {preferenceId && loading === plan.id ? (
-                <Wallet 
-                  initialization={{ preferenceId: preferenceId }} 
-                  customization={{ texts: { valueProp: 'security_details' } }} 
-                  onError={(error) => console.error('Wallet error:', error)}
-                  onReady={() => console.log('Wallet ready')}
-                />
-              ) : (
-                <button
-                  onClick={() => handlePayment(plan)}
-                  disabled={loading !== null}
-                  className={`w-full py-5 rounded-3xl font-black uppercase text-xs tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${plan.popular ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-600/20' : 'bg-white hover:bg-slate-100 text-slate-900'}`}
-                >
-                  {loading === plan.id && !preferenceId ? (
-                    <Loader2 className="animate-spin" size={20} />
-                  ) : (
-                    <>
-                      <CreditCard size={18} />
-                      Assinar Agora
-                    </>
-                  )}
-                </button>
-              )}
+              <button
+                onClick={() => handlePayment(plan)}
+                disabled={loading !== null}
+                className={`w-full py-5 rounded-3xl font-black uppercase text-xs tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${plan.popular ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-600/20' : 'bg-white hover:bg-slate-100 text-slate-900'}`}
+              >
+                {loading === plan.id ? (
+                  <Loader2 className="animate-spin" size={20} />
+                ) : (
+                  <>
+                    <CreditCard size={18} />
+                    Assinar Agora
+                  </>
+                )}
+              </button>
             </div>
           ))}
         </div>

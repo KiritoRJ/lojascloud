@@ -8,14 +8,14 @@ export default async function handler(req, res) {
 
   try {
 
-    if (!process.env.MP_ACCESS_TOKEN) {
+    if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
       return res.status(500).json({
-        error: 'MP_ACCESS_TOKEN não definida'
+        error: 'MERCADO_PAGO_ACCESS_TOKEN não definida'
       });
     }
 
     const client = new MercadoPagoConfig({
-      accessToken: process.env.MP_ACCESS_TOKEN,
+      accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN,
     });
 
     const preference = new Preference(client);

@@ -1,7 +1,10 @@
 
 import React, { useState } from 'react';
 import { CreditCard, Check, ShieldCheck, Clock, Calendar, Smartphone, LogOut, Loader2 } from 'lucide-react';
+import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 import { OnlineDB } from '../utils/api';
+
+initMercadoPago(import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY || '', { locale: 'pt-BR' });
 
 interface SubscriptionViewProps {
   tenantId: string;
@@ -20,6 +23,7 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
 }) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [globalPlans, setGlobalPlans] = React.useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
+  const [selectedPlan, setSelectedPlan] = useState<any>(null);
 
   React.useEffect(() => {
     OnlineDB.getGlobalSettings().then(setGlobalPlans);
@@ -62,35 +66,51 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
     }
   ];
 
-  const handlePayment = async (plan: any) => {
-    setLoading(plan.id);
-    try {
-      const response = await fetch('/api/create-payment', {
+  const handlePayment = (plan: any) => {
+    setSelectedPlan(plan);
+  };
+
+  const onSubmit = async ({ selectedPaymentMethod, formData }: any) => {
+    return new Promise<void>((resolve, reject) => {
+      fetch('/api/process-payment', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          title: plan.name,
-          unit_price: getPrice(plan.id),
-          quantity: 1,
-          tenantId: tenantId,
-          planType: plan.id
+          formData,
+          tenantId,
+          planType: selectedPlan.id
         }),
-      });
-      const data = await response.json();
-      if (data.init_point) {
-        window.location.href = data.init_point;
-        // Don't set loading to null here, let the page redirect
-      } else {
-        alert(`Erro ao criar preferência de pagamento: ${data.error || 'Erro desconhecido'}`);
-        setLoading(null);
-      }
-    } catch (error) {
-      console.error('Payment error:', error);
-      alert('Erro de conexão ao processar pagamento.');
-      setLoading(null);
-    }
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.status === 'approved') {
+            resolve();
+            setTimeout(() => {
+              const newDate = new Date();
+              newDate.setMonth(newDate.getMonth() + selectedPlan.months);
+              onSuccess(newDate.toISOString());
+            }, 3000);
+          } else if (data.status === 'pending' || data.status === 'in_process') {
+            resolve();
+          } else {
+            reject();
+          }
+        })
+        .catch((error) => {
+          console.error('Payment error:', error);
+          reject();
+        });
+    });
+  };
+
+  const onError = async (error: any) => {
+    console.error('Payment Brick error:', error);
+  };
+
+  const onReady = async () => {
+    console.log('Payment Brick ready');
   };
 
   const formatDate = (dateStr: string) => {
@@ -107,6 +127,41 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
       return dateStr;
     }
   };
+
+  if (selectedPlan) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] text-white flex flex-col items-center justify-center p-6 font-sans">
+        <div className="max-w-2xl w-full bg-slate-900/50 border-2 border-slate-800 rounded-[2.5rem] p-8">
+          <button 
+            onClick={() => setSelectedPlan(null)}
+            className="mb-6 text-slate-400 hover:text-white text-sm font-bold uppercase tracking-wider flex items-center gap-2"
+          >
+            ← Voltar para planos
+          </button>
+          
+          <div className="mb-8">
+            <h2 className="text-2xl font-black uppercase tracking-tight mb-2">Finalizar Assinatura</h2>
+            <p className="text-slate-400">Você selecionou o <strong className="text-white">{selectedPlan.name}</strong> por {selectedPlan.price}.</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-4">
+            <Payment
+              initialization={{ amount: getPrice(selectedPlan.id) }}
+              customization={{
+                paymentMethods: {
+                  bankTransfer: 'all',
+                  creditCard: 'all'
+                },
+              }}
+              onSubmit={onSubmit}
+              onReady={onReady}
+              onError={onError}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-white flex flex-col items-center justify-center p-6 font-sans">

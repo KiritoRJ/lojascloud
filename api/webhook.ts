@@ -1,5 +1,9 @@
 import { MercadoPagoConfig, Payment } from 'mercadopago';
-import { OnlineDB } from '../utils/api';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = 'https://lawcmqsjhwuhogsukhbf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -30,7 +34,23 @@ export default async function handler(req: any, res: any) {
           const months = plans[planType as keyof typeof plans];
 
           if (months) {
-            await OnlineDB.updateSubscription(tenantId, months, planType as any);
+            const expiresAt = new Date();
+            expiresAt.setMonth(expiresAt.getMonth() + months);
+
+            const { error } = await supabase
+              .from('tenants')
+              .update({
+                subscription_status: 'active',
+                subscription_expires_at: expiresAt.toISOString(),
+                last_plan_type: planType
+              })
+              .eq('id', tenantId);
+
+            if (error) {
+              console.error('Error updating subscription in Supabase:', error);
+            } else {
+              console.log(`Subscription updated successfully for tenant ${tenantId}`);
+            }
           }
         }
       }

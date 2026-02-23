@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { CreditCard, Check, ShieldCheck, Clock, Calendar, Smartphone, LogOut, Loader2 } from 'lucide-react';
+import { initMercadoPago, Wallet } from '@mercadopago/sdk-react';
 import { OnlineDB } from '../utils/api';
 
 interface SubscriptionViewProps {
@@ -20,6 +21,9 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
 }) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [globalPlans, setGlobalPlans] = React.useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
+  const [preferenceId, setPreferenceId] = useState<string | null>(null);
+
+  initMercadoPago(import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY || '', { locale: 'pt-BR' });
 
   React.useEffect(() => {
     OnlineDB.getGlobalSettings().then(setGlobalPlans);
@@ -62,19 +66,34 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
     }
   ];
 
-  const handlePayment = async (months: number, planId: string) => {
-    setLoading(planId);
-    // Simulando processamento de pagamento
-    // Em produção, aqui você chamaria a API do Mercado Pago ou Stripe
-    setTimeout(async () => {
-      const res = await OnlineDB.updateSubscription(tenantId, months, planId as any);
-      if (res.success) {
-        onSuccess(res.expiresAt!);
+  const handlePayment = async (plan: any) => {
+    setLoading(plan.id);
+    try {
+      const response = await fetch('/api/create-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: plan.name,
+          unit_price: getPrice(plan.id),
+          quantity: 1,
+          tenantId: tenantId,
+          planType: plan.id
+        }),
+      });
+      const data = await response.json();
+      if (data.id) {
+        setPreferenceId(data.id);
       } else {
-        alert("Erro ao processar assinatura. Tente novamente.");
+        alert(`Erro ao criar preferência de pagamento: ${data.error || 'Erro desconhecido'}`);
       }
+    } catch (error) {
+      console.error('Payment error:', error);
+      alert('Erro de conexão ao processar pagamento.');
+    } finally {
       setLoading(null);
-    }, 2000);
+    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -143,20 +162,24 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
                 ))}
               </ul>
 
-              <button
-                onClick={() => handlePayment(plan.months, plan.id)}
-                disabled={loading !== null}
-                className={`w-full py-5 rounded-3xl font-black uppercase text-xs tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${plan.popular ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-600/20' : 'bg-white hover:bg-slate-100 text-slate-900'}`}
-              >
-                {loading === plan.id ? (
-                  <Loader2 className="animate-spin" size={20} />
-                ) : (
-                  <>
-                    <CreditCard size={18} />
-                    Assinar Agora
-                  </>
-                )}
-              </button>
+              {preferenceId ? (
+                <Wallet initialization={{ preferenceId: preferenceId }} />
+              ) : (
+                <button
+                  onClick={() => handlePayment(plan)}
+                  disabled={loading !== null}
+                  className={`w-full py-5 rounded-3xl font-black uppercase text-xs tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${plan.popular ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-600/20' : 'bg-white hover:bg-slate-100 text-slate-900'}`}
+                >
+                  {loading === plan.id ? (
+                    <Loader2 className="animate-spin" size={20} />
+                  ) : (
+                    <>
+                      <CreditCard size={18} />
+                      Assinar Agora
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           ))}
         </div>

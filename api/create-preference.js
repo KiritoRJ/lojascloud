@@ -1,13 +1,16 @@
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 
-export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
+export default async function handler(req, res) {
   try {
+
+    if (!process.env.MP_ACCESS_TOKEN) {
+      return res.status(500).json({
+        error: 'MP_ACCESS_TOKEN não definida'
+      });
+    }
+
     const client = new MercadoPagoConfig({
-      accessToken: process.env.MP_ACCESS_TOKEN as string,
+      accessToken: process.env.MP_ACCESS_TOKEN,
     });
 
     const preference = new Preference(client);
@@ -24,12 +27,15 @@ export default async function handler(req: any, res: any) {
       },
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       id: response.id,
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Erro ao criar preferência' });
+    console.error('Erro real:', error);
+
+    return res.status(500).json({
+      error: error.message || 'Erro desconhecido'
+    });
   }
 }

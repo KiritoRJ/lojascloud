@@ -65,8 +65,11 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
 
 
 
+  const [error, setError] = useState<string | null>(null);
+
   const handleSubscription = async (plan: any) => {
     setLoading(plan.id);
+    setError(null);
     try {
       const response = await fetch('/api/create-preference', {
         method: 'POST',
@@ -85,15 +88,20 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create payment preference.');
+        throw new Error(data.error || 'Erro ao criar preferência de pagamento.');
       }
 
       if (data.init_point) {
+        // Redirecionamento direto
         window.location.href = data.init_point;
+      } else {
+        throw new Error('Link de pagamento não recebido.');
       }
 
     } catch (err: any) {
       console.error('Error creating preference:', err);
+      setError(err.message || 'Ocorreu um erro inesperado. Tente novamente.');
+      alert(`Erro: ${err.message || 'Não foi possível iniciar o pagamento.'}`);
     } finally {
       setLoading(null);
     }

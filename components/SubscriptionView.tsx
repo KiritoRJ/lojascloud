@@ -83,7 +83,20 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
           planType: selectedPlan.id
         }),
       })
-        .then((response) => response.json())
+        .then(async (response) => {
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API Error Response Text:', errorText);
+            throw new Error(`API Error: ${response.status} ${response.statusText}`);
+          }
+          const text = await response.text();
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            console.error('Failed to parse JSON, raw response:', text);
+            throw new Error('Received non-JSON response from server');
+          }
+        })
         .then((data) => {
           if (data.status === 'approved') {
             resolve();

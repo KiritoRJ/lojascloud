@@ -445,9 +445,9 @@ const App: React.FC = () => {
             <div className="w-20 h-20 bg-blue-600 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl border border-white/10">
               <Smartphone size={40} className="text-white" />
             </div>
-            <h1 className="text-3xl font-black text-white tracking-tighter uppercase">Assistência Pro</h1>
+            <h1 className="text-3xl font-black text-white tracking-tighter uppercase">LOJAS CLOUD</h1>
             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-              {isRegisterMode ? 'Crie sua loja grátis por 7 dias' : 'Login Centralizado SQL Cloud'}
+              {isRegisterMode ? 'Crie sua loja grátis por 7 dias' : 'sua loja nas nuvens'}
             </p>
           </div>
 

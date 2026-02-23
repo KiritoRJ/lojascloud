@@ -68,8 +68,9 @@ app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
       if (paymentId) {
         const data = await paymentClient.get({ id: paymentId });
         const externalReference = data.external_reference;
+        const status = data.status;
 
-        if (externalReference) {
+        if (externalReference && status === 'approved') {
           const [tenantId, planType] = externalReference.split('|');
           const plans = {
             monthly: 1,
@@ -85,7 +86,10 @@ app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
 
             // Update tenant subscription in your database
             await OnlineDB.updateSubscription(tenantId, months, planType as any);
+            console.log(`Subscription updated successfully for tenant ${tenantId}`);
           }
+        } else {
+          console.log(`Payment ${paymentId} status is ${status}, not updating subscription.`);
         }
       }
     }

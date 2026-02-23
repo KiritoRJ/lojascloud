@@ -236,7 +236,7 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
                   Cartão de Crédito
                 </button>
                 <button 
-                  onClick={() => onSubmit({ selectedPaymentMethod: 'pix', formData: { transaction_amount: getPrice(selectedPlan.id), payer: { email: tenantId } } })}
+                  onClick={() => onSubmit({ selectedPaymentMethod: 'pix', formData: { transaction_amount: getPrice(selectedPlan.id), payment_method_id: 'pix', payer: { email: tenantId } } })}
                   className="w-full bg-emerald-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-emerald-600 transition-all duration-300"
                 >
                   PIX

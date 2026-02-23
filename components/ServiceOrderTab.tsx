@@ -10,9 +10,10 @@ interface Props {
   settings: AppSettings;
   onDeleteOrder: (id: string) => void;
   tenantId: string;
+  maxOS?: number;
 }
 
-const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDeleteOrder, tenantId }) => {
+const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDeleteOrder, tenantId, maxOS }) => {
   // --- ESTADOS DE CONTROLE DE INTERFACE ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -26,6 +27,8 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
   const [verifyingPassword, setVerifyingPassword] = useState(false);
   const [authError, setAuthError] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const osCount = orders.length;
+  const limitReached = maxOS !== undefined && osCount >= maxOS;
 
   // --- ESTADO DO FORMULÁRIO (DADOS DA O.S.) ---
   const [formData, setFormData] = useState<Partial<ServiceOrder>>({
@@ -416,8 +419,15 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
       {/* CABEÇALHO DA TAB */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-black text-slate-800 tracking-tight text-custom-primary uppercase">ORDENS DE SERVIÇO</h2>
-        <button onClick={() => { resetForm(); setIsModalOpen(true); }} className="bg-slate-900 text-white p-2.5 rounded-2xl shadow-lg active:scale-95"><Plus size={20} /></button>
+        <button onClick={() => { resetForm(); setIsModalOpen(true); }} disabled={limitReached} className="bg-slate-900 text-white p-2.5 rounded-2xl shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"><Plus size={20} /></button>
       </div>
+
+      {limitReached && (
+        <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-amber-700 text-xs font-bold flex items-center gap-3">
+          <AlertTriangle size={16} />
+          <span>Você atingiu o limite de {maxOS} Ordens de Serviço. Para cadastrar mais, atualize seu plano.</span>
+        </div>
+      )}
 
       {/* BUSCA */}
       <div className="relative">

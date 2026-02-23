@@ -18,18 +18,40 @@ export class OnlineDB {
         .maybeSingle();
       
       if (error) throw error;
-      return data?.data_json || {
-        monthly: 49.90,
-        quarterly: 129.90,
-        yearly: 499.00
+      
+      const defaultSettings = {
+        monthly: { price: 49.90, maxUsers: 2, maxOS: 999, maxProducts: 999 },
+        quarterly: { price: 129.90, maxUsers: 999, maxOS: 999, maxProducts: 999 },
+        yearly: { price: 499.00, maxUsers: 999, maxOS: 999, maxProducts: 999 },
+        trial: { maxUsers: 999, maxOS: 999, maxProducts: 999 }
       };
+
+      if (!data?.data_json) return defaultSettings;
+
+      // Compatibilidade com formato antigo (apenas preços)
+      const json = data.data_json;
+      if (typeof json.monthly === 'number') {
+        return {
+          ...defaultSettings,
+          monthly: { ...defaultSettings.monthly, price: json.monthly },
+          quarterly: { ...defaultSettings.quarterly, price: json.quarterly },
+          yearly: { ...defaultSettings.yearly, price: json.yearly }
+        };
+      }
+
+      return json;
     } catch (e) {
-      return { monthly: 49.90, quarterly: 129.90, yearly: 499.00 };
+      return {
+        monthly: { price: 49.90, maxUsers: 2, maxOS: 999, maxProducts: 999 },
+        quarterly: { price: 129.90, maxUsers: 999, maxOS: 999, maxProducts: 999 },
+        yearly: { price: 499.00, maxUsers: 999, maxOS: 999, maxProducts: 999 },
+        trial: { maxUsers: 999, maxOS: 999, maxProducts: 999 }
+      };
     }
   }
 
   // Atualiza configurações globais do sistema
-  static async updateGlobalSettings(plans: { monthly: number, quarterly: number, yearly: number }) {
+  static async updateGlobalSettings(plans: any) {
     try {
       const { error } = await supabase
         .from('cloud_data')
@@ -66,6 +88,33 @@ export class OnlineDB {
     }
   }
 
+  // Atualiza permissões de recursos e limite de usuários de uma loja
+  static async updateTenantFeatures(tenantId: string, features: any, maxUsers: number, maxOS: number, maxProducts: number) {
+    try {
+      const { error: tenantError } = await supabase
+        .from('tenants')
+        .update({
+          enabled_features: features,
+          max_users: maxUsers
+        })
+        .eq('id', tenantId);
+      if (tenantError) throw tenantError;
+
+      const { error: limitsError } = await supabase
+        .from('tenant_limits')
+        .upsert({ 
+          tenant_id: tenantId, 
+          max_os: maxOS, 
+          max_products: maxProducts 
+        }, { onConflict: 'tenant_id' });
+      if (limitsError) throw limitsError;
+
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
+
   // Realiza o login do usuário verificando no banco SQL
   static async login(username: string, passwordPlain: string) {
     const cleanUser = username.trim().toLowerCase();
@@ -74,7 +123,7 @@ export class OnlineDB {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('*, tenants(*)')
+        .select('*, tenants(*, tenant_limits(*))')
         .eq('username', cleanUser)
         .eq('password', cleanPass)
         .maybeSingle();
@@ -83,6 +132,7 @@ export class OnlineDB {
       if (!data) return { success: false, message: "Usuário ou senha incorretos." };
 
       const tenant = data.tenants;
+      const limits = tenant?.tenant_limits[0];
       const expiresAt = tenant?.subscription_expires_at;
       const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
 
@@ -99,7 +149,18 @@ export class OnlineDB {
           customMonthlyPrice: tenant?.custom_monthly_price,
           customQuarterlyPrice: tenant?.custom_quarterly_price,
           customYearlyPrice: tenant?.custom_yearly_price,
-          lastPlanType: tenant?.last_plan_type
+          lastPlanType: tenant?.last_plan_type,
+          enabledFeatures: tenant?.enabled_features || {
+            osTab: true,
+            stockTab: true,
+            salesTab: true,
+            financeTab: true,
+            profiles: true,
+            xmlExportImport: true
+          },
+          maxUsers: tenant?.max_users || 999,
+          maxOS: limits?.max_os || 999,
+          maxProducts: limits?.max_products || 999
         } : null 
       };
     } catch (err: any) {
@@ -160,6 +221,9 @@ export class OnlineDB {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + trialDays);
 
+      const globalSettings = await this.getGlobalSettings();
+      const trialLimits = globalSettings.trial || { maxUsers: 999, maxOS: 999, maxProducts: 999 };
+
       const { error: tError } = await supabase
         .from('tenants')
         .insert([{
@@ -168,9 +232,27 @@ export class OnlineDB {
           logo_url: tenantData.logoUrl,
           created_at: new Date().toISOString(),
           subscription_status: 'trial',
-          subscription_expires_at: expiresAt.toISOString()
+          subscription_expires_at: expiresAt.toISOString(),
+          enabled_features: {
+            osTab: true,
+            stockTab: true,
+            salesTab: true,
+            financeTab: true,
+            profiles: true,
+            xmlExportImport: true
+          },
+          max_users: trialLimits.maxUsers
         }]);
       if (tError) throw tError;
+
+      const { error: limitsError } = await supabase
+        .from('tenant_limits')
+        .insert([{
+          tenant_id: tenantData.id,
+          max_os: trialLimits.maxOS,
+          max_products: trialLimits.maxProducts
+        }]);
+      if (limitsError) throw limitsError;
 
       const { error: uError } = await supabase
         .from('users')
@@ -195,13 +277,42 @@ export class OnlineDB {
   // Atualiza a assinatura de uma loja para uma data específica
   static async setSubscriptionDate(tenantId: string, date: string, status: 'trial' | 'active' | 'expired' = 'active', planType?: 'monthly' | 'quarterly' | 'yearly') {
     try {
+      const updateData: any = {
+        subscription_status: status,
+        subscription_expires_at: date,
+        last_plan_type: planType
+      };
+
+      // Se o plano for definido manualmente, também aplica os limites padrão do plano
+      if (planType) {
+        const globalSettings = await this.getGlobalSettings();
+        const planLimits = globalSettings[planType];
+        
+        if (planLimits) {
+          updateData.max_users = planLimits.maxUsers;
+          updateData.enabled_features = {
+            osTab: true,
+            stockTab: true,
+            salesTab: true,
+            financeTab: true,
+            profiles: true,
+            xmlExportImport: true
+          };
+
+          const { error: limitsError } = await supabase
+            .from('tenant_limits')
+            .upsert({ 
+              tenant_id: tenantId, 
+              max_os: planLimits.maxOS, 
+              max_products: planLimits.maxProducts 
+            }, { onConflict: 'tenant_id' });
+          if (limitsError) throw limitsError;
+        }
+      }
+
       const { error } = await supabase
         .from('tenants')
-        .update({
-          subscription_status: status,
-          subscription_expires_at: date,
-          last_plan_type: planType
-        })
+        .update(updateData)
         .eq('id', tenantId);
       
       if (error) throw error;
@@ -217,13 +328,38 @@ export class OnlineDB {
       const expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + months);
 
+      const globalSettings = await this.getGlobalSettings();
+      const planLimits = globalSettings[planType];
+
+      const updateData: any = {
+        subscription_status: 'active',
+        subscription_expires_at: expiresAt.toISOString(),
+        last_plan_type: planType
+      };
+
+      if (planLimits) {
+        updateData.max_users = planLimits.maxUsers;
+        updateData.enabled_features = {
+          osTab: true,
+          stockTab: true,
+          salesTab: true,
+          financeTab: true,
+          profiles: true,
+          xmlExportImport: true
+        };
+        const { error: limitsError } = await supabase
+          .from('tenant_limits')
+          .upsert({ 
+            tenant_id: tenantId, 
+            max_os: planLimits.maxOS, 
+            max_products: planLimits.maxProducts 
+          }, { onConflict: 'tenant_id' });
+        if (limitsError) throw limitsError;
+      }
+
       const { error } = await supabase
         .from('tenants')
-        .update({
-          subscription_status: 'active',
-          subscription_expires_at: expiresAt.toISOString(),
-          last_plan_type: planType
-        })
+        .update(updateData)
         .eq('id', tenantId);
       
       if (error) throw error;

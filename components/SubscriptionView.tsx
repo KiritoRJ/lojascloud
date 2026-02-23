@@ -19,7 +19,7 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
   customMonthlyPrice, customQuarterlyPrice, customYearlyPrice
 }) => {
   const [loading, setLoading] = useState<string | null>(null);
-  const [globalPlans, setGlobalPlans] = React.useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
+  const [globalPlans, setGlobalPlans] = React.useState<any>({});
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
 
   React.useEffect(() => {
@@ -27,19 +27,29 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
   }, []);
 
   const getPrice = (id: string) => {
-    if (id === 'monthly') return customMonthlyPrice || globalPlans.monthly;
-    if (id === 'quarterly') return customQuarterlyPrice || globalPlans.quarterly;
-    if (id === 'yearly') return customYearlyPrice || globalPlans.yearly;
+    if (id === 'monthly') return customMonthlyPrice || globalPlans.monthly?.price || 0;
+    if (id === 'quarterly') return customQuarterlyPrice || globalPlans.quarterly?.price || 0;
+    if (id === 'yearly') return customYearlyPrice || globalPlans.yearly?.price || 0;
     return 0;
   };
 
   const plans = [
     {
       id: 'monthly',
-      name: 'Plano Mensal',
+      name: 'PLANO START',
       price: `R$ ${getPrice('monthly').toFixed(2).replace('.', ',')}`,
       period: 'por mês',
-      features: ['Acesso total ao sistema', 'Suporte prioritário', 'Sincronização em nuvem', 'Backup diário'],
+      description: 'Ideal para pequenas lojas e assistências iniciantes',
+      target: 'Indicado para: 1 a 2 funcionários',
+      features: [
+        'Cadastro de produtos',
+        'Controle de estoque básico',
+        'Frente de loja (PDV)',
+        'Ordem de Serviço com registro',
+        '2 usuários (1 admin + 1 funcionário)',
+        'Acesso via celular e computador',
+        'Sincronização em nuvem'
+      ],
       months: 1
     },
     {
@@ -157,6 +167,8 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
 
               <div className="mb-8">
                 <h3 className="text-xl font-black uppercase tracking-tight mb-1">{plan.name}</h3>
+                {plan.description && <p className="text-slate-400 text-xs font-bold mb-2 leading-tight">{plan.description}</p>}
+                {plan.target && <p className="text-blue-400 text-[10px] font-black uppercase mb-4 tracking-widest">{plan.target}</p>}
                 <div className="flex items-baseline gap-2">
                   <span className="text-4xl font-black tracking-tighter">{plan.price}</span>
                   <span className="text-slate-500 text-sm font-bold">{plan.period}</span>

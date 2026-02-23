@@ -10,9 +10,10 @@ interface Props {
   setProducts: (products: Product[]) => void;
   onDeleteProduct: (id: string) => void;
   settings: AppSettings;
+  maxProducts?: number;
 }
 
-const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings }) => {
+const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings, maxProducts }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -20,6 +21,8 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const productCount = products.length;
+  const limitReached = maxProducts !== undefined && productCount >= maxProducts;
   
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -201,8 +204,15 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
       {/* CABEÇALHO */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Estoque Pro</h2>
-        <button onClick={() => { resetForm(); setIsModalOpen(true); }} className="bg-slate-900 text-white p-2.5 rounded-2xl shadow-lg active:scale-95"><Plus size={20} /></button>
+        <button onClick={() => { resetForm(); setIsModalOpen(true); }} disabled={limitReached} className="bg-slate-900 text-white p-2.5 rounded-2xl shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"><Plus size={20} /></button>
       </div>
+
+      {limitReached && (
+        <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-amber-700 text-xs font-bold flex items-center gap-3">
+          <AlertTriangle size={16} />
+          <span>Você atingiu o limite de {maxProducts} produtos. Para cadastrar mais, atualize seu plano.</span>
+        </div>
+      )}
 
       {/* CARDS DE RESUMO FINANCEIRO */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

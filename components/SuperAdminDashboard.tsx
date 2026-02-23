@@ -22,7 +22,8 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
   const [tenantToDelete, setTenantToDelete] = useState<{ id: string, name: string } | null>(null);
   const [tenantToEditSub, setTenantToEditSub] = useState<{ id: string, name: string, expiresAt: string, status: string, planType?: string } | null>(null);
   const [tenantToEditPrices, setTenantToEditPrices] = useState<{ id: string, name: string, monthly?: number, quarterly?: number, yearly?: number } | null>(null);
-  const [globalPlans, setGlobalPlans] = useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
+  const [tenantToEditFeatures, setTenantToEditFeatures] = useState<{ id: string; name: string; features: any; maxUsers: number; maxOS: number; maxProducts: number; } | null>(null);
+const [globalPlans, setGlobalPlans] = useState<any>({});
   const [isEditingGlobal, setIsEditingGlobal] = useState(false);
   const [newSubDate, setNewSubDate] = useState('');
   const [newPlanType, setNewPlanType] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
@@ -67,7 +68,14 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
     setIsLoading(true);
     try {
       const data = await OnlineDB.getTenants();
-      setTenants(data || []);
+      // Filtra a loja de sistema para não aparecer no dashboard
+      const filteredData = (data || []).filter(t => 
+        t.id !== 'SYSTEM' && 
+        t.id !== 'system-settings' && 
+        !t.store_name?.toLowerCase().includes('system settings') &&
+        !t.store_name?.toLowerCase().includes('sistem settings')
+      );
+      setTenants(filteredData);
     } catch (e) {
       console.error("Erro ao carregar lojas", e);
     } finally {
@@ -115,6 +123,16 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
       }
     };
     input.click();
+  };
+
+    const handlePlanChange = (planId: string, field: string, value: any) => {
+    setGlobalPlans((prev: any) => ({
+      ...prev,
+      [planId]: {
+        ...prev[planId],
+        [field]: value
+      }
+    }));
   };
 
   const handleCreateTenant = async () => {
@@ -172,6 +190,25 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
       await loadTenants();
     } else {
       setErrorMsg(res.message || "Erro ao salvar preços.");
+    }
+    setIsSaving(false);
+  };
+
+  const handleUpdateFeatures = async () => {
+    if (!tenantToEditFeatures) return;
+    setIsSaving(true);
+    const res = await OnlineDB.updateTenantFeatures(
+      tenantToEditFeatures.id, 
+      tenantToEditFeatures.features, 
+      tenantToEditFeatures.maxUsers,
+      tenantToEditFeatures.maxOS,
+      tenantToEditFeatures.maxProducts
+    );
+    if (res.success) {
+      setTenantToEditFeatures(null);
+      await loadTenants();
+    } else {
+      setErrorMsg(res.message || "Erro ao salvar permissões.");
     }
     setIsSaving(false);
   };
@@ -265,75 +302,120 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
             </div>
           )}
 
-          <div className="grid gap-4">
+          <div className="bg-slate-800 rounded-[3rem] p-10 space-y-6 border border-slate-700">
+              <h3 className="text-lg font-black text-center text-slate-300">Configurações dos Planos</h3>
+              <div className="space-y-4">
+                {['trial', 'monthly', 'quarterly', 'yearly'].map(planId => {
+                  const plan = globalPlans[planId as keyof typeof globalPlans] || {};
+                  return (
+                    <div key={planId} className="bg-slate-900 p-4 rounded-2xl border border-slate-700">
+                      <h4 className="font-bold text-blue-400 uppercase text-xs mb-3">Plano {planId === 'trial' ? 'Teste' : planId.charAt(0).toUpperCase() + planId.slice(1)}</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {planId !== 'trial' && (
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400">Preço (R$)</label>
+                            <input type="number" value={plan.price || ''} onChange={e => handlePlanChange(planId, 'price', Number(e.target.value))} className="w-full bg-slate-800 border-slate-700 rounded-lg p-2 text-xs" />
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400">Usuários</label>
+                          <input type="number" value={plan.maxUsers || ''} onChange={e => handlePlanChange(planId, 'maxUsers', Number(e.target.value))} className="w-full bg-slate-800 border-slate-700 rounded-lg p-2 text-xs" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400">O.S.</label>
+                          <input type="number" value={plan.maxOS || ''} onChange={e => handlePlanChange(planId, 'maxOS', Number(e.target.value))} className="w-full bg-slate-800 border-slate-700 rounded-lg p-2 text-xs" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400">Produtos</label>
+                          <input type="number" value={plan.maxProducts || ''} onChange={e => handlePlanChange(planId, 'maxProducts', Number(e.target.value))} className="w-full bg-slate-800 border-slate-700 rounded-lg p-2 text-xs" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={handleUpdateGlobalPlans} disabled={isSaving} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest mt-4 flex items-center justify-center gap-2">
+                {isSaving ? <Loader2 className="animate-spin" /> : 'Salvar Planos Globais'}
+              </button>
+            </div>
+
+            <div className="grid gap-4">
             {tenants.map(t => (
-              <div key={t.id} className="bg-white/5 border border-white/5 p-6 rounded-[2rem] flex items-center justify-between group hover:border-blue-500/30 transition-all">
-                <div className="flex items-center gap-5">
-                  <div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center text-blue-500 border border-white/5 overflow-hidden">
+              <div key={t.id} className="bg-white/5 border border-white/5 p-4 sm:p-6 rounded-[2rem] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 group hover:border-blue-500/30 transition-all">
+                <div className="flex items-center gap-4 sm:gap-5 w-full sm:w-auto">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-slate-900 rounded-2xl flex items-center justify-center text-blue-500 border border-white/5 overflow-hidden shrink-0">
                     {t.logo_url ? <img src={t.logo_url} className="w-full h-full object-cover" /> : <Store size={24} />}
                   </div>
-                  <div>
-                    <h3 className="font-black text-slate-100 uppercase text-sm">{t.store_name}</h3>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[9px] font-black text-slate-500 uppercase">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-black text-slate-100 uppercase text-xs sm:text-sm truncate">{t.store_name}</h3>
+                    <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 mt-1 text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">
                        <span className="text-slate-400">ID: {t.id}</span>
-                       <span className="hidden sm:inline opacity-30">•</span>
-                       <div className="flex items-center gap-1">
-                         <Plus size={10} className="text-blue-500" />
-                         <span>CRIADO: {formatDateBR(t.created_at)}</span>
-                       </div>
-                       <span className="hidden sm:inline opacity-30">•</span>
+                       <span className="opacity-30">•</span>
                        <div className="flex items-center gap-1">
                          <Clock size={10} className={t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date() ? "text-red-500" : "text-emerald-500"} />
                          <span>EXPIRA: {formatDateBR(t.subscription_expires_at)}</span>
-                         {t.last_plan_type && (
-                           <span className="ml-1 px-1.5 bg-blue-500/10 text-blue-400 rounded-sm border border-blue-500/10">
-                             {t.last_plan_type === 'monthly' ? 'MENSAL' : t.last_plan_type === 'quarterly' ? 'TRIMESTRAL' : 'ANUAL'}
-                           </span>
-                         )}
                        </div>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => setTenantToEditPrices({ 
-                      id: t.id, 
-                      name: t.store_name, 
-                      monthly: t.custom_monthly_price, 
-                      quarterly: t.custom_quarterly_price, 
-                      yearly: t.custom_yearly_price 
-                    })}
-                    className="p-3 bg-blue-500/10 text-blue-500 rounded-xl hover:bg-blue-500 hover:text-white transition-all active:scale-90"
-                    title="Preços Customizados"
-                  >
-                    <DollarSign size={18} />
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setTenantToEditSub({ 
+                <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-white/5">
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setTenantToEditFeatures({ 
                         id: t.id, 
                         name: t.store_name, 
-                        expiresAt: t.subscription_expires_at || new Date().toISOString(),
-                        status: t.subscription_status || 'trial',
-                        planType: t.last_plan_type
-                      });
-                      setNewSubDate(t.subscription_expires_at ? new Date(t.subscription_expires_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
-                      setNewPlanType(t.last_plan_type || 'monthly');
-                    }}
-                    className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all ${
-                      (t.subscription_status === 'expired' || (t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date()))
-                      ? 'bg-red-500/10 text-red-500 border-red-500/20' 
-                      : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                    }`}
-                  >
-                    { (t.subscription_status === 'expired' || (t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date())) ? 'Expirado' : 'Ativo' }
-                  </button>
-                  <button 
-                    onClick={() => setTenantToDelete({ id: t.id, name: t.store_name })}
-                    className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                        features: t.enabled_features || {},
+                        maxUsers: t.max_users || 999,
+                        maxOS: t.max_os || 999,
+                        maxProducts: t.max_products || 999
+                      })}
+                      className="p-2.5 bg-slate-800 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-white transition-all active:scale-90"
+                      title="Permissões"
+                    >
+                      <Settings2 size={16} />
+                    </button>
+                    <button 
+                      onClick={() => setTenantToEditPrices({ 
+                        id: t.id, 
+                        name: t.store_name, 
+                        monthly: t.custom_monthly_price, 
+                        quarterly: t.custom_quarterly_price, 
+                        yearly: t.custom_yearly_price 
+                      })}
+                      className="p-2.5 bg-blue-500/10 text-blue-500 rounded-xl hover:bg-blue-500 hover:text-white transition-all active:scale-90"
+                      title="Preços"
+                    >
+                      <DollarSign size={16} />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setTenantToEditSub({ 
+                          id: t.id, 
+                          name: t.store_name, 
+                          expiresAt: t.subscription_expires_at || new Date().toISOString(),
+                          status: t.subscription_status || 'trial',
+                          planType: t.last_plan_type
+                        });
+                        setNewSubDate(t.subscription_expires_at ? new Date(t.subscription_expires_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+                        setNewPlanType(t.last_plan_type || 'monthly');
+                      }}
+                      className={`p-2.5 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all active:scale-90 ${
+                        (t.subscription_status === 'expired' || (t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date()))
+                        ? 'bg-red-500/10 text-red-500 border-red-500/20' 
+                        : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                      }`}
+                      title="Assinatura"
+                    >
+                      <ShieldCheck size={16} />
+                    </button>
+                    <button 
+                      onClick={() => setTenantToDelete({ id: t.id, name: t.store_name })}
+                      className="p-2.5 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
+                      title="Excluir"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -492,13 +574,23 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
               <div className="space-y-4 text-left">
                 <div className="space-y-1">
                   <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Nova Data de Expiração</label>
-                  <DatePicker
-                    selected={parseDate(newSubDate)}
-                    onChange={(date: Date) => setNewSubDate(date.toISOString().split('T')[0])}
-                    dateFormat="dd/MM/yyyy"
-                    locale="pt-BR"
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
-                  />
+                  <div className="flex gap-2">
+                    <DatePicker
+                      selected={parseDate(newSubDate)}
+                      onChange={(date: Date) => setNewSubDate(date.toISOString().split('T')[0])}
+                      dateFormat="dd/MM/yyyy"
+                      locale="pt-BR"
+                      className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                    />
+                    <input 
+                      type="text" 
+                      value={newSubDate} 
+                      onChange={e => setNewSubDate(e.target.value)}
+                      placeholder="YYYY-MM-DD"
+                      className="w-32 bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-xs"
+                    />
+                  </div>
+                  <p className="text-[8px] text-slate-400 ml-4 mt-1">Formato: AAAA-MM-DD (Ex: 2025-12-31)</p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Tipo de Plano</label>
@@ -527,6 +619,94 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout }) => {
                   disabled={isSaving}
                   className="w-full py-5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors"
                 >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tenantToEditFeatures && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100">
+            <div className="p-8 text-center space-y-6">
+              <div className="w-20 h-20 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                <Settings2 size={40} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-black text-slate-800 uppercase text-lg">Recursos da Loja</h3>
+                <p className="text-slate-400 text-sm font-bold uppercase leading-tight px-4">Loja: <span className="text-blue-600 font-black">{tenantToEditFeatures.name}</span></p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="space-y-2 text-left">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Limite de O.S.</label>
+                <input 
+                  type="number" 
+                  value={tenantToEditFeatures.maxOS} 
+                  onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, maxOS: parseInt(e.target.value) || 1 })}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                />
+              </div>
+              <div className="space-y-2 text-left">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Limite de Produtos</label>
+                <input 
+                  type="number" 
+                  value={tenantToEditFeatures.maxProducts} 
+                  onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, maxProducts: parseInt(e.target.value) || 1 })}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3 text-left pt-4">
+                {[
+                  { id: 'osTab', label: 'Aba Ordem de Serviço' },
+                  { id: 'stockTab', label: 'Aba Estoque' },
+                  { id: 'salesTab', label: 'Aba Vendas' },
+                  { id: 'financeTab', label: 'Aba Financeira' },
+                  { id: 'profiles', label: 'Criar Perfis/Usuários' },
+                  { id: 'xmlExportImport', label: 'Exportar/Importar XML' },
+                ].map(feature => (
+                  <label key={feature.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl cursor-pointer hover:bg-slate-100 transition-colors">
+                    <span className="text-xs font-black uppercase tracking-tight text-slate-700">{feature.label}</span>
+                    <input 
+                      type="checkbox" 
+                      checked={tenantToEditFeatures.features[feature.id]} 
+                      onChange={e => setTenantToEditFeatures({
+                        ...tenantToEditFeatures,
+                        features: { ...tenantToEditFeatures.features, [feature.id]: e.target.checked }
+                      })}
+                      className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="space-y-2 text-left pt-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Limite de Usuários Ativos</label>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="number" 
+                    value={tenantToEditFeatures.maxUsers} 
+                    onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: parseInt(e.target.value) || 1 })}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                  />
+                  <div className="grid grid-cols-3 gap-2">
+                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 2, maxOS: 50, maxProducts: 50 })} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Start</button>
+                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 5, maxOS: 200, maxProducts: 200 })} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Pro</button>
+                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 999, maxOS: 999, maxProducts: 999 })} className="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[8px] font-black uppercase">Ilimitado</button>
+                </div>
+                </div>
+                <p className="text-[8px] text-slate-400 ml-4">No Plano Start o limite é 2 (Admin + 1 Funcionário)</p>
+              </div>
+
+              <div className="flex flex-col gap-3 pt-4">
+                <button onClick={handleUpdateFeatures} disabled={isSaving} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3">
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Permissões'}
+                </button>
+                <button onClick={() => setTenantToEditFeatures(null)} disabled={isSaving} className="w-full py-5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">
                   Cancelar
                 </button>
               </div>

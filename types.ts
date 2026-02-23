@@ -12,6 +12,17 @@ export interface Tenant {
   customQuarterlyPrice?: number;
   customYearlyPrice?: number;
   lastPlanType?: 'monthly' | 'quarterly' | 'yearly';
+  enabledFeatures?: {
+    osTab: boolean;
+    stockTab: boolean;
+    salesTab: boolean;
+    financeTab: boolean;
+    profiles: boolean;
+    xmlExportImport: boolean;
+  };
+  maxUsers?: number;
+  maxOS?: number;
+  maxProducts?: number;
 }
 
 export interface User {

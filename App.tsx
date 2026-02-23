@@ -46,6 +46,17 @@ const App: React.FC = () => {
     customMonthlyPrice?: number;
     customQuarterlyPrice?: number;
     customYearlyPrice?: number;
+    enabledFeatures?: {
+      osTab: boolean;
+      stockTab: boolean;
+      salesTab: boolean;
+      financeTab: boolean;
+      profiles: boolean;
+      xmlExportImport: boolean;
+    };
+    maxUsers?: number;
+    maxOS?: number;
+    maxProducts?: number;
   } | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
@@ -144,7 +155,10 @@ const App: React.FC = () => {
         if (storedSession) {
           const parsed = JSON.parse(storedSession);
           if (parsed.isSuper) {
-            setSession({ isLoggedIn: true, type: 'super' });
+            setSession({
+            isLoggedIn: true,
+            type: 'super'
+          });
           } else if (parsed.tenantId) {
             const user = storedUser ? JSON.parse(storedUser) : null;
             setSession({
@@ -156,7 +170,11 @@ const App: React.FC = () => {
               subscriptionExpiresAt: parsed.subscriptionExpiresAt,
               customMonthlyPrice: parsed.customMonthlyPrice,
               customQuarterlyPrice: parsed.customQuarterlyPrice,
-              customYearlyPrice: parsed.customYearlyPrice
+              customYearlyPrice: parsed.customYearlyPrice,
+              enabledFeatures: parsed.enabledFeatures,
+              maxUsers: parsed.maxUsers,
+              maxOS: parsed.maxOS,
+              maxProducts: parsed.maxProducts
             });
           }
         }
@@ -241,7 +259,11 @@ const App: React.FC = () => {
               subscriptionExpiresAt: result.tenant?.subscriptionExpiresAt,
               customMonthlyPrice: result.tenant?.customMonthlyPrice,
               customQuarterlyPrice: result.tenant?.customQuarterlyPrice,
-              customYearlyPrice: result.tenant?.customYearlyPrice
+              customYearlyPrice: result.tenant?.customYearlyPrice,
+              enabledFeatures: result.tenant?.enabledFeatures,
+              maxUsers: result.tenant?.maxUsers,
+              maxOS: result.tenant?.maxOS,
+              maxProducts: result.tenant?.maxProducts
             };
           const finalUser = { 
             id: result.tenant?.id || 'temp', 
@@ -487,13 +509,18 @@ const App: React.FC = () => {
 
   const currentUser = session.user || settings.users[0];
   const navItems = [
-    { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'] },
-    { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'] },
-    { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'] },
-    { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'] },
+    { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
+    { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
+    { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
+    { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
     { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
   ];
-  const visibleNavItems = navItems.filter(item => item.roles.includes(currentUser.role));
+  
+  const visibleNavItems = navItems.filter(item => {
+    const roleAllowed = item.roles.includes(currentUser.role);
+    const featureAllowed = !item.feature || (session.enabledFeatures as any)?.[item.feature] !== false;
+    return roleAllowed && featureAllowed;
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans flex flex-col md:flex-row">
@@ -549,11 +576,11 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 p-4 pt-24 pb-28 md:pt-10 md:pb-4 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
-        {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} />}
-        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} />}
+        {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
+        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} />}
-        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} />}
+        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} />}
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">

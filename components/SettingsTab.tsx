@@ -17,9 +17,18 @@ interface Props {
   onInstallApp?: () => void;
   subscriptionStatus?: string;
   subscriptionExpiresAt?: string;
+  enabledFeatures?: {
+    osTab: boolean;
+    stockTab: boolean;
+    salesTab: boolean;
+    financeTab: boolean;
+    profiles: boolean;
+    xmlExportImport: boolean;
+  };
+  maxUsers?: number;
 }
 
-const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt }) => {
+const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, enabledFeatures, maxUsers }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
   
   const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup'>('main');
@@ -146,6 +155,14 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     if (!isAdmin) return;
     if (!newUserName) return alert('O nome é obrigatório.');
     if (!tenantId) return alert('Erro interno: Tenant ID não encontrado.');
+
+    // Verificar limite de usuários
+    const activeProfiles = settings.users?.length || 0;
+    const limit = maxUsers || 999;
+    if (activeProfiles >= limit) {
+      alert(`Limite de usuários atingido (${limit}). Seu plano atual permite apenas ${limit} usuários ativos.`);
+      return;
+    }
     
     setIsSaving(true);
     const userId = 'USR_' + Math.random().toString(36).substr(2, 6).toUpperCase();
@@ -664,14 +681,18 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
                     <button onClick={() => { setView('print'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'print' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
                       <FileText size={18} /> Dados do Recibo
                     </button>
-                    <button onClick={() => { setView('backup'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'backup' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                      <Download size={18} /> Backup e Importação
-                    </button>
+                    {enabledFeatures?.xmlExportImport !== false && (
+                      <button onClick={() => { setView('backup'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'backup' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                        <Download size={18} /> Backup e Importação
+                      </button>
+                    )}
                   </>
                 )}
-                <button onClick={() => { setView('users'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'users' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                  <Users size={18} /> {isAdmin ? 'Gestão de Equipe' : 'Trocar de Perfil'}
-                </button>
+                {enabledFeatures?.profiles !== false && (
+                  <button onClick={() => { setView('users'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'users' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                    <Users size={18} /> {isAdmin ? 'Gestão de Equipe' : 'Trocar de Perfil'}
+                  </button>
+                )}
                 {deferredPrompt && (
                   <button 
                     onClick={() => { onInstallApp?.(); setShowMenu(false); }} 

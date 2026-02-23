@@ -1,6 +1,11 @@
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 
 export default async function handler(req, res) {
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
 
     if (!process.env.MP_ACCESS_TOKEN) {
@@ -32,10 +37,10 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Erro real:', error);
+    console.error(error);
 
     return res.status(500).json({
-      error: error.message || 'Erro desconhecido'
+      error: error.message
     });
   }
 }

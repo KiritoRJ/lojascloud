@@ -57,40 +57,6 @@ app.post('/api/create-payment', async (req, res) => {
   }
 });
 
-// API route to process payment from Payment Brick
-app.post('/api/process-payment', async (req, res) => {
-  try {
-    const { formData, tenantId, planType } = req.body;
-
-    if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
-      return res.status(500).json({ error: 'Mercado Pago access token not configured.' });
-    }
-
-    const paymentClient = new Payment(client);
-
-    const paymentData: any = {
-      transaction_amount: formData.transaction_amount,
-      description: formData.description || `Assinatura ${planType}`,
-      payment_method_id: formData.payment_method_id,
-      payer: {
-        email: formData.payer.email,
-        identification: formData.payer.identification,
-      },
-      external_reference: `${tenantId}|${planType}`
-    };
-
-    if (formData.token) paymentData.token = formData.token;
-    if (formData.installments) paymentData.installments = formData.installments;
-    if (formData.issuer_id) paymentData.issuer_id = formData.issuer_id;
-
-    const response = await paymentClient.create({ body: paymentData });
-    res.json(response);
-  } catch (error: any) {
-    console.error('Error processing payment:', error);
-    res.status(500).json({ error: error.message || 'Failed to process payment' });
-  }
-});
-
 app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
   try {
     const payment = req.body;

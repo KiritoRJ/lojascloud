@@ -89,7 +89,7 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
       }
 
       if (data.init_point) {
-        window.open(data.init_point, '_blank');
+        window.location.href = data.init_point;
       }
 
     } catch (err: any) {

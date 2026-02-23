@@ -10,7 +10,13 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-const client = new MercadoPagoConfig({ accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || '' });
+const getMPClient = () => {
+  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  if (!token) {
+    throw new Error('MERCADO_PAGO_ACCESS_TOKEN is not defined');
+  }
+  return new MercadoPagoConfig({ accessToken: token });
+};
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -48,8 +54,13 @@ app.post('/api/create-preference', async (req, res) => {
       external_reference: `${tenantId}|${planType}`
     };
 
+    const client = getMPClient();
     const preferenceClient = new Preference(client);
+    console.log('Creating preference for:', { tenantId, planType, unit_price });
+    
     const response = await preferenceClient.create({ body: preference });
+    console.log('Preference created successfully:', response.id);
+    
     res.json({ id: response.id, init_point: response.init_point });
 
   } catch (error: any) {
@@ -64,6 +75,7 @@ app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
     const payment = req.body;
 
     if (payment?.type === 'payment' || payment?.action === 'payment.updated') {
+      const client = getMPClient();
       const paymentClient = new Payment(client);
       const paymentId = payment?.data?.id || payment?.id;
       

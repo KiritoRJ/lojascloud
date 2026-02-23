@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound } from 'lucide-react';
+import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer } from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 import { Product, Sale, AppSettings, User } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -21,10 +22,16 @@ interface CartItem {
   quantity: number;
 }
 
+interface PaymentEntry {
+  method: 'Dinheiro' | 'Cartão' | 'PIX';
+  amount: number;
+}
+
 const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, settings, currentUser, onDeleteSale, tenantId }) => {
   const [showHistory, setShowHistory] = useState(false);
   const [productSearch, setProductSearch] = useState('');
-  const [showSuccess, setShowSuccess] = useState(false);
+
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [lastSaleAmount, setLastSaleAmount] = useState(0);
   const [lastTransactionItems, setLastTransactionItems] = useState<CartItem[]>([]);
   const [lastPaymentMethod, setLastPaymentMethod] = useState('');
@@ -42,10 +49,17 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [amountReceived, setAmountReceived] = useState(0);
   const [totalDiscount, setTotalDiscount] = useState(0);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'Dinheiro' | 'Cartão' | 'PIX'>('Dinheiro');
+  const [paymentEntries, setPaymentEntries] = useState<PaymentEntry[]>([{ method: 'Dinheiro', amount: 0 }]);
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
+  const [amountPaid, setAmountPaid] = useState(0);
+
+  const handleDownloadReceipt = () => {
+    const element = document.getElementById('receipt-content');
+    if (element) {
+      html2pdf().from(element).save(`cupom_${lastTransactionId}.pdf`);
+    }
+  };
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -205,6 +219,18 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     setCart(prevCart => prevCart.filter(item => item.product.id !== productId));
   };
 
+  const addPaymentEntry = () => {
+    setPaymentEntries(prev => [...prev, { method: 'Dinheiro', amount: 0 }]);
+  };
+
+  const removePaymentEntry = (index: number) => {
+    setPaymentEntries(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updatePaymentEntry = (index: number, field: keyof PaymentEntry, value: any) => {
+    setPaymentEntries(prev => prev.map((entry, i) => i === index ? { ...entry, [field]: value } : entry));
+  };
+
   const handleFinalizeSale = () => {
     if (cart.length === 0) return;
     const transactionId = Math.random().toString(36).substr(2, 6).toUpperCase();
@@ -225,7 +251,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
         discount: itemDiscount,
         finalPrice: itemTotal - itemDiscount,
         costAtSale: item.product.costPrice,
-        paymentMethod: selectedPaymentMethod,
+        paymentMethod: paymentEntries.map(p => p.method).join(', '),
         sellerName: currentUser?.name || 'Sistema',
         transactionId
       };
@@ -238,16 +264,18 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     });
     setProducts(updatedProducts);
     setSales([...newSales, ...sales]);
-    setLastSaleAmount(finalTotal);
+    setLastSaleAmount(paymentEntries.reduce((acc, curr) => acc + curr.amount, 0));
     setLastTransactionItems([...cart]);
-    setLastPaymentMethod(selectedPaymentMethod);
+    setLastPaymentMethod(paymentEntries.map(p => p.method).join(', '));
     setLastTransactionId(transactionId);
     setLastSaleDate(date);
     setCart([]);
     setTotalDiscount(0);
+    setPaymentEntries([{ method: 'Dinheiro', amount: 0 }]);
+    setAmountPaid(0);
     setShowCheckoutModal(false);
     setShowCartDrawer(false);
-    setShowSuccess(true);
+    setShowReceiptModal(true);
   };
 
   const filteredProducts = products.filter(p => 
@@ -428,26 +456,131 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                 <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Total a Pagar</p>
                 <p className="text-4xl font-black text-emerald-800">{formatCurrency(finalTotal)}</p>
               </div>
+
+              {paymentEntries.some(entry => entry.method === 'Dinheiro') && (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Valor Recebido (Dinheiro)</label>
+                  <div className="relative">
+                    <Plus className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                    <input 
+                      type="number" 
+                      value={amountPaid || ''} 
+                      onChange={(e) => setAmountPaid(Number(e.target.value))}
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black outline-none focus:border-blue-500 transition-colors"
+                      placeholder="0,00"
+                    />
+                  </div>
+                  {amountPaid > 0 && (
+                    <div className="bg-blue-50 p-4 rounded-3xl text-center mt-2">
+                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Troco</p>
+                      <p className="text-3xl font-black text-blue-800">{formatCurrency(amountPaid - finalTotal)}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {['Dinheiro', 'Cartão', 'PIX'].map(m => (
-                <button key={m} onClick={() => setSelectedPaymentMethod(m as any)} className={`py-4 rounded-2xl text-[9px] font-black uppercase border transition-all ${selectedPaymentMethod === m ? 'bg-emerald-600 border-emerald-600 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-400'}`}>{m}</button>
+            <div className="space-y-3">
+              {paymentEntries.map((entry, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <select
+                    value={entry.method}
+                    onChange={(e) => updatePaymentEntry(index, 'method', e.target.value as 'Dinheiro' | 'Cartão' | 'PIX')}
+                    className="flex-1 p-3 bg-slate-50 rounded-xl outline-none font-bold text-[10px] uppercase"
+                  >
+                    <option>Dinheiro</option>
+                    <option>Cartão</option>
+                    <option>PIX</option>
+                  </select>
+                  <input
+                    type="number"
+                    value={entry.amount || ''}
+                    onChange={(e) => updatePaymentEntry(index, 'amount', Number(e.target.value))}
+                    placeholder="0.00"
+                    className="flex-1 p-3 bg-slate-50 rounded-xl outline-none font-black text-sm"
+                  />
+                  {paymentEntries.length > 1 && (
+                    <button onClick={() => removePaymentEntry(index)} className="p-2 text-red-500 bg-red-50 rounded-xl active:scale-90">
+                      <Minus size={16} />
+                    </button>
+                  )}
+                </div>
               ))}
+              <button onClick={addPaymentEntry} className="w-full py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[9px] flex items-center justify-center gap-2 active:scale-95 transition-all">
+                <Plus size={14} /> Adicionar Forma de Pagamento
+              </button>
             </div>
-            <button onClick={handleFinalizeSale} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-xl">FINALIZAR VENDA</button>
+            {paymentEntries.reduce((acc, curr) => acc + curr.amount, 0) !== finalTotal && (
+              <p className="text-center text-[9px] font-black text-red-500 uppercase mb-4 animate-bounce">O total dos pagamentos deve ser igual ao total a pagar!</p>
+            )}
+            <button onClick={handleFinalizeSale} disabled={paymentEntries.reduce((acc, curr) => acc + curr.amount, 0) !== finalTotal} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-xl disabled:opacity-50">FINALIZAR VENDA</button>
             <button onClick={() => setShowCheckoutModal(false)} className="w-full text-slate-400 font-black uppercase text-[9px]">Cancelar</button>
           </div>
         </div>
       )}
 
-      {/* SUCESSO */}
-      {showSuccess && (
-        <div className="fixed inset-0 bg-slate-950/90 flex items-center justify-center z-[110] p-6 backdrop-blur-xl">
-          <div className="bg-white w-full max-w-xs rounded-[3rem] p-10 text-center shadow-2xl">
-            <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-lg"><CheckCircle2 size={48} /></div>
-            <h3 className="text-xl font-black text-slate-800 uppercase mb-10">Venda Realizada!</h3>
-            <button onClick={() => setShowSuccess(false)} className="w-full py-5 bg-slate-900 text-white font-black rounded-2xl text-[10px] uppercase shadow-xl">NOVA VENDA</button>
+
+      {/* MODAL DE RECIBO / CUPOM FISCAL */}
+      {showReceiptModal && (
+        <div className="fixed inset-0 bg-slate-950/90 flex items-center justify-center z-[110] p-6 backdrop-blur-xl animate-in fade-in">
+          <div className="bg-white w-full max-w-xs rounded-[1.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95">
+            <div className="p-6 text-center border-b border-slate-100">
+              <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Cupom Fiscal</h3>
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Detalhes da Venda</p>
+            </div>
+            <div className="p-6 space-y-4 text-xs text-slate-700" id="receipt-content">
+              <div className="text-center space-y-1">
+                <p className="font-black text-sm uppercase">{settings.storeName}</p>
+                <p>{settings.storeAddress}</p>
+                <p>{settings.storePhone}</p>
+                <p className="text-[9px] mt-2">Transação ID: {lastTransactionId}</p>
+                <p className="text-[9px]">Data: {formatDate(lastSaleDate)}</p>
+                <p className="text-[9px]">Vendedor: {currentUser?.name || 'Sistema'}</p>
+              </div>
+              
+              <div className="border-t border-b border-slate-200 py-3 space-y-2">
+                <p className="font-black uppercase">ITENS VENDIDOS:</p>
+                {lastTransactionItems.map((item, index) => (
+                  <div key={index} className="flex justify-between">
+                    <span>{item.quantity}x {item.product.name}</span>
+                    <span>{formatCurrency(item.product.salePrice * item.quantity)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between font-black text-sm">
+                  <span>SUBTOTAL:</span>
+                  <span>{formatCurrency(lastTransactionItems.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0))}</span>
+                </div>
+                {totalDiscount > 0 && (
+                  <div className="flex justify-between text-red-500">
+                    <span>DESCONTO:</span>
+                    <span>- {formatCurrency(totalDiscount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-black text-emerald-600 text-lg">
+                  <span>TOTAL:</span>
+                  <span>{formatCurrency(lastSaleAmount)}</span>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 pt-3 space-y-1">
+                <p className="font-black uppercase">Forma(s) de Pagamento:</p>
+                <p>{lastPaymentMethod}</p>
+              </div>
+
+              <p className="text-center text-[8px] mt-4">Obrigado pela preferência!</p>
+            </div>
+            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <button onClick={() => setShowReceiptModal(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[9px] tracking-widest">Fechar</button>
+              <button onClick={handleDownloadReceipt} className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-[9px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
+                <Download size={16} /> Baixar Cupom
+              </button>
+              <button onClick={() => window.print()} className="flex-[2] py-4 bg-slate-900 text-white rounded-xl font-black uppercase text-[9px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
+                <Printer size={16} /> Imprimir
+              </button>
+            </div>
           </div>
         </div>
       )}

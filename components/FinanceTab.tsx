@@ -6,6 +6,9 @@ import { formatCurrency, formatDate } from '../utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { OnlineDB } from '../utils/api';
 import { jsPDF } from 'jspdf';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { addMonths, subMonths, startOfDay, endOfDay, isBefore, isAfter } from 'date-fns';
 
 interface Props {
   orders: ServiceOrder[];
@@ -47,7 +50,8 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
   // Estados para Relatório
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [selectedReportUser, setSelectedReportUser] = useState<string>('all');
-  const [selectedPeriod, setSelectedPeriod] = useState<'dia' | 'semana' | 'mes' | '3meses'>('dia');
+  const [startDate, setStartDate] = useState<Date | null>(subMonths(new Date(), 1));
+  const [endDate, setEndDate] = useState<Date | null>(new Date());
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   // Limpeza automática ao carregar (Remove dados com mais de 3 meses)
@@ -117,17 +121,12 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
 
       const userFilter = selectedReportUser === 'all' ? null : selectedReportUser;
 
-      // Cálculo de datas para o filtro
-      const now = new Date();
-      const filterDate = new Date();
-      if (selectedPeriod === 'dia') filterDate.setHours(0, 0, 0, 0);
-      else if (selectedPeriod === 'semana') filterDate.setDate(now.getDate() - 7);
-      else if (selectedPeriod === 'mes') filterDate.setMonth(now.getMonth() - 1);
-      else if (selectedPeriod === '3meses') filterDate.setMonth(now.getMonth() - 3);
+      const reportStartDate = startDate ? startOfDay(startDate) : subMonths(new Date(), 6);
+      const reportEndDate = endDate ? endOfDay(endDate) : new Date();
 
       const isWithinPeriod = (dateStr: string) => {
         const d = new Date(dateStr);
-        return d >= filterDate;
+        return isAfter(d, reportStartDate) && isBefore(d, endOfDay(reportEndDate));
       };
 
       // 1. Identificação do Perfil (Primeiro Item)
@@ -147,7 +146,7 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
       doc.setFont('helvetica', 'normal');
       doc.text('RELATORIO FINANCEIRO DETALHADO', pageWidth / 2, y, { align: 'center' });
       y += 4;
-      doc.text(`PERIODO: ${selectedPeriod === 'dia' ? 'HOJE' : selectedPeriod === 'semana' ? 'ULTIMOS 7 DIAS' : selectedPeriod === 'mes' ? 'ULTIMOS 30 DIAS' : 'ULTIMOS 90 DIAS'}`, pageWidth / 2, y, { align: 'center' });
+      doc.text(`PERIODO: ${formatDate(reportStartDate.toISOString())} a ${formatDate(reportEndDate.toISOString())}`, pageWidth / 2, y, { align: 'center' });
       y += 4;
       doc.text(`GERADO EM: ${new Date().toLocaleString('pt-BR')}`, pageWidth / 2, y, { align: 'center' });
       y += 6;
@@ -561,16 +560,35 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Período do Relatório</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['dia', 'semana', 'mes', '3meses'] as const).map(p => (
-                    <button 
-                      key={p}
-                      onClick={() => setSelectedPeriod(p)}
-                      className={`py-3 rounded-xl text-[8px] font-black uppercase border transition-all ${selectedPeriod === p ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400'}`}
-                    >
-                      {p === 'dia' ? 'Hoje' : p === 'semana' ? '7 Dias' : p === 'mes' ? '30 Dias' : '90 Dias'}
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-3">
+                  <DatePicker
+                    selected={startDate}
+                    onChange={(date: Date | null) => setStartDate(date)}
+                    selectsStart
+                    startDate={startDate}
+                    endDate={endDate}
+                    maxDate={endDate || new Date()}
+                    minDate={subMonths(new Date(), 6)}
+                    dateFormat="dd/MM/yyyy"
+                    locale="pt-BR"
+                    className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-xs uppercase text-center"
+                    wrapperClassName="w-full"
+                    placeholderText="Data Inicial"
+                  />
+                  <DatePicker
+                    selected={endDate}
+                    onChange={(date: Date | null) => setEndDate(date)}
+                    selectsEnd
+                    startDate={startDate}
+                    endDate={endDate}
+                    minDate={startDate || subMonths(new Date(), 6)}
+                    maxDate={new Date()}
+                    dateFormat="dd/MM/yyyy"
+                    locale="pt-BR"
+                    className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-xs uppercase text-center"
+                    wrapperClassName="w-full"
+                    placeholderText="Data Final"
+                  />
                 </div>
               </div>
 

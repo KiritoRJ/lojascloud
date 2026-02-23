@@ -7,11 +7,16 @@ export default async function handler(req: any, res: any) {
 
   const { title, unit_price, quantity, tenantId, planType } = req.body;
 
-  if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
-    return res.status(500).json({ error: 'Mercado Pago access token not configured.' });
+  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
+
+  if (!token) {
+    return res.status(500).json({ 
+      error: 'Token do Mercado Pago não configurado.',
+      details: 'Certifique-se de que MERCADO_PAGO_ACCESS_TOKEN ou MP_ACCESS_TOKEN está definida no Vercel.'
+    });
   }
 
-  const client = new MercadoPagoConfig({ accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN });
+  const client = new MercadoPagoConfig({ accessToken: token });
   
   const origin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
   const host = req.headers.host;

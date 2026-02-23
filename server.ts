@@ -11,9 +11,9 @@ const app = express();
 const PORT = 3000;
 
 const getMPClient = () => {
-  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
   if (!token) {
-    throw new Error('MERCADO_PAGO_ACCESS_TOKEN is not defined');
+    throw new Error('MERCADO_PAGO_ACCESS_TOKEN ou MP_ACCESS_TOKEN não definida nas variáveis de ambiente.');
   }
   return new MercadoPagoConfig({ accessToken: token });
 };
@@ -26,8 +26,12 @@ app.post('/api/create-preference', async (req, res) => {
   try {
     const { title, unit_price, quantity, tenantId, planType } = req.body;
 
-    if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
-      return res.status(500).json({ error: 'Mercado Pago access token not configured.' });
+    const token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
+    if (!token) {
+      return res.status(500).json({ 
+        error: 'Token do Mercado Pago não configurado.',
+        details: 'Certifique-se de que MERCADO_PAGO_ACCESS_TOKEN ou MP_ACCESS_TOKEN está definida no Vercel/Ambiente.'
+      });
     }
 
     const origin = req.get('origin') || (req.get('referer') ? new URL(req.get('referer') as string).origin : null);

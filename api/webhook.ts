@@ -14,7 +14,8 @@ export default async function handler(req: any, res: any) {
     const payment = req.body;
 
     if (payment?.type === 'payment' || payment?.action === 'payment.updated') {
-      const client = new MercadoPagoConfig({ accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || '' });
+      const token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
+      const client = new MercadoPagoConfig({ accessToken: token || '' });
       const paymentClient = new Payment(client);
       
       const paymentId = payment?.data?.id || payment?.id;

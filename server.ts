@@ -16,48 +16,46 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-app.post('/api/process-payment', async (req, res) => {
-  console.log('Request received at /api/process-payment');
+app.post('/api/create-preference', async (req, res) => {
   try {
-    const { formData, tenantId, planType } = req.body;
+    const { title, unit_price, quantity, tenantId, planType } = req.body;
 
     if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
       return res.status(500).json({ error: 'Mercado Pago access token not configured.' });
     }
 
-    const paymentClient = new Payment(client);
+    const origin = req.get('origin') || (req.get('referer') ? new URL(req.get('referer') as string).origin : null);
+    const host = req.get('host');
+    const protocol = host?.includes('localhost') ? 'http' : 'https';
+    const fallbackUrl = `${protocol}://${host}`;
+    const baseUrl = origin || fallbackUrl;
 
-    const planDetails = {
-      monthly: { title: 'Assinatura Mensal', description: 'Acesso por 1 mês' },
-      quarterly: { title: 'Assinatura Trimestral', description: 'Acesso por 3 meses' },
-      yearly: { title: 'Assinatura Anual', description: 'Acesso por 12 meses' },
-    };
-
-    const paymentData: any = {
-      transaction_amount: formData.transaction_amount,
-      description: planDetails[planType as keyof typeof planDetails]?.title || `Assinatura ${planType}`,
-      payment_method_id: formData.payment_method_id,
-      statement_descriptor: 'ASSISTPRO',
-      payer: {
-        email: formData.payment_method_id === 'pix' ? 'test_user_46945293@testuser.com' : formData.payer.email,
-        ...(formData.payer.first_name && { first_name: formData.payer.first_name }),
-        ...(formData.payer.last_name && { last_name: formData.payer.last_name }),
-        ...(formData.payer.identification && { identification: formData.payer.identification }),
+    const preference = {
+      items: [
+        {
+          id: planType,
+          title: title,
+          unit_price: Number(unit_price),
+          quantity: Number(quantity),
+        },
+      ],
+      back_urls: {
+        success: `${baseUrl}/`,
+        failure: `${baseUrl}/`,
+        pending: `${baseUrl}/`
       },
+      auto_return: 'approved' as 'approved',
       external_reference: `${tenantId}|${planType}`
     };
 
-    if (formData.token) paymentData.token = formData.token;
-    if (formData.installments) paymentData.installments = formData.installments;
-    if (formData.issuer_id) paymentData.issuer_id = formData.issuer_id;
+    const preferenceClient = new Preference(client);
+    const response = await preferenceClient.create({ body: preference });
+    res.json({ id: response.id, init_point: response.init_point });
 
-    const response = await paymentClient.create({ body: paymentData });
-    res.status(200).json(response);
   } catch (error: any) {
-    console.error('Error processing payment:', error);
-    const errorMessage = error.message || 'Failed to process payment';
-    const errorDetails = error.cause || error;
-    res.status(500).json({ error: errorMessage, details: errorDetails });
+    console.error('Error creating Mercado Pago preference:', error);
+    const errorMessage = error.message || 'Failed to create payment preference.';
+    res.status(500).json({ error: errorMessage, details: error });
   }
 });
 

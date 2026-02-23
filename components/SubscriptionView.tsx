@@ -1,10 +1,7 @@
 
 import React, { useState } from 'react';
 import { CreditCard, Check, ShieldCheck, Clock, Calendar, Smartphone, LogOut, Loader2 } from 'lucide-react';
-import { initMercadoPago, CardPayment } from '@mercadopago/sdk-react';
 import { OnlineDB } from '../utils/api';
-
-initMercadoPago(import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY || '', { locale: 'pt-BR' });
 
 interface SubscriptionViewProps {
   tenantId: string;
@@ -23,9 +20,7 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
 }) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [globalPlans, setGlobalPlans] = React.useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
-        const [selectedPlan, setSelectedPlan] = useState<any>(null);
-  const [pixPayment, setPixPayment] = useState<any>(null);
-  const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<any>(null);
 
   React.useEffect(() => {
     OnlineDB.getGlobalSettings().then(setGlobalPlans);
@@ -68,66 +63,43 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
     }
   ];
 
-  const handlePayment = (plan: any) => {
-    setSelectedPlan(plan);
-  };
 
-  const onSubmit = async ({ selectedPaymentMethod, formData }: any) => {
-    return new Promise<void>((resolve, reject) => {
-      fetch('/api/process-payment', {
+
+  const handleSubscription = async (plan: any) => {
+    setLoading(plan.id);
+    try {
+      const response = await fetch('/api/create-preference', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          formData,
+          title: `Assinatura ${plan.name}`,
+          unit_price: getPrice(plan.id),
+          quantity: 1,
           tenantId,
-          planType: selectedPlan.id
+          planType: plan.id,
         }),
-      })
-        .then(async (response) => {
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('API Error Response Text:', errorText);
-            throw new Error(`API Error: ${response.status} ${response.statusText}`);
-          }
-          const text = await response.text();
-          try {
-            return JSON.parse(text);
-          } catch (e) {
-            console.error('Failed to parse JSON, raw response:', text);
-            throw new Error('Received non-JSON response from server');
-          }
-        })
-        .then((data) => {
-          // If it's a PIX payment, store the data to show the QR code
-          if (data.payment_method_id === 'pix' && data.status === 'pending') {
-            setPixPayment(data);
-          } else if (data.status === 'approved') {
-            // Handle approved card payments
-            setTimeout(() => {
-              const newDate = new Date();
-              newDate.setMonth(newDate.getMonth() + selectedPlan.months);
-              onSuccess(newDate.toISOString());
-            }, 3000);
-          }
-          // For all successful API calls, resolve the promise to let the Brick know.
-          resolve();
-        })
-        .catch((error) => {
-          console.error('Payment error:', error);
-          reject();
-        });
-    });
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create payment preference.');
+      }
+
+      if (data.init_point) {
+        window.open(data.init_point, '_blank');
+      }
+
+    } catch (err: any) {
+      console.error('Error creating preference:', err);
+    } finally {
+      setLoading(null);
+    }
   };
 
-  const onError = async (error: any) => {
-    console.error('Payment Brick error:', error);
-  };
 
-  const onReady = async () => {
-    console.log('Payment Brick ready');
-  };
 
   const formatDate = (dateStr: string) => {
     try {
@@ -144,110 +116,9 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
     }
   };
 
-    if (pixPayment) {
-    return (
-      <div className="min-h-screen bg-[#0f172a] text-white flex flex-col items-center justify-center p-6 font-sans">
-        <div className="max-w-md w-full bg-slate-900/50 border-2 border-slate-800 rounded-[2.5rem] p-8 text-center">
-          <h2 className="text-2xl font-black uppercase tracking-tight mb-4">Pague com PIX para Ativar</h2>
-          <p className="text-slate-400 mb-6">Escaneie o QR Code abaixo com o app do seu banco para concluir a assinatura.</p>
-          
-          <div className="bg-white p-4 rounded-xl inline-block mb-6">
-            <img 
-              src={`data:image/png;base64,${pixPayment.point_of_interaction.transaction_data.qr_code_base64}`}
-              alt="PIX QR Code"
-              className="w-64 h-64"
-            />
-          </div>
 
-          <div className="mb-6">
-            <label className="text-xs text-slate-500 uppercase font-bold tracking-wider">Ou copie o código PIX:</label>
-            <input 
-              type="text"
-              readOnly
-              value={pixPayment.point_of_interaction.transaction_data.qr_code}
-              className="w-full bg-slate-950 text-white text-sm rounded-lg p-3 mt-2 text-center font-mono break-all"
-              onClick={(e) => (e.target as HTMLInputElement).select()}
-            />
-          </div>
 
-          <p className="text-xs text-slate-500">Após o pagamento, seu acesso será liberado automaticamente.</p>
-          <button 
-            onClick={() => { setPixPayment(null); setSelectedPlan(null); }}
-            className="mt-6 text-slate-400 hover:text-white text-sm font-bold uppercase tracking-wider"
-          >
-            Cancelar e Voltar
-          </button>
-        </div>
-      </div>
-    );
-  }
 
-  if (selectedPlan) {
-    return (
-      <div className="min-h-screen bg-[#0f172a] text-white flex flex-col items-center justify-center p-6 font-sans">
-        <div className="max-w-2xl w-full bg-slate-900/50 border-2 border-slate-800 rounded-[2.5rem] p-8">
-          <button 
-            onClick={() => setSelectedPlan(null)}
-            className="mb-6 text-slate-400 hover:text-white text-sm font-bold uppercase tracking-wider flex items-center gap-2"
-          >
-            ← Voltar para planos
-          </button>
-          
-          <div className="mb-8">
-            <h2 className="text-2xl font-black uppercase tracking-tight mb-2">Finalizar Assinatura</h2>
-            <p className="text-slate-400">Você selecionou o <strong className="text-white">{selectedPlan.name}</strong> por {selectedPlan.price}.</p>
-          </div>
-
-                    <div className="bg-white rounded-2xl p-4">
-                        {paymentMethod === 'card' && (
-              <>
-                <button 
-                  onClick={() => setPaymentMethod(null)}
-                  className="mb-4 text-slate-500 hover:text-slate-800 text-xs font-bold uppercase tracking-wider flex items-center gap-1"
-                >
-                  ← Trocar forma de pagamento
-                </button>
-              <CardPayment
-                initialization={{
-                  amount: getPrice(selectedPlan.id),
-                }}
-                customization={{
-                  visual: {
-                    showCardholderName: true,
-                  },
-                  paymentMethods: {
-                    maxInstallments: 1
-                  }
-                }}
-                onSubmit={onSubmit}
-                onReady={onReady}
-                onError={onError}
-              />
-              </>
-            )}
-
-            {!paymentMethod && (
-              <div className="flex flex-col space-y-4 p-4">
-                <h3 className='text-center text-slate-800 font-bold text-lg mb-2'>Escolha como pagar</h3>
-                <button 
-                  onClick={() => setPaymentMethod('card')}
-                  className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-all duration-300"
-                >
-                  Cartão de Crédito
-                </button>
-                <button 
-                  onClick={() => onSubmit({ selectedPaymentMethod: 'pix', formData: { transaction_amount: getPrice(selectedPlan.id), payment_method_id: 'pix', payer: { email: tenantId } } })}
-                  className="w-full bg-emerald-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-emerald-600 transition-all duration-300"
-                >
-                  PIX
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-white flex flex-col items-center justify-center p-6 font-sans">
@@ -301,7 +172,7 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
               </ul>
 
               <button
-                onClick={() => handlePayment(plan)}
+                onClick={() => handleSubscription(plan)}
                 disabled={loading !== null}
                 className={`w-full py-5 rounded-3xl font-black uppercase text-xs tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${plan.popular ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-600/20' : 'bg-white hover:bg-slate-100 text-slate-900'}`}
               >
@@ -319,10 +190,9 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
         </div>
 
         <div className="flex flex-col items-center gap-6">
+          <p className="text-xs text-slate-500 mt-4 text-center">Você será redirecionado para a página de pagamentos segura do Mercado Pago.<br/>Se a página não atualizar automaticamente após o pagamento, por favor, deslogue e logue novamente.</p>
           <div className="flex items-center gap-8 opacity-40 grayscale">
             <img src="https://logodownload.org/wp-content/uploads/2019/06/mercado-pago-logo.png" alt="Mercado Pago" className="h-6 object-contain" />
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/Stripe_Logo%2C_revised_2016.svg/2560px-Stripe_Logo%2C_revised_2016.svg.png" alt="Stripe" className="h-6 object-contain" />
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Pix_logo.svg/2560px-Pix_logo.svg.png" alt="Pix" className="h-6 object-contain" />
           </div>
 
           <button 

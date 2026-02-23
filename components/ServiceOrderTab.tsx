@@ -102,6 +102,11 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
   // --- PERSISTÊNCIA ---
   // Salva ou atualiza a O.S. na lista e sincroniza com o banco remoto
   const handleSave = () => {
+    if (limitReached && !editingOrder) {
+      alert(`Limite de ${maxOS} Ordens de Serviço atingido. Para cadastrar mais, atualize seu plano.`);
+      return;
+    }
+
     if (!formData.customerName || !formData.deviceModel) return alert('Campos obrigatórios faltando.');
     setIsSaving(true);
     

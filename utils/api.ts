@@ -23,7 +23,7 @@ export class OnlineDB {
         monthly: { price: 49.90, maxUsers: 2, maxOS: 999, maxProducts: 999 },
         quarterly: { price: 129.90, maxUsers: 999, maxOS: 999, maxProducts: 999 },
         yearly: { price: 499.00, maxUsers: 999, maxOS: 999, maxProducts: 999 },
-        trial: { maxUsers: 999, maxOS: 999, maxProducts: 999 }
+        trial: { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 }
       };
 
       if (!data?.data_json) return defaultSettings;
@@ -45,7 +45,7 @@ export class OnlineDB {
         monthly: { price: 49.90, maxUsers: 2, maxOS: 999, maxProducts: 999 },
         quarterly: { price: 129.90, maxUsers: 999, maxOS: 999, maxProducts: 999 },
         yearly: { price: 499.00, maxUsers: 999, maxOS: 999, maxProducts: 999 },
-        trial: { maxUsers: 999, maxOS: 999, maxProducts: 999 }
+        trial: { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 }
       };
     }
   }
@@ -132,7 +132,7 @@ export class OnlineDB {
       if (!data) return { success: false, message: "Usuário ou senha incorretos." };
 
       const tenant = data.tenants;
-      const limits = tenant?.tenant_limits[0];
+      const limits = tenant?.tenant_limits;
       const expiresAt = tenant?.subscription_expires_at;
       const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
 
@@ -222,7 +222,7 @@ export class OnlineDB {
       expiresAt.setDate(expiresAt.getDate() + trialDays);
 
       const globalSettings = await this.getGlobalSettings();
-      const trialLimits = globalSettings.trial || { maxUsers: 999, maxOS: 999, maxProducts: 999 };
+      const trialLimits = globalSettings.trial || { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 };
 
       const { error: tError } = await supabase
         .from('tenants')
@@ -419,7 +419,7 @@ export class OnlineDB {
     try {
       const { data, error } = await supabase
         .from('tenants')
-        .select('*')
+        .select('*, tenant_limits(*)')
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data || [];

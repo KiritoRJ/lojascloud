@@ -366,8 +366,8 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                         name: t.store_name, 
                         features: t.enabled_features || {},
                         maxUsers: t.max_users || 999,
-                        maxOS: t.max_os || 999,
-                        maxProducts: t.max_products || 999
+                        maxOS: t.tenant_limits?.max_os || 999,
+                        maxProducts: t.tenant_limits?.max_products || 999
                       })}
                       className="p-2.5 bg-slate-800 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-white transition-all active:scale-90"
                       title="Permissões"
@@ -572,26 +572,25 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
               </div>
               
               <div className="space-y-4 text-left">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Nova Data de Expiração</label>
-                  <div className="flex gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Expiração Atual</label>
+                    <input 
+                      type="text" 
+                      value={formatDateBR(tenantToEditSub.expiresAt)} 
+                      disabled 
+                      className="w-full bg-slate-100 border-slate-200 rounded-2xl p-4 font-black text-slate-500 text-sm cursor-not-allowed"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Nova Data de Expiração</label>
                     <DatePicker
                       selected={parseDate(newSubDate)}
                       onChange={(date: Date) => setNewSubDate(date.toISOString().split('T')[0])}
                       dateFormat="dd/MM/yyyy"
                       locale="pt-BR"
-                      className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
-                    />
-                    <input 
-                      type="text" 
-                      value={newSubDate} 
-                      onChange={e => setNewSubDate(e.target.value)}
-                      placeholder="YYYY-MM-DD"
-                      className="w-32 bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-xs"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
                     />
                   </div>
-                  <p className="text-[8px] text-slate-400 ml-4 mt-1">Formato: AAAA-MM-DD (Ex: 2025-12-31)</p>
-                </div>
                 <div className="space-y-1">
                   <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Tipo de Plano</label>
                   <select 

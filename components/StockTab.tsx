@@ -147,6 +147,11 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   }, []);
 
   const handleSave = async () => {
+    if (limitReached && !editingProduct) {
+      alert(`Limite de ${maxProducts} produtos atingido. Para cadastrar mais, atualize seu plano.`);
+      return;
+    }
+
     if (!formData.name) return alert('Nome é obrigatório.');
     setIsSaving(true);
     

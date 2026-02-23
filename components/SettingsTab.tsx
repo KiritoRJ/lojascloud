@@ -26,9 +26,11 @@ interface Props {
     xmlExportImport: boolean;
   };
   maxUsers?: number;
+  maxOS?: number;
+  maxProducts?: number;
 }
 
-const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, enabledFeatures, maxUsers }) => {
+const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, enabledFeatures, maxUsers, maxOS, maxProducts }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
   
   const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup'>('main');
@@ -729,6 +731,24 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
             </div>
           </div>
         )}
+
+<div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
+          <h3 className="font-black text-slate-800 uppercase text-sm text-center">Plano e Limites</h3>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Usuários</p>
+              <p className="font-black text-blue-600 text-2xl">{settings.users?.length || 0} / {maxUsers === 999 ? '∞' : maxUsers}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ordens de Serviço</p>
+              <p className="font-black text-blue-600 text-2xl">{maxOS === 999 ? '∞' : maxOS}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Produtos</p>
+              <p className="font-black text-blue-600 text-2xl">{maxProducts === 999 ? '∞' : maxProducts}</p>
+            </div>
+          </div>
+        </div>
 
         <div className="flex flex-col items-center gap-6 mb-4">
           <div className="relative group active:scale-95 transition-transform">

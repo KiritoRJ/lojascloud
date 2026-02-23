@@ -23,7 +23,8 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
 }) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [globalPlans, setGlobalPlans] = React.useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
-  const [selectedPlan, setSelectedPlan] = useState<any>(null);
+    const [selectedPlan, setSelectedPlan] = useState<any>(null);
+  const [pixPayment, setPixPayment] = useState<any>(null);
 
   React.useEffect(() => {
     OnlineDB.getGlobalSettings().then(setGlobalPlans);
@@ -98,18 +99,19 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
           }
         })
         .then((data) => {
-          if (data.status === 'approved') {
-            resolve();
+          // If it's a PIX payment, store the data to show the QR code
+          if (data.payment_method_id === 'pix' && data.status === 'pending') {
+            setPixPayment(data);
+          } else if (data.status === 'approved') {
+            // Handle approved card payments
             setTimeout(() => {
               const newDate = new Date();
               newDate.setMonth(newDate.getMonth() + selectedPlan.months);
               onSuccess(newDate.toISOString());
             }, 3000);
-          } else if (data.status === 'pending' || data.status === 'in_process') {
-            resolve();
-          } else {
-            reject();
           }
+          // For all successful API calls, resolve the promise to let the Brick know.
+          resolve();
         })
         .catch((error) => {
           console.error('Payment error:', error);
@@ -140,6 +142,44 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
       return dateStr;
     }
   };
+
+    if (pixPayment) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] text-white flex flex-col items-center justify-center p-6 font-sans">
+        <div className="max-w-md w-full bg-slate-900/50 border-2 border-slate-800 rounded-[2.5rem] p-8 text-center">
+          <h2 className="text-2xl font-black uppercase tracking-tight mb-4">Pague com PIX para Ativar</h2>
+          <p className="text-slate-400 mb-6">Escaneie o QR Code abaixo com o app do seu banco para concluir a assinatura.</p>
+          
+          <div className="bg-white p-4 rounded-xl inline-block mb-6">
+            <img 
+              src={`data:image/png;base64,${pixPayment.point_of_interaction.transaction_data.qr_code_base64}`}
+              alt="PIX QR Code"
+              className="w-64 h-64"
+            />
+          </div>
+
+          <div className="mb-6">
+            <label className="text-xs text-slate-500 uppercase font-bold tracking-wider">Ou copie o código PIX:</label>
+            <input 
+              type="text"
+              readOnly
+              value={pixPayment.point_of_interaction.transaction_data.qr_code}
+              className="w-full bg-slate-950 text-white text-sm rounded-lg p-3 mt-2 text-center font-mono break-all"
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+            />
+          </div>
+
+          <p className="text-xs text-slate-500">Após o pagamento, seu acesso será liberado automaticamente.</p>
+          <button 
+            onClick={() => { setPixPayment(null); setSelectedPlan(null); }}
+            className="mt-6 text-slate-400 hover:text-white text-sm font-bold uppercase tracking-wider"
+          >
+            Cancelar e Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (selectedPlan) {
     return (

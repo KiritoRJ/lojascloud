@@ -28,9 +28,6 @@ export default async function handler(req: any, res: any) {
         quantity: Number(quantity),
       },
     ],
-    payer: {
-      email: 'test_user_123@testuser.com'
-    },
     back_urls: {
         success: `${baseUrl}/`,
         failure: `${baseUrl}/`,

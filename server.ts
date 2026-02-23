@@ -37,9 +37,6 @@ app.post('/api/create-payment', async (req, res) => {
         quantity: Number(quantity),
       },
     ],
-    payer: {
-      email: 'test_user_123@testuser.com'
-    },
     back_urls: {
         success: `${baseUrl}/`,
         failure: `${baseUrl}/`,

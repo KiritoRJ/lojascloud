@@ -12,6 +12,7 @@ const PORT = 3000;
 const client = new MercadoPagoConfig({ accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || '' });
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // API route to create payment preference
 app.post('/api/create-payment', async (req, res) => {
@@ -55,39 +56,43 @@ app.post('/api/create-payment', async (req, res) => {
 });
 
 app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
-  const payment = req.body;
+  try {
+    const payment = req.body;
 
-  if (payment.type === 'payment') {
-    try {
-            const paymentClient = new Payment(client);
-      const data = await paymentClient.get({ id: payment.data.id });
-      const externalReference = data.external_reference;
+    if (payment?.type === 'payment' || payment?.action === 'payment.updated') {
+      const paymentClient = new Payment(client);
+      const paymentId = payment?.data?.id || payment?.id;
+      
+      if (paymentId) {
+        const data = await paymentClient.get({ id: paymentId });
+        const externalReference = data.external_reference;
 
-      if (externalReference) {
-        const [tenantId, planType] = externalReference.split('|');
-        const plans = {
-          monthly: 1,
-          quarterly: 3,
-          yearly: 12
-        }
+        if (externalReference) {
+          const [tenantId, planType] = externalReference.split('|');
+          const plans = {
+            monthly: 1,
+            quarterly: 3,
+            yearly: 12
+          }
 
-        const months = plans[planType as keyof typeof plans];
+          const months = plans[planType as keyof typeof plans];
 
-        if (months) {
-          const expiresAt = new Date();
-          expiresAt.setMonth(expiresAt.getMonth() + months);
+          if (months) {
+            const expiresAt = new Date();
+            expiresAt.setMonth(expiresAt.getMonth() + months);
 
-          // Update tenant subscription in your database
-          // This is a placeholder for your actual database update logic
-                    await OnlineDB.updateSubscription(tenantId, months, planType as any);
+            // Update tenant subscription in your database
+            await OnlineDB.updateSubscription(tenantId, months, planType as any);
+          }
         }
       }
-    } catch (error) {
-      console.error('Error processing webhook:', error);
     }
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    // Always return 200 to MercadoPago to acknowledge receipt, even if processing fails
+    res.status(200).send('OK');
   }
-
-  res.status(200).send('OK');
 });
 
 async function startServer() {

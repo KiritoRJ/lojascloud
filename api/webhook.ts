@@ -6,14 +6,14 @@ export default async function handler(req: any, res: any) {
     return res.status(405).send('Method not allowed');
   }
 
-  const payment = req.body;
+  try {
+    const payment = req.body;
 
-  if (payment?.type === 'payment' || payment?.action === 'payment.updated') {
-    try {
+    if (payment?.type === 'payment' || payment?.action === 'payment.updated') {
       const client = new MercadoPagoConfig({ accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || '' });
       const paymentClient = new Payment(client);
       
-      const paymentId = payment.data?.id || payment.id;
+      const paymentId = payment?.data?.id || payment?.id;
 
       if (paymentId) {
         const data = await paymentClient.get({ id: paymentId });
@@ -34,10 +34,10 @@ export default async function handler(req: any, res: any) {
           }
         }
       }
-    } catch (error) {
-      console.error('Error processing webhook:', error);
     }
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    res.status(200).send('OK');
   }
-
-  res.status(200).send('OK');
 }

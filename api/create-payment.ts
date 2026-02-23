@@ -13,9 +13,11 @@ export default async function handler(req: any, res: any) {
 
   const client = new MercadoPagoConfig({ accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN });
   
+  const origin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
   const host = req.headers.host;
   const protocol = host?.includes('localhost') ? 'http' : 'https';
-  const baseUrl = `${protocol}://${host}`;
+  const fallbackUrl = `${protocol}://${host}`;
+  const baseUrl = origin || fallbackUrl;
 
   const preference = {
     items: [
@@ -26,10 +28,13 @@ export default async function handler(req: any, res: any) {
         quantity: Number(quantity),
       },
     ],
+    payer: {
+      email: 'test_user_123@testuser.com'
+    },
     back_urls: {
-        success: baseUrl,
-        failure: baseUrl,
-        pending: baseUrl
+        success: `${baseUrl}/`,
+        failure: `${baseUrl}/`,
+        pending: `${baseUrl}/`
     },
     auto_return: 'approved' as 'approved',
     external_reference: `${tenantId}|${planType}`

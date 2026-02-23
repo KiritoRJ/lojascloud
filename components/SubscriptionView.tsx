@@ -4,6 +4,8 @@ import { CreditCard, Check, ShieldCheck, Clock, Calendar, Smartphone, LogOut, Lo
 import { initMercadoPago, Wallet } from '@mercadopago/sdk-react';
 import { OnlineDB } from '../utils/api';
 
+initMercadoPago(import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY || '', { locale: 'pt-BR' });
+
 interface SubscriptionViewProps {
   tenantId: string;
   storeName: string;
@@ -22,8 +24,6 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
   const [loading, setLoading] = useState<string | null>(null);
   const [globalPlans, setGlobalPlans] = React.useState({ monthly: 49.90, quarterly: 129.90, yearly: 499.00 });
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
-
-  initMercadoPago(import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY || '', { locale: 'pt-BR' });
 
   React.useEffect(() => {
     OnlineDB.getGlobalSettings().then(setGlobalPlans);
@@ -162,15 +162,20 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
                 ))}
               </ul>
 
-              {preferenceId ? (
-                <Wallet initialization={{ preferenceId: preferenceId }} />
+              {preferenceId && loading === plan.id ? (
+                <Wallet 
+                  initialization={{ preferenceId: preferenceId }} 
+                  customization={{ texts: { valueProp: 'security_details' } }} 
+                  onError={(error) => console.error('Wallet error:', error)}
+                  onReady={() => console.log('Wallet ready')}
+                />
               ) : (
                 <button
                   onClick={() => handlePayment(plan)}
                   disabled={loading !== null}
                   className={`w-full py-5 rounded-3xl font-black uppercase text-xs tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${plan.popular ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-600/20' : 'bg-white hover:bg-slate-100 text-slate-900'}`}
                 >
-                  {loading === plan.id ? (
+                  {loading === plan.id && !preferenceId ? (
                     <Loader2 className="animate-spin" size={20} />
                   ) : (
                     <>

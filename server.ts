@@ -22,9 +22,11 @@ app.post('/api/create-payment', async (req, res) => {
     return res.status(500).json({ error: 'Mercado Pago access token not configured.' });
   }
 
+  const origin = req.get('origin') || (req.get('referer') ? new URL(req.get('referer') as string).origin : null);
   const host = req.get('host');
   const protocol = host?.includes('localhost') ? 'http' : 'https';
-  const baseUrl = `${protocol}://${host}`;
+  const fallbackUrl = `${protocol}://${host}`;
+  const baseUrl = origin || fallbackUrl;
 
   const preference = {
     items: [
@@ -35,10 +37,13 @@ app.post('/api/create-payment', async (req, res) => {
         quantity: Number(quantity),
       },
     ],
+    payer: {
+      email: 'test_user_123@testuser.com'
+    },
     back_urls: {
-        success: baseUrl,
-        failure: baseUrl,
-        pending: baseUrl
+        success: `${baseUrl}/`,
+        failure: `${baseUrl}/`,
+        pending: `${baseUrl}/`
     },
     auto_return: 'approved' as 'approved',
     external_reference: `${tenantId}|${planType}` // Store tenantId and planType for webhook

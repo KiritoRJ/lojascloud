@@ -54,7 +54,7 @@ app.post('/api/create-payment', async (req, res) => {
   }
 });
 
-app.post('/api/webhook', async (req, res) => {
+app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
   const payment = req.body;
 
   if (payment.type === 'payment') {

@@ -15,8 +15,7 @@ export default defineConfig(({ mode }) => {
         react(),
         VitePWA({
           registerType: 'autoUpdate',
-          injectRegister: false,
-          includeAssets: ['icon.svg'],
+          injectRegister: 'auto',
           workbox: {
             globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
             cleanupOutdatedCaches: true,
@@ -24,6 +23,22 @@ export default defineConfig(({ mode }) => {
             skipWaiting: true,
             navigateFallback: 'index.html',
             maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
+            runtimeCaching: [
+              {
+                urlPattern: /^https?:\/\/lawcmqsjhwuhogsukhbf\.supabase\.co\/.*/,
+                handler: 'NetworkFirst',
+                options: {
+                  cacheName: 'supabase-api-cache',
+                  expiration: {
+                    maxEntries: 200,
+                    maxAgeSeconds: 60 * 60 * 24 * 7 // 1 week
+                  },
+                  cacheableResponse: {
+                    statuses: [0, 200]
+                  }
+                }
+              }
+            ]
           },
           manifest: {
             name: 'Assistência Técnica Pro',

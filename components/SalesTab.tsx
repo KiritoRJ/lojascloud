@@ -272,7 +272,6 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     setCart([]);
     setTotalDiscount(0);
     setPaymentEntries([{ method: 'Dinheiro', amount: 0 }]);
-    setAmountPaid(0);
     setShowCheckoutModal(false);
     setShowCartDrawer(false);
     setShowReceiptModal(true);
@@ -523,63 +522,92 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       {/* MODAL DE RECIBO / CUPOM FISCAL */}
       {showReceiptModal && (
         <div className="fixed inset-0 bg-slate-950/90 flex items-center justify-center z-[110] p-6 backdrop-blur-xl animate-in fade-in">
-          <div className="bg-white w-full max-w-xs rounded-[1.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95">
-            <div className="p-6 text-center border-b border-slate-100">
-              <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Cupom Fiscal</h3>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Detalhes da Venda</p>
+          <div className="bg-white w-full max-w-xs rounded-[3rem] p-10 text-center shadow-2xl animate-in zoom-in-95">
+            <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-lg">
+              <CheckCircle2 size={48} />
             </div>
-            <div className="p-6 space-y-4 text-xs text-slate-700" id="receipt-content">
-              <div className="text-center space-y-1">
-                <p className="font-black text-sm uppercase">{settings.storeName}</p>
-                <p>{settings.storeAddress}</p>
-                <p>{settings.storePhone}</p>
-                <p className="text-[9px] mt-2">Transação ID: {lastTransactionId}</p>
-                <p className="text-[9px]">Data: {formatDate(lastSaleDate)}</p>
-                <p className="text-[9px]">Vendedor: {currentUser?.name || 'Sistema'}</p>
-              </div>
-              
-              <div className="border-t border-b border-slate-200 py-3 space-y-2">
-                <p className="font-black uppercase">ITENS VENDIDOS:</p>
-                {lastTransactionItems.map((item, index) => (
-                  <div key={index} className="flex justify-between">
-                    <span>{item.quantity}x {item.product.name}</span>
-                    <span>{formatCurrency(item.product.salePrice * item.quantity)}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex justify-between font-black text-sm">
-                  <span>SUBTOTAL:</span>
-                  <span>{formatCurrency(lastTransactionItems.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0))}</span>
-                </div>
-                {totalDiscount > 0 && (
-                  <div className="flex justify-between text-red-500">
-                    <span>DESCONTO:</span>
-                    <span>- {formatCurrency(totalDiscount)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-black text-emerald-600 text-lg">
-                  <span>TOTAL:</span>
-                  <span>{formatCurrency(lastSaleAmount)}</span>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-3 space-y-1">
-                <p className="font-black uppercase">Forma(s) de Pagamento:</p>
-                <p>{lastPaymentMethod}</p>
-              </div>
-
-              <p className="text-center text-[8px] mt-4">Obrigado pela preferência!</p>
+            <h3 className="text-xl font-black text-slate-800 uppercase mb-2">Venda Realizada!</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-8">O que deseja fazer agora?</p>
+            
+            <div className="flex flex-col gap-3">
+              <button onClick={handleDownloadReceipt} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
+                <Download size={18} /> Baixar Cupom (58mm)
+              </button>
+              <button onClick={() => window.print()} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
+                <Printer size={18} /> Imprimir Direto
+              </button>
+              <button onClick={() => { setShowReceiptModal(false); setAmountPaid(0); }} className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Nova Venda</button>
             </div>
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
-              <button onClick={() => setShowReceiptModal(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[9px] tracking-widest">Fechar</button>
-              <button onClick={handleDownloadReceipt} className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-[9px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
-                <Download size={16} /> Baixar Cupom
-              </button>
-              <button onClick={() => window.print()} className="flex-[2] py-4 bg-slate-900 text-white rounded-xl font-black uppercase text-[9px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
-                <Printer size={16} /> Imprimir
-              </button>
+
+            {/* CONTEÚDO DO RECIBO (OCULTO NA TELA, MAS USADO PARA IMPRESSÃO/PDF) */}
+            <div style={{ position: 'absolute', left: '-9999px', top: '0' }}>
+              <div 
+                id="receipt-content" 
+                style={{ 
+                  width: '58mm', 
+                  padding: '5mm', 
+                  backgroundColor: 'white', 
+                  color: 'black', 
+                  fontFamily: 'monospace',
+                  fontSize: '10px',
+                  lineHeight: '1.2'
+                }}
+              >
+                <div style={{ textAlign: 'center', marginBottom: '5mm', borderBottom: '1px dashed black', paddingBottom: '2mm' }}>
+                  <p style={{ fontWeight: 'bold', fontSize: '12px', textTransform: 'uppercase', margin: '0' }}>{settings.storeName}</p>
+                  <p style={{ margin: '2px 0' }}>{settings.storeAddress}</p>
+                  <p style={{ margin: '2px 0' }}>{settings.storePhone}</p>
+                </div>
+                
+                <div style={{ marginBottom: '3mm' }}>
+                  <p style={{ margin: '2px 0' }}>ID: {lastTransactionId}</p>
+                  <p style={{ margin: '2px 0' }}>DATA: {formatDate(lastSaleDate)}</p>
+                  <p style={{ margin: '2px 0' }}>VEND: {currentUser?.name || 'Sistema'}</p>
+                </div>
+
+                <div style={{ borderTop: '1px dashed black', borderBottom: '1px dashed black', padding: '2mm 0', marginBottom: '3mm' }}>
+                  <p style={{ fontWeight: 'bold', marginBottom: '2mm' }}>ITENS:</p>
+                  {lastTransactionItems.map((item, index) => (
+                    <div key={index} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1mm' }}>
+                      <span>{item.quantity}x {item.product.name.substring(0, 15)}</span>
+                      <span>{formatCurrency(item.product.salePrice * item.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ marginBottom: '3mm' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>SUBTOTAL:</span>
+                    <span>{formatCurrency(lastTransactionItems.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0))}</span>
+                  </div>
+                  {totalDiscount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>DESCONTO:</span>
+                      <span>-{formatCurrency(totalDiscount)}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12px', marginTop: '1mm' }}>
+                    <span>TOTAL:</span>
+                    <span>{formatCurrency(lastSaleAmount)}</span>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px dashed black', paddingTop: '2mm', marginBottom: '5mm' }}>
+                  <p style={{ fontWeight: 'bold' }}>PAGAMENTO:</p>
+                  <p>{lastPaymentMethod}</p>
+                  {amountPaid > 0 && (
+                    <>
+                      <p>RECEBIDO: {formatCurrency(amountPaid)}</p>
+                      <p>TROCO: {formatCurrency(amountPaid - lastSaleAmount)}</p>
+                    </>
+                  )}
+                </div>
+
+                <div style={{ textAlign: 'center', fontSize: '8px' }}>
+                  <p>Obrigado pela preferência!</p>
+                  <p>Volte Sempre!</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

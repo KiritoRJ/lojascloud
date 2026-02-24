@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => {
             clientsClaim: true,
             skipWaiting: true,
             navigateFallback: 'index.html',
+            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
           },
           manifest: {
             name: 'Assistência Técnica Pro',

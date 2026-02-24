@@ -37,6 +37,23 @@
             border-left-color: #2563eb; border-radius: 50%; animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        
+        @media print {
+            body { background: white !important; margin: 0; padding: 0; }
+            #root > *:not(.print-container) { display: none !important; }
+            .no-print { display: none !important; }
+            #receipt-content { 
+                display: block !important; 
+                width: 58mm !important; 
+                padding: 2mm !important;
+                margin: 0 !important;
+                visibility: visible !important;
+            }
+            /* Hide everything else */
+            body > *:not(#root) { display: none !important; }
+            #root div:not(#receipt-content) { display: none !important; }
+            #receipt-content, #receipt-content * { display: block !important; visibility: visible !important; }
+        }
 
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }

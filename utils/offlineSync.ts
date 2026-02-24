@@ -35,6 +35,15 @@ export class OfflineSync {
         let success = false;
         try {
           switch (item.type) {
+            case 'users':
+              if (item.action === 'upsert') {
+                const res = await OnlineDB.upsertUser(item.tenantId, item.data.store_name, item.data);
+                success = res.success;
+              } else if (item.action === 'delete') {
+                const res = await OnlineDB.deleteRemoteUser(item.data.id);
+                success = res.success;
+              }
+              break;
             case 'orders':
               if (item.action === 'upsert') {
                 const res = await OnlineDB.upsertOrders(item.tenantId, [item.data]);
@@ -96,10 +105,6 @@ export class OfflineSync {
 
   static async saveOrder(tenantId: string, order: ServiceOrder) {
     await db.orders.put({ ...order, tenantId });
-    if (navigator.onLine) {
-      const res = await OnlineDB.upsertOrders(tenantId, [order]);
-      if (res.success) return;
-    }
     await db.syncQueue.add({
       tenantId,
       type: 'orders',
@@ -107,16 +112,13 @@ export class OfflineSync {
       data: order,
       timestamp: Date.now()
     });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async deleteOrder(tenantId: string, orderId: string) {
     const order = await db.orders.get(orderId);
     if (order) {
       await db.orders.update(orderId, { isDeleted: true });
-    }
-    if (navigator.onLine) {
-      const res = await OnlineDB.deleteOS(orderId);
-      if (res.success) return;
     }
     await db.syncQueue.add({
       tenantId,
@@ -125,14 +127,11 @@ export class OfflineSync {
       data: { id: orderId },
       timestamp: Date.now()
     });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async saveProduct(tenantId: string, product: Product) {
     await db.products.put({ ...product, tenantId });
-    if (navigator.onLine) {
-      const res = await OnlineDB.upsertProducts(tenantId, [product]);
-      if (res.success) return;
-    }
     await db.syncQueue.add({
       tenantId,
       type: 'products',
@@ -140,14 +139,11 @@ export class OfflineSync {
       data: product,
       timestamp: Date.now()
     });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async deleteProduct(tenantId: string, productId: string) {
     await db.products.delete(productId);
-    if (navigator.onLine) {
-      const res = await OnlineDB.deleteProduct(productId);
-      if (res.success) return;
-    }
     await db.syncQueue.add({
       tenantId,
       type: 'products',
@@ -155,14 +151,11 @@ export class OfflineSync {
       data: { id: productId },
       timestamp: Date.now()
     });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async saveSale(tenantId: string, sale: Sale) {
     await db.sales.put({ ...sale, tenantId });
-    if (navigator.onLine) {
-      const res = await OnlineDB.upsertSales(tenantId, [sale]);
-      if (res.success) return;
-    }
     await db.syncQueue.add({
       tenantId,
       type: 'sales',
@@ -170,16 +163,13 @@ export class OfflineSync {
       data: sale,
       timestamp: Date.now()
     });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async deleteSale(tenantId: string, saleId: string) {
     const sale = await db.sales.get(saleId);
     if (sale) {
       await db.sales.update(saleId, { isDeleted: true });
-    }
-    if (navigator.onLine) {
-      const res = await OnlineDB.deleteSale(saleId);
-      if (res.success) return;
     }
     await db.syncQueue.add({
       tenantId,
@@ -188,14 +178,11 @@ export class OfflineSync {
       data: { id: saleId },
       timestamp: Date.now()
     });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async saveTransaction(tenantId: string, transaction: Transaction) {
     await db.transactions.put({ ...transaction, tenantId });
-    if (navigator.onLine) {
-      const res = await OnlineDB.upsertTransactions(tenantId, [transaction]);
-      if (res.success) return;
-    }
     await db.syncQueue.add({
       tenantId,
       type: 'transactions',
@@ -203,16 +190,13 @@ export class OfflineSync {
       data: transaction,
       timestamp: Date.now()
     });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async deleteTransaction(tenantId: string, transactionId: string) {
     const transaction = await db.transactions.get(transactionId);
     if (transaction) {
       await db.transactions.update(transactionId, { isDeleted: true });
-    }
-    if (navigator.onLine) {
-      const res = await OnlineDB.deleteTransaction(transactionId);
-      if (res.success) return;
     }
     await db.syncQueue.add({
       tenantId,
@@ -221,23 +205,35 @@ export class OfflineSync {
       data: { id: transactionId },
       timestamp: Date.now()
     });
+    if (navigator.onLine) this.processQueue();
   }
 
-  static async saveUser(tenantId: string, user: User) {
+  static async saveUser(tenantId: string, user: User, storeName: string) {
     await db.users.put({ ...user, tenantId });
-    // Users are currently managed mostly online, but we keep them local for switching
+    await db.syncQueue.add({
+      tenantId,
+      type: 'users',
+      action: 'upsert',
+      data: { ...user, store_name: storeName },
+      timestamp: Date.now()
+    });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async deleteUser(tenantId: string, userId: string) {
     await db.users.delete(userId);
+    await db.syncQueue.add({
+      tenantId,
+      type: 'users',
+      action: 'delete',
+      data: { id: userId },
+      timestamp: Date.now()
+    });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async saveSettings(tenantId: string, settings: AppSettings) {
     await db.settings.put({ ...settings, tenantId });
-    if (navigator.onLine) {
-      const res = await OnlineDB.syncPush(tenantId, 'settings', settings);
-      if (res.success) return;
-    }
     await db.syncQueue.add({
       tenantId,
       type: 'settings',
@@ -245,6 +241,7 @@ export class OfflineSync {
       data: settings,
       timestamp: Date.now()
     });
+    if (navigator.onLine) this.processQueue();
   }
 
   static async pullAllData(tenantId: string) {

@@ -192,11 +192,21 @@ const App: React.FC = () => {
   }, []);
 
   const loadData = useCallback(async (tenantId: string) => {
+    setIsInitializing(true);
     try {
-      setIsCloudConnected(navigator.onLine);
+      // 1. Carrega dados locais primeiro para uma inicialização rápida e offline
+      const localData = await OfflineSync.getLocalData(tenantId);
+      const baseSettings = localData.settings ? { ...DEFAULT_SETTINGS, ...localData.settings } : DEFAULT_SETTINGS;
+      baseSettings.users = localData.users || [];
+      setSettings(baseSettings);
+      setOrders(localData.orders || []);
+      setProducts(localData.products || []);
+      setSales(localData.sales || []);
+      setTransactions(localData.transactions || []);
       
-      // Tenta puxar dados novos se estiver online
+      // 2. Se estiver online, busca dados da nuvem em segundo plano
       if (navigator.onLine) {
+        setIsCloudConnected(true);
         const cloudData = await OfflineSync.pullAllData(tenantId);
         if (cloudData) {
           const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
@@ -209,32 +219,17 @@ const App: React.FC = () => {
           setProducts(cloudData.products || []);
           setSales(cloudData.sales || []);
           setTransactions(cloudData.transactions || []);
-          return;
         }
+      } else {
+        setIsCloudConnected(false);
       }
-
-      // Se offline ou falha no pull, carrega local
-      const localData = await OfflineSync.getLocalData(tenantId);
-      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
-      finalSettings.users = localData.users || [];
-      setSettings(finalSettings);
-      setOrders(localData.orders || []);
-      setProducts(localData.products || []);
-      setSales(localData.sales || []);
-      setTransactions(localData.transactions || []);
     } catch (e) {
       console.error("Erro ao carregar dados:", e);
-      setIsCloudConnected(false);
-      const localData = await OfflineSync.getLocalData(tenantId);
-      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
-      finalSettings.users = localData.users || [];
-      setSettings(finalSettings);
-      setOrders(localData.orders || []);
-      setProducts(localData.products || []);
-      setSales(localData.sales || []);
-      setTransactions(localData.transactions || []);
+      setIsCloudConnected(false); // Garante que o status offline seja exibido em caso de erro
+    } finally {
+      setIsInitializing(false);
     }
-  }, []);
+  }, [session?.printerSize]);
 
   useEffect(() => {
     if (session?.isLoggedIn && session.tenantId) {
@@ -344,13 +339,9 @@ const App: React.FC = () => {
   const saveOrders = async (newOrders: ServiceOrder[]) => {
     setOrders(newOrders);
     if (session?.tenantId) {
-      // Identifica o que mudou para salvar individualmente no OfflineSync
-      // Para simplificar, vamos salvar a lista toda localmente e tentar sincronizar
-      // Mas o ideal é salvar apenas o item novo/editado.
-      // Como o app usa o padrão de passar a lista toda, vamos iterar ou salvar a lista.
-      // Ajuste: OfflineSync.saveOrder agora suporta salvar o estado atual.
-      for (const order of newOrders) {
-        await OfflineSync.saveOrder(session.tenantId, order);
+      const lastOrder = newOrders[newOrders.length - 1];
+      if(lastOrder) {
+        await OfflineSync.saveOrder(session.tenantId, lastOrder);
       }
     }
   };
@@ -366,8 +357,9 @@ const App: React.FC = () => {
   const saveProducts = async (newProducts: Product[]) => {
     setProducts(newProducts);
     if (session?.tenantId) {
-      for (const product of newProducts) {
-        await OfflineSync.saveProduct(session.tenantId, product);
+      const lastProduct = newProducts[newProducts.length - 1];
+      if(lastProduct) {
+        await OfflineSync.saveProduct(session.tenantId, lastProduct);
       }
     }
   };
@@ -383,8 +375,9 @@ const App: React.FC = () => {
   const saveSales = async (newSales: Sale[]) => {
     setSales(newSales);
     if (session?.tenantId) {
-      for (const sale of newSales) {
-        await OfflineSync.saveSale(session.tenantId, sale);
+      const lastSale = newSales[newSales.length - 1];
+      if(lastSale) {
+        await OfflineSync.saveSale(session.tenantId, lastSale);
       }
     }
   };
@@ -410,8 +403,9 @@ const App: React.FC = () => {
   const saveTransactions = async (newTransactions: Transaction[]) => {
     setTransactions(newTransactions);
     if (session?.tenantId) {
-      for (const transaction of newTransactions) {
-        await OfflineSync.saveTransaction(session.tenantId, transaction);
+      const lastTransaction = newTransactions[newTransactions.length - 1];
+      if(lastTransaction) {
+        await OfflineSync.saveTransaction(session.tenantId, lastTransaction);
       }
     }
   };

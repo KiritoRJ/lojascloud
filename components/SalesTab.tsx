@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { Product, Sale, AppSettings, User } from '../types';
@@ -57,9 +58,16 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
 
   const handleDownloadReceipt = () => {
-    const element = document.getElementById('receipt-content');
+    const element = document.getElementById('receipt-pdf-container');
     if (element) {
-      html2pdf().from(element).save(`cupom_${lastTransactionId}.pdf`);
+      const opt = {
+        margin: 0,
+        filename: `cupom_${lastTransactionId}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 3, useCORS: true },
+        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+      };
+      html2pdf().set(opt).from(element).save();
     }
   };
 
@@ -658,11 +666,121 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
             {/* CONTEÚDO DO RECIBO (OCULTO NA TELA, MAS USADO PARA IMPRESSÃO/PDF) */}
             <div style={{ position: 'absolute', left: '-9999px', top: '0' }}>
+              <div id="receipt-pdf-container" style={{ width: '210mm', minHeight: '297mm', display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: 'white', padding: '20mm 0' }}>
+                <div 
+                  id="receipt-content" 
+                  style={{ 
+                    width: '80mm', 
+                    padding: '8mm', 
+                    backgroundColor: 'white', 
+                    color: 'black', 
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                    lineHeight: '1.4',
+                    border: '1px solid #eee'
+                  }}
+                >
+                  <div style={{ textAlign: 'center', marginBottom: '6mm' }}>
+                    <p style={{ fontWeight: 'bold', fontSize: '16px', textTransform: 'uppercase', margin: '0 0 2mm 0' }}>{settings.storeName}</p>
+                    <p style={{ margin: '2px 0', fontSize: '10px' }}>{settings.storeAddress}</p>
+                    <p style={{ margin: '2px 0', fontSize: '10px' }}>{settings.storePhone}</p>
+                    <div style={{ margin: '4mm 0', borderTop: '1px solid black', borderBottom: '1px solid black', padding: '1mm 0' }}>
+                      <p style={{ fontWeight: 'bold', margin: '0', fontSize: '12px' }}>CUPOM DE VENDA</p>
+                      <p style={{ margin: '0', fontSize: '9px' }}>NÃO É DOCUMENTO FISCAL</p>
+                    </div>
+                  </div>
+                  
+                  <div style={{ marginBottom: '4mm', fontSize: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>PEDIDO:</span>
+                      <span style={{ fontWeight: 'bold' }}>#{lastTransactionId}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>DATA:</span>
+                      <span>{formatDateTime(lastSaleDate)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>VENDEDOR:</span>
+                      <span>{currentUser?.name?.toUpperCase() || 'SISTEMA'}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px dashed black', borderBottom: '1px dashed black', padding: '3mm 0', marginBottom: '4mm' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '2mm', fontSize: '10px' }}>
+                      <span>DESCRIÇÃO</span>
+                      <span>TOTAL</span>
+                    </div>
+                    {lastTransactionItems.map((item, index) => (
+                      <div key={index} style={{ marginBottom: '2mm' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ textTransform: 'uppercase' }}>{item.product.name}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#666' }}>
+                          <span>{item.quantity} UN x {formatCurrency(item.product.salePrice)}</span>
+                          <span style={{ color: '#000' }}>{formatCurrency(item.product.salePrice * item.quantity)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginBottom: '4mm' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1mm' }}>
+                      <span>SUBTOTAL:</span>
+                      <span>{formatCurrency(lastTransactionItems.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0))}</span>
+                    </div>
+                    {totalDiscount > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1mm', color: '#d32f2f' }}>
+                        <span>DESCONTO:</span>
+                        <span>-{formatCurrency(totalDiscount)}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', marginTop: '2mm', borderTop: '1px solid black', paddingTop: '2mm' }}>
+                      <span>TOTAL:</span>
+                      <span>{formatCurrency(lastSaleAmount)}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px dashed black', paddingTop: '3mm', marginBottom: '6mm' }}>
+                    <p style={{ fontWeight: 'bold', marginBottom: '2mm', fontSize: '10px' }}>FORMA DE PAGAMENTO:</p>
+                    {lastPaymentEntries.map((entry, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1mm' }}>
+                        <span>
+                          {entry.method.toUpperCase()}
+                          {entry.method === 'Cartão' && entry.installments && entry.installments > 1 
+                            ? ` (${entry.installments}x de ${formatCurrency(entry.amount / entry.installments)})` 
+                            : ''}
+                        </span>
+                        <span>{formatCurrency(entry.amount)}</span>
+                      </div>
+                    ))}
+                    {lastChange > 0 && (
+                      <div style={{ marginTop: '2mm', borderTop: '1px dotted #ccc', paddingTop: '2mm' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                          <span>VALOR RECEBIDO:</span>
+                          <span>{formatCurrency(lastPaymentEntries.reduce((acc, curr) => acc + curr.amount, 0))}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12px' }}>
+                          <span>TROCO:</span>
+                          <span>{formatCurrency(lastChange)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ textAlign: 'center', fontSize: '10px', marginTop: '4mm' }}>
+                    <p style={{ margin: '0', fontWeight: 'bold' }}>OBRIGADO PELA PREFERÊNCIA!</p>
+                    <p style={{ margin: '2px 0' }}>VOLTE SEMPRE!</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* PORTAL PARA IMPRESSÃO DIRETA */}
+            {document.getElementById('print-section') && createPortal(
               <div 
-                id="receipt-content" 
                 style={{ 
                   width: '58mm', 
-                  padding: '5mm', 
+                  padding: '2mm', 
                   backgroundColor: 'white', 
                   color: 'black', 
                   fontFamily: 'monospace',
@@ -670,24 +788,29 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                   lineHeight: '1.2'
                 }}
               >
-                <div style={{ textAlign: 'center', marginBottom: '5mm', borderBottom: '1px dashed black', paddingBottom: '2mm' }}>
+                <div style={{ textAlign: 'center', marginBottom: '4mm' }}>
                   <p style={{ fontWeight: 'bold', fontSize: '12px', textTransform: 'uppercase', margin: '0' }}>{settings.storeName}</p>
-                  <p style={{ margin: '2px 0' }}>{settings.storeAddress}</p>
-                  <p style={{ margin: '2px 0' }}>{settings.storePhone}</p>
+                  <p style={{ margin: '1px 0' }}>{settings.storeAddress}</p>
+                  <p style={{ margin: '1px 0' }}>{settings.storePhone}</p>
+                  <p style={{ fontWeight: 'bold', margin: '2mm 0 0 0', borderTop: '1px solid black', borderBottom: '1px solid black' }}>CUPOM DE VENDA</p>
                 </div>
                 
                 <div style={{ marginBottom: '3mm' }}>
-                  <p style={{ margin: '2px 0' }}>ID: {lastTransactionId}</p>
-                  <p style={{ margin: '2px 0' }}>DATA: {formatDateTime(lastSaleDate)}</p>
-                  <p style={{ margin: '2px 0' }}>VEND: {currentUser?.name || 'Sistema'}</p>
+                  <p style={{ margin: '1px 0' }}>ID: #{lastTransactionId}</p>
+                  <p style={{ margin: '1px 0' }}>DATA: {formatDateTime(lastSaleDate)}</p>
+                  <p style={{ margin: '1px 0' }}>VEND: {currentUser?.name?.toUpperCase() || 'SISTEMA'}</p>
                 </div>
 
                 <div style={{ borderTop: '1px dashed black', borderBottom: '1px dashed black', padding: '2mm 0', marginBottom: '3mm' }}>
-                  <p style={{ fontWeight: 'bold', marginBottom: '2mm' }}>ITENS:</p>
                   {lastTransactionItems.map((item, index) => (
-                    <div key={index} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1mm' }}>
-                      <span>{item.quantity}x {item.product.name.substring(0, 15)}</span>
-                      <span>{formatCurrency(item.product.salePrice * item.quantity)}</span>
+                    <div key={index} style={{ marginBottom: '1mm' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{item.product.name.substring(0, 20)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
+                        <span>{item.quantity}x {formatCurrency(item.product.salePrice)}</span>
+                        <span>{formatCurrency(item.product.salePrice * item.quantity)}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -703,21 +826,18 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                       <span>-{formatCurrency(totalDiscount)}</span>
                     </div>
                   )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12px', marginTop: '1mm' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginTop: '1mm' }}>
                     <span>TOTAL:</span>
                     <span>{formatCurrency(lastSaleAmount)}</span>
                   </div>
                 </div>
 
-                <div style={{ borderTop: '1px dashed black', paddingTop: '2mm', marginBottom: '5mm' }}>
-                  <p style={{ fontWeight: 'bold' }}>PAGAMENTO:</p>
+                <div style={{ borderTop: '1px dashed black', paddingTop: '2mm', marginBottom: '4mm' }}>
                   {lastPaymentEntries.map((entry, idx) => (
                     <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>
                         {entry.method.toUpperCase()}
-                        {entry.method === 'Cartão' && entry.installments && entry.installments > 1 
-                          ? ` (${entry.installments}x de ${formatCurrency(entry.amount / entry.installments)})` 
-                          : ''}:
+                        {entry.method === 'Cartão' && entry.installments && entry.installments > 1 ? ` (${entry.installments}X)` : ''}
                       </span>
                       <span>{formatCurrency(entry.amount)}</span>
                     </div>
@@ -736,12 +856,12 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                   )}
                 </div>
 
-                <div style={{ textAlign: 'center', fontSize: '8px' }}>
-                  <p>Obrigado pela preferência!</p>
-                  <p>Volte Sempre!</p>
+                <div style={{ textAlign: 'center', fontSize: '9px' }}>
+                  <p>OBRIGADO PELA PREFERÊNCIA!</p>
                 </div>
-              </div>
-            </div>
+              </div>,
+              document.getElementById('print-section')!
+            )}
           </div>
         </div>
       )}

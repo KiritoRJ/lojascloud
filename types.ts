@@ -24,6 +24,7 @@ export interface Tenant {
   maxOS?: number;
   maxProducts?: number;
   printerSize?: 58 | 80;
+  retentionMonths?: number;
 }
 
 export interface User {
@@ -113,6 +114,7 @@ export interface AppSettings {
   pdfFontFamily: 'helvetica' | 'courier' | 'times';
   pdfPaperWidth: number;
   printerSize?: 58 | 80;
+  retentionMonths?: number;
   pdfTextColor: string;
   pdfBgColor: string;
   receiptHeaderSubtitle?: string;

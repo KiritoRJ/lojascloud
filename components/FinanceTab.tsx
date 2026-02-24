@@ -53,13 +53,14 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
   const [startDate, setStartDate] = useState<Date | null>(subMonths(new Date(), 1));
   const [endDate, setEndDate] = useState<Date | null>(new Date());
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [isCancellationReportModalOpen, setIsCancellationReportModalOpen] = useState(false);
 
-  // Limpeza automática ao carregar (Remove dados com mais de 3 meses)
+  // Limpeza automática ao carregar (Remove dados com mais de X meses, conforme config da loja)
   useEffect(() => {
-    if (tenantId) {
-      OnlineDB.cleanupOldData(tenantId);
+    if (tenantId && settings.retentionMonths) {
+      OnlineDB.cleanupOldData(tenantId, settings.retentionMonths);
     }
-  }, [tenantId]);
+  }, [tenantId, settings.retentionMonths]);
 
   // Filtros para o Dashboard (Apenas não deletados)
   const activeOrders = useMemo(() => orders.filter(o => !o.isDeleted), [orders]);
@@ -107,17 +108,17 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
     (s.productName && s.productName.toLowerCase().includes(saleSearch.toLowerCase()))
   );
 
-  const handleGenerateReport = async () => {
+  const handleGenerateReport = async (onlyCanceled = false) => {
     setIsGeneratingReport(true);
     try {
       const doc = new jsPDF({
         unit: 'mm',
-        format: [58, 600] // Formato térmico 58mm (aumentado para caber mais dados)
+        format: [settings.printerSize === 80 ? 80 : 58, 600] // Formato térmico dinâmico
       });
 
       const margin = 2;
       let y = 10;
-      const pageWidth = 58;
+      const pageWidth = settings.printerSize === 80 ? 80 : 58;
 
       const userFilter = selectedReportUser === 'all' ? null : selectedReportUser;
 
@@ -144,7 +145,7 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
       y += 5;
       doc.setFontSize(7);
       doc.setFont('helvetica', 'normal');
-      doc.text('RELATORIO FINANCEIRO DETALHADO', pageWidth / 2, y, { align: 'center' });
+      doc.text(onlyCanceled ? 'RELATORIO DE CANCELAMENTOS' : 'RELATORIO FINANCEIRO DETALHADO', pageWidth / 2, y, { align: 'center' });
       y += 4;
       doc.text(`PERIODO: ${formatDate(reportStartDate.toISOString())} a ${formatDate(reportEndDate.toISOString())}`, pageWidth / 2, y, { align: 'center' });
       y += 4;
@@ -152,11 +153,34 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
       y += 6;
       doc.line(margin, y - 1, pageWidth - margin, y - 1);
       y += 4;
+
+      // Resumo de Quantidades
+      const totalSalesDone = sales.filter(s => !s.isDeleted && isWithinPeriod(s.date)).length;
+      const totalOSPending = orders.filter(o => !o.isDeleted && o.status === 'Pendente' && isWithinPeriod(o.date)).length;
+      const totalOSCompleted = orders.filter(o => !o.isDeleted && o.status === 'Concluído' && isWithinPeriod(o.date)).length;
+      const totalOSDelivered = orders.filter(o => !o.isDeleted && o.status === 'Entregue' && isWithinPeriod(o.date)).length;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.text('RESUMO DE OPERAÇÕES', pageWidth / 2, y, { align: 'center' });
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6);
+      doc.text(`Vendas Efetivadas: ${totalSalesDone}`, margin, y);
+      y += 4;
+      doc.text(`O.S. Pendentes: ${totalOSPending}`, margin, y);
+      y += 4;
+      doc.text(`O.S. Concluídas: ${totalOSCompleted}`, margin, y);
+      y += 4;
+      doc.text(`O.S. Entregues: ${totalOSDelivered}`, margin, y);
+      y += 5;
+      doc.line(margin, y - 1, pageWidth - margin, y - 1);
+      y += 4;
       
-      // Filtros de dados para o relatório (INCLUINDO DELETADOS)
-      const reportSales = sales.filter(s => (!userFilter || s.sellerName === userFilter) && isWithinPeriod(s.date));
-      const reportOrders = orders.filter(o => isWithinPeriod(o.date)); 
-      const reportTransactions = transactions.filter(t => isWithinPeriod(t.date));
+      // Filtros de dados para o relatório
+      const reportSales = sales.filter(s => (!userFilter || s.sellerName === userFilter) && isWithinPeriod(s.date) && (onlyCanceled ? s.isDeleted : !s.isDeleted));
+      const reportOrders = orders.filter(o => isWithinPeriod(o.date) && (onlyCanceled ? o.isDeleted : !o.isDeleted)); 
+      const reportTransactions = transactions.filter(t => isWithinPeriod(t.date) && (onlyCanceled ? t.isDeleted : !t.isDeleted));
 
       // Seção de Lançamentos Manuais
       const selectedUserObj = settings.users.find(u => u.name === selectedReportUser);
@@ -255,63 +279,66 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
       });
 
       y += 4;
-      // Totais do Relatório
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.text('RESUMO FINANCEIRO', pageWidth / 2, y, { align: 'center' });
-      y += 5;
       
-      const totalSales = reportSales.filter(s => !s.isDeleted).reduce((a, b) => a + b.finalPrice, 0);
-      const totalSalesCost = reportSales.filter(s => !s.isDeleted).reduce((a, b) => a + (b.costAtSale * b.quantity), 0);
-      
-      const totalOS = reportOrders.filter(o => !o.isDeleted && o.status === 'Entregue').reduce((a, b) => a + b.total, 0);
-      const totalOSCost = reportOrders.filter(o => !o.isDeleted && o.status === 'Entregue').reduce((a, b) => a + b.partsCost, 0);
-      
-      const totalManualIn = reportTransactions.filter(t => !t.isDeleted && t.type === 'entrada').reduce((a, b) => a + b.amount, 0);
-      const totalManualOut = reportTransactions.filter(t => !t.isDeleted && t.type === 'saida').reduce((a, b) => a + b.amount, 0);
+      if (!onlyCanceled) {
+        // Totais do Relatório
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text('RESUMO FINANCEIRO', pageWidth / 2, y, { align: 'center' });
+        y += 5;
+        
+        const totalSales = reportSales.filter(s => !s.isDeleted).reduce((a, b) => a + b.finalPrice, 0);
+        const totalSalesCost = reportSales.filter(s => !s.isDeleted).reduce((a, b) => a + (b.costAtSale * b.quantity), 0);
+        
+        const totalOS = reportOrders.filter(o => !o.isDeleted && o.status === 'Entregue').reduce((a, b) => a + b.total, 0);
+        const totalOSCost = reportOrders.filter(o => !o.isDeleted && o.status === 'Entregue').reduce((a, b) => a + b.partsCost, 0);
+        
+        const totalManualIn = reportTransactions.filter(t => !t.isDeleted && t.type === 'entrada').reduce((a, b) => a + b.amount, 0);
+        const totalManualOut = reportTransactions.filter(t => !t.isDeleted && t.type === 'saida').reduce((a, b) => a + b.amount, 0);
 
-      const totalRevenue = totalSales + totalOS + totalManualIn;
-      const totalCosts = totalSalesCost + totalOSCost + totalManualOut;
-      const netProfit = totalRevenue - totalCosts;
+        const totalRevenue = totalSales + totalOS + totalManualIn;
+        const totalCosts = totalSalesCost + totalOSCost + totalManualOut;
+        const netProfit = totalRevenue - totalCosts;
 
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'normal');
-      doc.text('VENDAS OK:', margin, y);
-      doc.text(formatCurrency(totalSales), pageWidth - margin, y, { align: 'right' });
-      y += 4;
-      doc.text('O.S. ENTREGUES:', margin, y);
-      doc.text(formatCurrency(totalOS), pageWidth - margin, y, { align: 'right' });
-      y += 4;
-      doc.text('ENTRADAS MANUAIS:', margin, y);
-      doc.text(formatCurrency(totalManualIn), pageWidth - margin, y, { align: 'right' });
-      y += 4;
-      doc.line(margin, y - 1, pageWidth - margin, y - 1);
-      y += 4;
-      doc.setFont('helvetica', 'bold');
-      doc.text('TOTAL RECEITA:', margin, y);
-      doc.text(formatCurrency(totalRevenue), pageWidth - margin, y, { align: 'right' });
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.text('CUSTOS TOTAIS:', margin, y);
-      doc.text(formatCurrency(totalCosts), pageWidth - margin, y, { align: 'right' });
-      y += 5;
-      doc.setFont('helvetica', 'bold');
-      doc.text('LUCRO LIQUIDO:', margin, y);
-      doc.text(formatCurrency(netProfit), pageWidth - margin, y, { align: 'right' });
-      y += 8;
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text('VENDAS OK:', margin, y);
+        doc.text(formatCurrency(totalSales), pageWidth - margin, y, { align: 'right' });
+        y += 4;
+        doc.text('O.S. ENTREGUES:', margin, y);
+        doc.text(formatCurrency(totalOS), pageWidth - margin, y, { align: 'right' });
+        y += 4;
+        doc.text('ENTRADAS MANUAIS:', margin, y);
+        doc.text(formatCurrency(totalManualIn), pageWidth - margin, y, { align: 'right' });
+        y += 4;
+        doc.line(margin, y - 1, pageWidth - margin, y - 1);
+        y += 4;
+        doc.setFont('helvetica', 'bold');
+        doc.text('TOTAL RECEITA:', margin, y);
+        doc.text(formatCurrency(totalRevenue), pageWidth - margin, y, { align: 'right' });
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.text('CUSTOS TOTAIS:', margin, y);
+        doc.text(formatCurrency(totalCosts), pageWidth - margin, y, { align: 'right' });
+        y += 5;
+        doc.setFont('helvetica', 'bold');
+        doc.text('LUCRO LIQUIDO:', margin, y);
+        doc.text(formatCurrency(netProfit), pageWidth - margin, y, { align: 'right' });
+        y += 8;
+      }
       
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6);
-      const canceledSalesCount = reportSales.filter(s => s.isDeleted).length;
-      const canceledOSCount = reportOrders.filter(o => o.isDeleted).length;
-      doc.text(`CANCELAMENTOS: ${canceledSalesCount} VENDAS / ${canceledOSCount} O.S.`, pageWidth / 2, y, { align: 'center' });
+      const canceledSalesCount = sales.filter(s => s.isDeleted && isWithinPeriod(s.date)).length;
+      const canceledOSCount = orders.filter(o => o.isDeleted && isWithinPeriod(o.date)).length;
+      doc.text(`CANCELAMENTOS NO PERIODO: ${canceledSalesCount} VENDAS / ${canceledOSCount} O.S.`, pageWidth / 2, y, { align: 'center' });
       
       y += 10;
       doc.text('--------------------------', pageWidth / 2, y, { align: 'center' });
       y += 4;
       doc.text('FIM DO RELATORIO', pageWidth / 2, y, { align: 'center' });
 
-      doc.save(`Relatorio_${selectedReportUser}_${new Date().getTime()}.pdf`);
+      doc.save(`Relatorio_${onlyCanceled ? 'Cancelados' : selectedReportUser}_${new Date().getTime()}.pdf`);
       setIsReportModalOpen(false);
     } catch (e) {
       console.error(e);
@@ -388,10 +415,14 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
           <h2 className="text-lg font-black text-slate-800 tracking-tighter leading-none uppercase">Financeiro</h2>
           <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">Dashboard de Performance</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
           <button onClick={() => setIsReportModalOpen(true)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg active:scale-95 transition-all">
             <FileText size={12} />
             Relatório
+          </button>
+          <button onClick={() => setIsCancellationReportModalOpen(true)} className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg active:scale-95 transition-all">
+            <Trash2 size={12} />
+            Cancelados
           </button>
           <button onClick={() => setIsTransactionModalOpen(true)} className="bg-slate-900 text-white px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg active:scale-95 transition-all">
             <Plus size={12} />
@@ -595,13 +626,41 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
               <p className="text-[9px] text-slate-400 font-bold text-center uppercase leading-relaxed">
                 Este relatório inclui vendas concluídas, canceladas,<br/>
                 O.S. abertas, fechadas e lançamentos manuais.<br/>
-                <span className="text-blue-600">Otimizado para impressora térmica 58mm.</span>
+                <span className="text-blue-600">Otimizado para impressora térmica {settings.printerSize}mm.</span>
               </p>
             </div>
             <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
               <button onClick={() => setIsReportModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[9px] tracking-widest">Sair</button>
-              <button onClick={handleGenerateReport} disabled={isGeneratingReport} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[9px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
+              <button onClick={() => handleGenerateReport()} disabled={isGeneratingReport} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[9px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
                 {isGeneratingReport ? <Loader2 className="animate-spin" size={16} /> : <><Printer size={16} /> Gerar PDF</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE RELATÓRIO DE CANCELAMENTOS */}
+      {isCancellationReportModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[200] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95">
+            <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+              <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Cancelamentos</h3>
+              <button onClick={() => setIsCancellationReportModalOpen(false)} className="p-2 text-slate-400 bg-slate-50 rounded-full"><X size={16} /></button>
+            </div>
+            <div className="p-8 text-center">
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <AlertCircle size={32} />
+              </div>
+              <h4 className="font-black text-slate-800 uppercase text-sm mb-2">Aviso de Retenção</h4>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                Todos os registros de vendas, O.S. e lançamentos cancelados são mantidos em nuvem por um período de
+                <span className="text-red-600 font-black"> {settings.retentionMonths || 6} MESES </span> 
+                para fins de auditoria. Após este período, são permanentemente excluídos.
+              </p>
+            </div>
+            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+               <button onClick={() => { handleGenerateReport(true); setIsCancellationReportModalOpen(false); }} disabled={isGeneratingReport} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-[9px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
+                {isGeneratingReport ? <Loader2 className="animate-spin" size={16} /> : <><Printer size={16} /> Gerar PDF de Cancelados</>}
               </button>
             </div>
           </div>

@@ -89,14 +89,15 @@ export class OnlineDB {
   }
 
   // Atualiza permissões de recursos e limite de usuários de uma loja
-  static async updateTenantFeatures(tenantId: string, features: any, maxUsers: number, maxOS: number, maxProducts: number, printerSize?: 58 | 80) {
+  static async updateTenantFeatures(tenantId: string, features: any, maxUsers: number, maxOS: number, maxProducts: number, printerSize?: 58 | 80, retentionMonths?: number) {
     try {
       const { error: tenantError } = await supabase
         .from('tenants')
         .update({
           enabled_features: features,
           max_users: maxUsers,
-          printer_size: printerSize
+          printer_size: printerSize,
+          retention_months: retentionMonths
         })
         .eq('id', tenantId);
       if (tenantError) throw tenantError;
@@ -162,7 +163,8 @@ export class OnlineDB {
           maxUsers: tenant?.max_users || 999,
           maxOS: limits?.max_os || 999,
           maxProducts: limits?.max_products || 999,
-          printerSize: tenant?.printer_size || 58
+          printerSize: tenant?.printer_size || 58,
+          retentionMonths: tenant?.retention_months || 6
         } : null 
       };
     } catch (err: any) {
@@ -793,27 +795,39 @@ export class OnlineDB {
     }
   }
 
-  // Limpeza de dados antigos (mais de 3 meses)
-  static async cleanupOldData(tenantId: string) {
+  // Limpeza de dados antigos (baseado no tempo de retenção da loja)
+  static async cleanupOldData(tenantId: string, retentionMonths: number = 6) {
     if (!tenantId) return { success: false };
     try {
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-      const dateLimit = threeMonthsAgo.toISOString();
+      const limitDate = new Date();
+      limitDate.setMonth(limitDate.getMonth() - retentionMonths);
+      const dateLimitStr = limitDate.toISOString();
 
-      // Deletar Ordens de Serviço antigas
-      await supabase.from('service_orders').delete().eq('tenant_id', tenantId).lt('created_at', dateLimit);
-      
-      // Deletar Vendas antigas
-      await supabase.from('sales').delete().eq('tenant_id', tenantId).lt('date', dateLimit);
-      
-      // Deletar Transações antigas
-      await supabase.from('transactions').delete().eq('tenant_id', tenantId).lt('date', dateLimit);
+      // Deleta OS marcadas como excluídas há mais de X meses
+      await supabase
+        .from('service_orders')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('is_deleted', true)
+        .lt('updated_at', dateLimitStr);
+
+      // Deleta vendas marcadas como excluídas há mais de X meses
+      await supabase
+        .from('sales')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('is_deleted', true)
+        .lt('updated_at', dateLimitStr);
+
+      // Deleta transações marcadas como excluídas há mais de X meses
+      await supabase
+        .from('transactions')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('is_deleted', true)
+        .lt('updated_at', dateLimitStr);
 
       return { success: true };
-    } catch (e) {
-      console.error("Erro na limpeza de dados:", e);
-      return { success: false };
-    }
+    } catch (e) { return { success: false }; }
   }
 }

@@ -23,7 +23,7 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
   const [tenantToDelete, setTenantToDelete] = useState<{ id: string, name: string } | null>(null);
   const [tenantToEditSub, setTenantToEditSub] = useState<{ id: string, name: string, expiresAt: string, status: string, planType?: string } | null>(null);
   const [tenantToEditPrices, setTenantToEditPrices] = useState<{ id: string, name: string, monthly?: number, quarterly?: number, yearly?: number } | null>(null);
-  const [tenantToEditFeatures, setTenantToEditFeatures] = useState<{ id: string; name: string; features: any; maxUsers: number; maxOS: number; maxProducts: number; printerSize: 58 | 80; } | null>(null);
+  const [tenantToEditFeatures, setTenantToEditFeatures] = useState<{ id: string; name: string; features: any; maxUsers: number; maxOS: number; maxProducts: number; printerSize: 58 | 80; retentionMonths: number; } | null>(null);
 const [globalPlans, setGlobalPlans] = useState<any>({});
   const [isEditingGlobal, setIsEditingGlobal] = useState(false);
   const [newSubDate, setNewSubDate] = useState('');
@@ -206,7 +206,8 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
       tenantToEditFeatures.maxUsers,
       tenantToEditFeatures.maxOS,
       tenantToEditFeatures.maxProducts,
-      tenantToEditFeatures.printerSize
+      tenantToEditFeatures.printerSize,
+      tenantToEditFeatures.retentionMonths
     );
     if (res.success) {
       setTenantToEditFeatures(null);
@@ -396,7 +397,8 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                         maxUsers: t.max_users || 999,
                         maxOS: t.tenant_limits?.max_os || 999,
                         maxProducts: t.tenant_limits?.max_products || 999,
-                        printerSize: t.printer_size || 58
+                        printerSize: t.printer_size || 58,
+                        retentionMonths: t.retention_months || 6
                       })}
                       className="p-2.5 bg-slate-800 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-white transition-all active:scale-90"
                       title="Permissões"
@@ -696,73 +698,85 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
       )}
 
       {tenantToEditFeatures && (
-        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100">
-            <div className="p-8 text-center space-y-6">
-              <div className="w-20 h-20 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center mx-auto mb-2">
-                <Settings2 size={40} />
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex justify-end backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md h-full flex flex-col shadow-2xl animate-in slide-in-from-right-full duration-300">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="font-black text-slate-800 uppercase text-base">Recursos da Loja</h3>
+                <p className="text-slate-400 text-xs font-bold uppercase">{tenantToEditFeatures.name}</p>
               </div>
-              <div className="space-y-2">
-                <h3 className="font-black text-slate-800 uppercase text-lg">Recursos da Loja</h3>
-                <p className="text-slate-400 text-sm font-bold uppercase leading-tight px-4">Loja: <span className="text-blue-600 font-black">{tenantToEditFeatures.name}</span></p>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 pt-2">
-              <div className="space-y-2 text-left">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Limite de O.S.</label>
-                <input 
-                  type="number" 
-                  value={tenantToEditFeatures.maxOS} 
-                  onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, maxOS: parseInt(e.target.value) || 1 })}
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
-                />
-              </div>
-              <div className="space-y-2 text-left">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Limite de Produtos</label>
-                <input 
-                  type="number" 
-                  value={tenantToEditFeatures.maxProducts} 
-                  onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, maxProducts: parseInt(e.target.value) || 1 })}
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
-                />
-              </div>
+              <button onClick={() => setTenantToEditFeatures(null)} className="p-3 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200 transition-colors">
+                <X size={16} />
+              </button>
             </div>
 
-            <div className="space-y-2 text-left pt-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Tamanho da Impressora</label>
-                <select 
-                  value={tenantToEditFeatures.printerSize} 
-                  onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, printerSize: parseInt(e.target.value) as 58 | 80 })}
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
-                >
-                  <option value={58}>58mm (Padrão)</option>
-                  <option value={80}>80mm (Larga)</option>
-                </select>
-            </div>
-
-            <div className="space-y-3 text-left pt-4">
-                {[
-                  { id: 'osTab', label: 'Aba Ordem de Serviço' },
-                  { id: 'stockTab', label: 'Aba Estoque' },
-                  { id: 'salesTab', label: 'Aba Vendas' },
-                  { id: 'financeTab', label: 'Aba Financeira' },
-                  { id: 'profiles', label: 'Criar Perfis/Usuários' },
-                  { id: 'xmlExportImport', label: 'Exportar/Importar XML' },
-                ].map(feature => (
-                  <label key={feature.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl cursor-pointer hover:bg-slate-100 transition-colors">
-                    <span className="text-xs font-black uppercase tracking-tight text-slate-700">{feature.label}</span>
-                    <input 
-                      type="checkbox" 
-                      checked={tenantToEditFeatures.features[feature.id]} 
-                      onChange={e => setTenantToEditFeatures({
-                        ...tenantToEditFeatures,
-                        features: { ...tenantToEditFeatures.features, [feature.id]: e.target.checked }
-                      })}
-                      className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                  </label>
-                ))}
+            <div className="p-6 space-y-4 overflow-y-auto flex-grow">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2 text-left">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Limite de O.S.</label>
+                  <input 
+                    type="number" 
+                    value={tenantToEditFeatures.maxOS} 
+                    onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, maxOS: parseInt(e.target.value) || 1 })}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                  />
+                </div>
+                <div className="space-y-2 text-left">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Limite de Produtos</label>
+                  <input 
+                    type="number" 
+                    value={tenantToEditFeatures.maxProducts} 
+                    onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, maxProducts: parseInt(e.target.value) || 1 })}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                  />
+                </div>
               </div>
+
+              <div className="space-y-2 text-left">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Tamanho da Impressora</label>
+                  <select 
+                    value={tenantToEditFeatures.printerSize} 
+                    onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, printerSize: parseInt(e.target.value) as 58 | 80 })}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                  >
+                    <option value={58}>58mm (Padrão)</option>
+                    <option value={80}>80mm (Larga)</option>
+                  </select>
+              </div>
+
+              <div className="space-y-2 text-left">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Retenção de Dados (Meses)</label>
+                  <input 
+                    type="number" 
+                    value={tenantToEditFeatures.retentionMonths} 
+                    onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, retentionMonths: parseInt(e.target.value) || 6 })}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                  />
+              </div>
+
+              <div className="space-y-3 text-left pt-2">
+                  {[
+                    { id: 'osTab', label: 'Aba Ordem de Serviço' },
+                    { id: 'stockTab', label: 'Aba Estoque' },
+                    { id: 'salesTab', label: 'Aba Vendas' },
+                    { id: 'financeTab', label: 'Aba Financeira' },
+                    { id: 'profiles', label: 'Criar Perfis/Usuários' },
+                    { id: 'xmlExportImport', label: 'Exportar/Importar XML' },
+                  ].map(feature => (
+                    <label key={feature.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl cursor-pointer hover:bg-slate-100 transition-colors">
+                      <span className="text-xs font-black uppercase tracking-tight text-slate-700">{feature.label}</span>
+                      <input 
+                        type="checkbox" 
+                        checked={!!tenantToEditFeatures.features[feature.id]} 
+                        onChange={e => setTenantToEditFeatures({
+                          ...tenantToEditFeatures,
+                          features: { ...tenantToEditFeatures.features, [feature.id]: e.target.checked }
+                        })}
+                        className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </label>
+                  ))}
+                </div>
 
               <div className="space-y-2 text-left pt-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Limite de Usuários Ativos</label>
@@ -773,23 +787,20 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                     onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: parseInt(e.target.value) || 1 })}
                     className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
                   />
-                  <div className="grid grid-cols-3 gap-2">
-                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 2, maxOS: 50, maxProducts: 50 })} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Start</button>
-                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 5, maxOS: 200, maxProducts: 200 })} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Pro</button>
-                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 999, maxOS: 999, maxProducts: 999 })} className="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[8px] font-black uppercase">Ilimitado</button>
                 </div>
+                <div className="grid grid-cols-3 gap-2 pt-2">
+                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 2, maxOS: 50, maxProducts: 50 })} className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Start</button>
+                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 5, maxOS: 200, maxProducts: 200 })} className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Pro</button>
+                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 999, maxOS: 999, maxProducts: 999 })} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-[8px] font-black uppercase">Ilimitado</button>
                 </div>
-                <p className="text-[8px] text-slate-400 ml-4">No Plano Start o limite é 2 (Admin + 1 Funcionário)</p>
+                <p className="text-[8px] text-slate-400 ml-4 pt-1">No Plano Start o limite é 2 (Admin + 1 Funcionário)</p>
               </div>
+            </div>
 
-              <div className="flex flex-col gap-3 pt-4">
-                <button onClick={handleUpdateFeatures} disabled={isSaving} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3">
-                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Permissões'}
-                </button>
-                <button onClick={() => setTenantToEditFeatures(null)} disabled={isSaving} className="w-full py-5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">
-                  Cancelar
-                </button>
-              </div>
+            <div className="p-6 border-t border-slate-100 bg-white shrink-0">
+              <button onClick={handleUpdateFeatures} disabled={isSaving} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3">
+                {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Permissões'}
+              </button>
             </div>
           </div>
         </div>

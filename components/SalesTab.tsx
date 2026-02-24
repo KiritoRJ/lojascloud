@@ -3,6 +3,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
+import html2canvas from 'html2canvas';
 import { Product, Sale, AppSettings, User } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate, formatDateTime } from '../utils';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -68,6 +69,48 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
         jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
       };
       html2pdf().set(opt).from(element).save();
+    }
+  };
+
+  const handleShareWhatsApp = async () => {
+    const element = document.getElementById('receipt-content');
+    if (!element) return;
+
+    try {
+      setIsGeneratingReceipt(true);
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff'
+      });
+      
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.8));
+      
+      if (blob) {
+        const file = new File([blob], `cupom_${lastTransactionId}.webp`, { type: 'image/webp' });
+        
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'Cupom de Venda',
+            text: `Cupom da venda #${lastTransactionId}`
+          });
+        } else {
+          // Fallback: download and instructions
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `cupom_${lastTransactionId}.webp`;
+          a.click();
+          URL.revokeObjectURL(url);
+          alert('O cupom foi baixado em formato WebP. Agora você pode compartilhá-lo manualmente no WhatsApp.');
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao gerar imagem para WhatsApp:', error);
+      alert('Erro ao gerar o cupom para compartilhamento.');
+    } finally {
+      setIsGeneratingReceipt(false);
     }
   };
 
@@ -656,7 +699,10 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             
             <div className="flex flex-col gap-3">
               <button onClick={handleDownloadReceipt} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
-                <Download size={18} /> Baixar Cupom (58mm)
+                <Download size={18} /> Baixar Cupom
+              </button>
+              <button onClick={handleShareWhatsApp} disabled={isGeneratingReceipt} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                {isGeneratingReceipt ? <Loader2 size={18} className="animate-spin" /> : <Share2 size={18} />} Compartilhar WhatsApp
               </button>
               <button onClick={() => window.print()} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
                 <Printer size={18} /> Imprimir Direto
@@ -670,12 +716,12 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                 <div 
                   id="receipt-content" 
                   style={{ 
-                    width: '80mm', 
-                    padding: '8mm', 
+                    width: settings.printerSize === 80 ? '80mm' : '58mm', 
+                    padding: settings.printerSize === 80 ? '8mm' : '4mm', 
                     backgroundColor: 'white', 
                     color: 'black', 
                     fontFamily: 'monospace',
-                    fontSize: '11px',
+                    fontSize: settings.printerSize === 80 ? '11px' : '10px',
                     lineHeight: '1.4',
                     border: '1px solid #eee'
                   }}
@@ -779,12 +825,12 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             {document.getElementById('print-section') && createPortal(
               <div 
                 style={{ 
-                  width: '58mm', 
-                  padding: '2mm', 
+                  width: settings.printerSize === 80 ? '80mm' : '58mm', 
+                  padding: settings.printerSize === 80 ? '4mm' : '2mm', 
                   backgroundColor: 'white', 
                   color: 'black', 
                   fontFamily: 'monospace',
-                  fontSize: '10px',
+                  fontSize: settings.printerSize === 80 ? '11px' : '10px',
                   lineHeight: '1.2'
                 }}
               >

@@ -30,6 +30,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   pdfFontSize: 8,
   pdfFontFamily: 'helvetica',
   pdfPaperWidth: 80,
+  printerSize: 58,
   pdfTextColor: '#000000',
   pdfBgColor: '#FFFFFF',
   itemsPerPage: 8
@@ -57,6 +58,7 @@ const App: React.FC = () => {
     maxUsers?: number;
     maxOS?: number;
     maxProducts?: number;
+    printerSize?: 58 | 80;
   } | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
@@ -175,7 +177,8 @@ const App: React.FC = () => {
               enabledFeatures: parsed.enabledFeatures,
               maxUsers: parsed.maxUsers,
               maxOS: parsed.maxOS,
-              maxProducts: parsed.maxProducts
+              maxProducts: parsed.maxProducts,
+              printerSize: parsed.printerSize
             });
           }
         }
@@ -197,6 +200,9 @@ const App: React.FC = () => {
         const cloudData = await OfflineSync.pullAllData(tenantId);
         if (cloudData) {
           const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
+          if (session?.printerSize) {
+            finalSettings.printerSize = session.printerSize;
+          }
           finalSettings.users = cloudData.users || [];
           setSettings(finalSettings);
           setOrders(cloudData.orders || []);
@@ -264,7 +270,8 @@ const App: React.FC = () => {
               enabledFeatures: result.tenant?.enabledFeatures,
               maxUsers: result.tenant?.maxUsers,
               maxOS: result.tenant?.maxOS,
-              maxProducts: result.tenant?.maxProducts
+              maxProducts: result.tenant?.maxProducts,
+              printerSize: result.tenant?.printerSize
             };
           const finalUser = { 
             id: result.tenant?.id || 'temp', 

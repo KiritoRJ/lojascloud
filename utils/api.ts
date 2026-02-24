@@ -89,13 +89,14 @@ export class OnlineDB {
   }
 
   // Atualiza permissões de recursos e limite de usuários de uma loja
-  static async updateTenantFeatures(tenantId: string, features: any, maxUsers: number, maxOS: number, maxProducts: number) {
+  static async updateTenantFeatures(tenantId: string, features: any, maxUsers: number, maxOS: number, maxProducts: number, printerSize?: 58 | 80) {
     try {
       const { error: tenantError } = await supabase
         .from('tenants')
         .update({
           enabled_features: features,
-          max_users: maxUsers
+          max_users: maxUsers,
+          printer_size: printerSize
         })
         .eq('id', tenantId);
       if (tenantError) throw tenantError;
@@ -160,7 +161,8 @@ export class OnlineDB {
           },
           maxUsers: tenant?.max_users || 999,
           maxOS: limits?.max_os || 999,
-          maxProducts: limits?.max_products || 999
+          maxProducts: limits?.max_products || 999,
+          printerSize: tenant?.printer_size || 58
         } : null 
       };
     } catch (err: any) {

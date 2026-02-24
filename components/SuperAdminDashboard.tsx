@@ -23,7 +23,7 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
   const [tenantToDelete, setTenantToDelete] = useState<{ id: string, name: string } | null>(null);
   const [tenantToEditSub, setTenantToEditSub] = useState<{ id: string, name: string, expiresAt: string, status: string, planType?: string } | null>(null);
   const [tenantToEditPrices, setTenantToEditPrices] = useState<{ id: string, name: string, monthly?: number, quarterly?: number, yearly?: number } | null>(null);
-  const [tenantToEditFeatures, setTenantToEditFeatures] = useState<{ id: string; name: string; features: any; maxUsers: number; maxOS: number; maxProducts: number; } | null>(null);
+  const [tenantToEditFeatures, setTenantToEditFeatures] = useState<{ id: string; name: string; features: any; maxUsers: number; maxOS: number; maxProducts: number; printerSize: 58 | 80; } | null>(null);
 const [globalPlans, setGlobalPlans] = useState<any>({});
   const [isEditingGlobal, setIsEditingGlobal] = useState(false);
   const [newSubDate, setNewSubDate] = useState('');
@@ -205,7 +205,8 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
       tenantToEditFeatures.features, 
       tenantToEditFeatures.maxUsers,
       tenantToEditFeatures.maxOS,
-      tenantToEditFeatures.maxProducts
+      tenantToEditFeatures.maxProducts,
+      tenantToEditFeatures.printerSize
     );
     if (res.success) {
       setTenantToEditFeatures(null);
@@ -394,7 +395,8 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                         features: t.enabled_features || {},
                         maxUsers: t.max_users || 999,
                         maxOS: t.tenant_limits?.max_os || 999,
-                        maxProducts: t.tenant_limits?.max_products || 999
+                        maxProducts: t.tenant_limits?.max_products || 999,
+                        printerSize: t.printer_size || 58
                       })}
                       className="p-2.5 bg-slate-800 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-white transition-all active:scale-90"
                       title="Permissões"
@@ -724,6 +726,18 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                   className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2 text-left pt-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Tamanho da Impressora</label>
+                <select 
+                  value={tenantToEditFeatures.printerSize} 
+                  onChange={e => setTenantToEditFeatures({ ...tenantToEditFeatures, printerSize: parseInt(e.target.value) as 58 | 80 })}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors text-sm"
+                >
+                  <option value={58}>58mm (Padrão)</option>
+                  <option value={80}>80mm (Larga)</option>
+                </select>
             </div>
 
             <div className="space-y-3 text-left pt-4">

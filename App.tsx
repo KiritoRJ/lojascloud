@@ -74,14 +74,38 @@ const App: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
-    OfflineSync.init();
-    const handleStatusChange = () => setIsOnline(navigator.onLine);
-    window.addEventListener('online', handleStatusChange);
-    window.addEventListener('offline', handleStatusChange);
-    return () => {
-      window.removeEventListener('online', handleStatusChange);
-      window.removeEventListener('offline', handleStatusChange);
+    const checkAndResetDb = async () => {
+      const dbVersionKey = 'db_schema_version';
+      const currentVersion = '10'; // Deve corresponder à versão no localDb.ts
+      const storedVersion = localStorage.getItem(dbVersionKey);
+      console.log(`[DB Check] Stored version: ${storedVersion}, Required: ${currentVersion}`);
+
+      if (storedVersion !== currentVersion) {
+        console.log(`[DB Check] Schema mismatch. Resetting database.`);
+        try {
+          await db.delete();
+          console.log('[DB Check] Database deleted successfully.');
+          localStorage.setItem(dbVersionKey, currentVersion);
+          window.location.reload();
+        } catch (error) {
+          console.error('[DB Check] Failed to delete database:', error);
+        }
+        return; // Impede a continuação da execução para aguardar o reload
+      }
     };
+
+    checkAndResetDb().then(() => {
+        OfflineSync.init();
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
+        
+        const cleanup = () => {
+          window.removeEventListener('online', handleStatusChange);
+          window.removeEventListener('offline', handleStatusChange);
+        };
+        return cleanup;
+    });
   }, []);
 
   useEffect(() => {
@@ -207,19 +231,20 @@ const App: React.FC = () => {
       // 2. Se estiver online, busca dados da nuvem em segundo plano
       if (navigator.onLine) {
         setIsCloudConnected(true);
-        const cloudData = await OfflineSync.pullAllData(tenantId);
-        if (cloudData) {
-          const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
-          if (session?.printerSize) {
-            finalSettings.printerSize = session.printerSize;
-          }
-          finalSettings.users = cloudData.users || [];
-          setSettings(finalSettings);
-          setOrders(cloudData.orders || []);
-          setProducts(cloudData.products || []);
-          setSales(cloudData.sales || []);
-          setTransactions(cloudData.transactions || []);
+        await OfflineSync.syncAndPullAllData(tenantId);
+        
+        // Após a sincronização, recarregue os dados do banco de dados local para garantir que o estado da UI esteja atualizado.
+        const refreshedData = await OfflineSync.getLocalData(tenantId);
+        const finalSettings = { ...DEFAULT_SETTINGS, ...refreshedData.settings };
+        if (session?.printerSize) {
+          finalSettings.printerSize = session.printerSize;
         }
+        finalSettings.users = refreshedData.users || [];
+        setSettings(finalSettings);
+        setOrders(refreshedData.orders || []);
+        setProducts(refreshedData.products || []);
+        setSales(refreshedData.sales || []);
+        setTransactions(refreshedData.transactions || []);
       } else {
         setIsCloudConnected(false);
       }
@@ -339,9 +364,8 @@ const App: React.FC = () => {
   const saveOrders = async (newOrders: ServiceOrder[]) => {
     setOrders(newOrders);
     if (session?.tenantId) {
-      const lastOrder = newOrders[newOrders.length - 1];
-      if(lastOrder) {
-        await OfflineSync.saveOrder(session.tenantId, lastOrder);
+      for (const order of newOrders) {
+        await OfflineSync.saveOrder(session.tenantId, order);
       }
     }
   };
@@ -357,9 +381,8 @@ const App: React.FC = () => {
   const saveProducts = async (newProducts: Product[]) => {
     setProducts(newProducts);
     if (session?.tenantId) {
-      const lastProduct = newProducts[newProducts.length - 1];
-      if(lastProduct) {
-        await OfflineSync.saveProduct(session.tenantId, lastProduct);
+      for (const product of newProducts) {
+        await OfflineSync.saveProduct(session.tenantId, product);
       }
     }
   };
@@ -375,9 +398,8 @@ const App: React.FC = () => {
   const saveSales = async (newSales: Sale[]) => {
     setSales(newSales);
     if (session?.tenantId) {
-      const lastSale = newSales[newSales.length - 1];
-      if(lastSale) {
-        await OfflineSync.saveSale(session.tenantId, lastSale);
+      for (const sale of newSales) {
+        await OfflineSync.saveSale(session.tenantId, sale);
       }
     }
   };
@@ -403,9 +425,8 @@ const App: React.FC = () => {
   const saveTransactions = async (newTransactions: Transaction[]) => {
     setTransactions(newTransactions);
     if (session?.tenantId) {
-      const lastTransaction = newTransactions[newTransactions.length - 1];
-      if(lastTransaction) {
-        await OfflineSync.saveTransaction(session.tenantId, lastTransaction);
+      for (const transaction of newTransactions) {
+        await OfflineSync.saveTransaction(session.tenantId, transaction);
       }
     }
   };

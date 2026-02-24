@@ -104,15 +104,22 @@ export class OfflineSync {
   }
 
   static async saveOrder(tenantId: string, order: ServiceOrder) {
-    await db.orders.put({ ...order, tenantId });
-    await db.syncQueue.add({
-      tenantId,
-      type: 'orders',
-      action: 'upsert',
-      data: order,
-      timestamp: Date.now()
-    });
-    if (navigator.onLine) this.processQueue();
+    console.log('[OfflineSync] Attempting to save order to local DB:', order);
+    try {
+      await db.orders.put({ ...order, tenantId });
+      console.log('[OfflineSync] Order saved to local DB successfully.');
+      await db.syncQueue.add({
+        tenantId,
+        type: 'orders',
+        action: 'upsert',
+        data: order,
+        timestamp: Date.now()
+      });
+      console.log('[OfflineSync] Order added to sync queue.');
+      this.processQueue(); // Tenta sincronizar imediatamente
+    } catch (error) {
+      console.error('[OfflineSync] CRITICAL: Error saving order to local DB:', error);
+    }
   }
 
   static async deleteOrder(tenantId: string, orderId: string) {
@@ -127,19 +134,26 @@ export class OfflineSync {
       data: { id: orderId },
       timestamp: Date.now()
     });
-    if (navigator.onLine) this.processQueue();
+    this.processQueue();
   }
 
   static async saveProduct(tenantId: string, product: Product) {
-    await db.products.put({ ...product, tenantId });
-    await db.syncQueue.add({
-      tenantId,
-      type: 'products',
-      action: 'upsert',
-      data: product,
-      timestamp: Date.now()
-    });
-    if (navigator.onLine) this.processQueue();
+    console.log('[OfflineSync] Attempting to save product to local DB:', product);
+    try {
+      await db.products.put({ ...product, tenantId });
+      console.log('[OfflineSync] Product saved to local DB successfully.');
+      await db.syncQueue.add({
+        tenantId,
+        type: 'products',
+        action: 'upsert',
+        data: product,
+        timestamp: Date.now()
+      });
+      console.log('[OfflineSync] Product added to sync queue.');
+      this.processQueue();
+    } catch (error) {
+      console.error('[OfflineSync] CRITICAL: Error saving product to local DB:', error);
+    }
   }
 
   static async deleteProduct(tenantId: string, productId: string) {
@@ -151,7 +165,7 @@ export class OfflineSync {
       data: { id: productId },
       timestamp: Date.now()
     });
-    if (navigator.onLine) this.processQueue();
+    this.processQueue();
   }
 
   static async saveSale(tenantId: string, sale: Sale) {
@@ -163,7 +177,7 @@ export class OfflineSync {
       data: sale,
       timestamp: Date.now()
     });
-    if (navigator.onLine) this.processQueue();
+    this.processQueue();
   }
 
   static async deleteSale(tenantId: string, saleId: string) {
@@ -178,7 +192,7 @@ export class OfflineSync {
       data: { id: saleId },
       timestamp: Date.now()
     });
-    if (navigator.onLine) this.processQueue();
+    this.processQueue();
   }
 
   static async saveTransaction(tenantId: string, transaction: Transaction) {
@@ -190,7 +204,7 @@ export class OfflineSync {
       data: transaction,
       timestamp: Date.now()
     });
-    if (navigator.onLine) this.processQueue();
+    this.processQueue();
   }
 
   static async deleteTransaction(tenantId: string, transactionId: string) {
@@ -205,7 +219,7 @@ export class OfflineSync {
       data: { id: transactionId },
       timestamp: Date.now()
     });
-    if (navigator.onLine) this.processQueue();
+    this.processQueue();
   }
 
   static async saveUser(tenantId: string, user: User, storeName: string) {
@@ -217,7 +231,7 @@ export class OfflineSync {
       data: { ...user, store_name: storeName },
       timestamp: Date.now()
     });
-    if (navigator.onLine) this.processQueue();
+    this.processQueue();
   }
 
   static async deleteUser(tenantId: string, userId: string) {
@@ -229,7 +243,7 @@ export class OfflineSync {
       data: { id: userId },
       timestamp: Date.now()
     });
-    if (navigator.onLine) this.processQueue();
+    this.processQueue();
   }
 
   static async saveSettings(tenantId: string, settings: AppSettings) {
@@ -241,7 +255,15 @@ export class OfflineSync {
       data: settings,
       timestamp: Date.now()
     });
-    if (navigator.onLine) this.processQueue();
+    this.processQueue();
+  }
+
+  static async syncAndPullAllData(tenantId: string) {
+    if (!navigator.onLine) return;
+    console.log('Starting sync and pull...');
+    await this.processQueue();
+    console.log('Queue processed, now pulling data.');
+    await this.pullAllData(tenantId);
   }
 
   static async pullAllData(tenantId: string) {
@@ -258,35 +280,23 @@ export class OfflineSync {
       ]);
 
       if (cloudSettings) await db.settings.put({ ...cloudSettings, tenantId });
-      if (cloudUsers) {
-        await db.users.where('tenantId').equals(tenantId).delete();
+      if (cloudUsers && cloudUsers.length > 0) {
         await db.users.bulkPut(cloudUsers.map((u: any) => ({ ...u, tenantId })));
       }
-      if (cloudOrders) {
-        await db.orders.where('tenantId').equals(tenantId).delete();
+      if (cloudOrders && cloudOrders.length > 0) {
         await db.orders.bulkPut(cloudOrders.map((o: any) => ({ ...o, tenantId })));
       }
-      if (cloudProducts) {
-        await db.products.where('tenantId').equals(tenantId).delete();
+      if (cloudProducts && cloudProducts.length > 0) {
         await db.products.bulkPut(cloudProducts.map((p: any) => ({ ...p, tenantId })));
       }
-      if (cloudSales) {
-        await db.sales.where('tenantId').equals(tenantId).delete();
+      if (cloudSales && cloudSales.length > 0) {
         await db.sales.bulkPut(cloudSales.map((s: any) => ({ ...s, tenantId })));
       }
-      if (cloudTransactions) {
-        await db.transactions.where('tenantId').equals(tenantId).delete();
+      if (cloudTransactions && cloudTransactions.length > 0) {
         await db.transactions.bulkPut(cloudTransactions.map((t: any) => ({ ...t, tenantId })));
       }
 
-      return {
-        settings: cloudSettings,
-        orders: cloudOrders,
-        products: cloudProducts,
-        sales: cloudSales,
-        transactions: cloudTransactions,
-        users: cloudUsers
-      };
+
     } catch (e) {
       console.error('Error pulling data from cloud:', e);
       throw e;

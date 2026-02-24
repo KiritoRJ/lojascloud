@@ -3,7 +3,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { Product, Sale, AppSettings, User } from '../types';
-import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
+import { formatCurrency, parseCurrencyString, formatDate, formatDateTime } from '../utils';
 import { Html5Qrcode } from 'html5-qrcode';
 
 interface Props {
@@ -25,6 +25,7 @@ interface CartItem {
 interface PaymentEntry {
   method: 'Dinheiro' | 'Cartão' | 'PIX';
   amount: number;
+  installments?: number;
 }
 
 const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, settings, currentUser, onDeleteSale, tenantId }) => {
@@ -37,6 +38,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [lastPaymentMethod, setLastPaymentMethod] = useState('');
   const [lastTransactionId, setLastTransactionId] = useState('');
   const [lastSaleDate, setLastSaleDate] = useState('');
+  const [lastChange, setLastChange] = useState(0);
+  const [lastPaymentEntries, setLastPaymentEntries] = useState<PaymentEntry[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
 
   const [isCancelling, setIsCancelling] = useState<string | null>(null);
@@ -52,7 +55,6 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [totalDiscount, setTotalDiscount] = useState(0);
   const [paymentEntries, setPaymentEntries] = useState<PaymentEntry[]>([{ method: 'Dinheiro', amount: 0 }]);
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
-  const [amountPaid, setAmountPaid] = useState(0);
 
   const handleDownloadReceipt = () => {
     const element = document.getElementById('receipt-content');
@@ -220,7 +222,9 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   };
 
   const addPaymentEntry = () => {
-    setPaymentEntries(prev => [...prev, { method: 'Dinheiro', amount: 0 }]);
+    if (paymentEntries.length < 2) {
+      setPaymentEntries(prev => [...prev, { method: 'Dinheiro', amount: 0 }]);
+    }
   };
 
   const removePaymentEntry = (index: number) => {
@@ -228,7 +232,16 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   };
 
   const updatePaymentEntry = (index: number, field: keyof PaymentEntry, value: any) => {
-    setPaymentEntries(prev => prev.map((entry, i) => i === index ? { ...entry, [field]: value } : entry));
+    setPaymentEntries(prev => prev.map((entry, i) => {
+      if (i === index) {
+        const updated = { ...entry, [field]: value };
+        if (field === 'method' && value === 'Cartão' && !updated.installments) {
+          updated.installments = 1;
+        }
+        return updated;
+      }
+      return entry;
+    }));
   };
 
   const handleFinalizeSale = () => {
@@ -236,6 +249,12 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     const transactionId = Math.random().toString(36).substr(2, 6).toUpperCase();
     const date = new Date().toISOString();
     
+    const totalPaid = paymentEntries.reduce((acc, curr) => acc + curr.amount, 0);
+    const totalCash = paymentEntries.filter(p => p.method === 'Dinheiro').reduce((acc, curr) => acc + curr.amount, 0);
+    const change = paymentEntries.length < 2 ? Math.min(Math.max(0, totalPaid - finalTotal), totalCash) : 0;
+
+
+
     const newSales: Sale[] = cart.map(item => {
       const itemTotal = item.product.salePrice * item.quantity;
       // Distribui o desconto proporcionalmente se houver mais de um item
@@ -251,7 +270,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
         discount: itemDiscount,
         finalPrice: itemTotal - itemDiscount,
         costAtSale: item.product.costPrice,
-        paymentMethod: paymentEntries.map(p => p.method).join(', '),
+        paymentMethod: paymentEntries.map(p => p.method === 'Cartão' && p.installments && p.installments > 1 ? `${p.method} (${p.installments}x)` : p.method).join(', '),
+        paymentEntriesJson: JSON.stringify(paymentEntries),
         sellerName: currentUser?.name || 'Sistema',
         transactionId
       };
@@ -264,9 +284,11 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     });
     setProducts(updatedProducts);
     setSales([...newSales, ...sales]);
-    setLastSaleAmount(paymentEntries.reduce((acc, curr) => acc + curr.amount, 0));
+    setLastSaleAmount(finalTotal); // Record the actual sale amount, not the received amount
+    setLastChange(change);
+    setLastPaymentEntries([...paymentEntries]);
     setLastTransactionItems([...cart]);
-    setLastPaymentMethod(paymentEntries.map(p => p.method).join(', '));
+    setLastPaymentMethod(paymentEntries.map(p => p.method === 'Cartão' && p.installments && p.installments > 1 ? `${p.method} (${p.installments}x)` : p.method).join(', '));
     setLastTransactionId(transactionId);
     setLastSaleDate(date);
     setCart([]);
@@ -274,6 +296,46 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     setPaymentEntries([{ method: 'Dinheiro', amount: 0 }]);
     setShowCheckoutModal(false);
     setShowCartDrawer(false);
+    setShowReceiptModal(true);
+  };
+
+  const reprintReceipt = (sale: Sale) => {
+    const relatedSales = sales.filter(s => s.transactionId === sale.transactionId);
+    
+    // Reconstruct cart items from sales
+    const items: CartItem[] = relatedSales.map(s => ({
+      product: {
+        id: s.productId,
+        name: s.productName,
+        salePrice: s.originalPrice,
+        costPrice: s.costAtSale,
+        quantity: 0, // Not needed for receipt
+        photo: null
+      },
+      quantity: s.quantity
+    }));
+
+    const total = relatedSales.reduce((acc, s) => acc + s.finalPrice, 0);
+    const discount = relatedSales.reduce((acc, s) => acc + s.discount, 0);
+    
+    setLastTransactionItems(items);
+    setLastSaleAmount(total);
+    setTotalDiscount(discount);
+    setLastTransactionId(sale.transactionId || '');
+    setLastSaleDate(sale.date);
+    setLastPaymentMethod(sale.paymentMethod || '');
+    
+    if (sale.paymentEntriesJson) {
+      try {
+        setLastPaymentEntries(JSON.parse(sale.paymentEntriesJson));
+      } catch (e) {
+        setLastPaymentEntries([{ method: 'Dinheiro', amount: total }]);
+      }
+    } else {
+      setLastPaymentEntries([{ method: 'Dinheiro', amount: total }]);
+    }
+    
+    setLastChange(0); // We don't store change in Sale, so default to 0 for reprints
     setShowReceiptModal(true);
   };
 
@@ -311,8 +373,15 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{formatDate(sale.date)} • {sale.paymentMethod}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
                   <p className="font-black text-emerald-600 text-sm">{formatCurrency(sale.finalPrice)}</p>
+                  <button 
+                    onClick={() => reprintReceipt(sale)}
+                    className="p-2 text-slate-400 hover:text-blue-500 bg-slate-50 rounded-xl active:scale-90"
+                    title="Reimprimir Cupom"
+                  >
+                    <Printer size={14} />
+                  </button>
                   <button 
                     onClick={() => initiateCancelSale(sale)}
                     disabled={isCancelling === sale.id}
@@ -398,7 +467,19 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                       <p className="text-lg font-black text-white">{formatCurrency(cartTotal)}</p>
                     </div>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); if(cart.length > 0) setShowCheckoutModal(true); }} disabled={cart.length === 0} className="bg-emerald-500 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase disabled:opacity-20 shadow-xl shadow-emerald-500/20">FECHAR</button>
+                  <button 
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      if(cart.length > 0) {
+                        setPaymentEntries([{ method: 'Dinheiro', amount: finalTotal }]);
+                        setShowCheckoutModal(true); 
+                      }
+                    }} 
+                    disabled={cart.length === 0} 
+                    className="bg-emerald-500 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase disabled:opacity-20 shadow-xl shadow-emerald-500/20"
+                  >
+                    FECHAR
+                  </button>
                 </div>
                 {showCartDrawer && (
                   <div className="px-5 pb-6 max-h-[30vh] overflow-y-auto space-y-2">
@@ -428,92 +509,128 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       {/* MODAL DE CHECKOUT */}
       {showCheckoutModal && (
         <div className="fixed inset-0 bg-slate-950/80 flex items-center justify-center z-[100] p-4 backdrop-blur-md">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 space-y-6">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 space-y-4 overflow-y-auto max-h-[90vh]">
             <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter text-center">Checkout</h3>
             
-            <div className="space-y-4">
-              <div className="bg-slate-50 p-4 rounded-3xl space-y-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Subtotal</p>
-                <p className="text-xl font-black text-slate-600 text-center">{formatCurrency(cartTotal)}</p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Desconto (R$)</label>
+            <div className="space-y-3">
+              {/* DESCONTO (Compact) */}
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-4">Desconto (R$)</label>
                 <div className="relative">
-                  <Minus className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                  <Minus className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
                   <input 
                     type="number" 
                     value={totalDiscount || ''} 
                     onChange={(e) => setTotalDiscount(Number(e.target.value))}
-                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black outline-none focus:border-emerald-500 transition-colors"
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-black outline-none focus:border-emerald-500 transition-colors"
                     placeholder="0,00"
                   />
                 </div>
               </div>
 
-              <div className="bg-emerald-50 p-6 rounded-3xl text-center">
+              {/* FORMAS DE PAGAMENTO (Max 2) */}
+              <div className="space-y-2">
+                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-4">Pagamento</p>
+                {paymentEntries.map((entry, index) => (
+                  <div key={index} className="space-y-1">
+                    <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                      <select
+                        value={entry.method}
+                        onChange={(e) => updatePaymentEntry(index, 'method', e.target.value as 'Dinheiro' | 'Cartão' | 'PIX')}
+                        className="bg-transparent outline-none font-bold text-[8px] uppercase w-16"
+                      >
+                        <option>Dinheiro</option>
+                        <option>Cartão</option>
+                        <option>PIX</option>
+                      </select>
+                      <input
+                        type="number"
+                        value={entry.amount || ''}
+                        onChange={(e) => updatePaymentEntry(index, 'amount', Number(e.target.value))}
+                        placeholder="0.00"
+                        className="flex-1 bg-white px-1 py-0 rounded-md outline-none font-black text-xs text-right border-2 border-slate-200 focus:border-emerald-500 transition-all"
+                      />
+                      {paymentEntries.length > 1 && (
+                        <button onClick={() => removePaymentEntry(index)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    {entry.method === 'Cartão' && (
+                      <div className="flex items-center justify-between px-4 animate-in fade-in slide-in-from-top-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[7px] font-black text-slate-400 uppercase">Parcelas:</span>
+                          <select 
+                            value={entry.installments || 1}
+                            onChange={(e) => updatePaymentEntry(index, 'installments', Number(e.target.value))}
+                            className="bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-black outline-none"
+                          >
+                            {[...Array(12)].map((_, i) => (
+                              <option key={i+1} value={i+1}>{i+1}x</option>
+                            ))}
+                          </select>
+                        </div>
+                        {entry.installments && entry.installments > 1 && entry.amount > 0 && (
+                          <span className="text-[8px] font-black text-emerald-600">
+                            {entry.installments}x {formatCurrency(entry.amount / entry.installments)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {paymentEntries.length < 2 && (
+                  <button onClick={addPaymentEntry} className="w-full py-2 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[8px] flex items-center justify-center gap-2 active:scale-95 transition-all">
+                    <Plus size={12} /> Adicionar Forma
+                  </button>
+                )}
+              </div>
+
+              {/* INFORMAÇÕES DE PAGAMENTO DINÂMICAS (TROCO / RESTANTE) */}
+              {(() => {
+                const totalPaid = paymentEntries.reduce((acc, curr) => acc + curr.amount, 0);
+                const remaining = finalTotal - totalPaid;
+
+                if (totalPaid > finalTotal && paymentEntries.length < 2) {
+                  const totalCash = paymentEntries.filter(p => p.method === 'Dinheiro').reduce((acc, curr) => acc + curr.amount, 0);
+                  const displayChange = Math.min(totalPaid - finalTotal, totalCash);
+                  
+                  if (displayChange <= 0) return null;
+
+                  return (
+                    <div className="bg-blue-50 p-4 rounded-2xl text-center mt-2 animate-in fade-in slide-in-from-top-2">
+                      <p className="text-[8px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Troco</p>
+                      <p className="text-2xl font-black text-blue-800">{formatCurrency(displayChange)}</p>
+                    </div>
+                  );
+                } else if (remaining > 0) {
+                  return (
+                    <div className="bg-red-50 p-4 rounded-2xl text-center mt-2 animate-in fade-in slide-in-from-top-2">
+                      <p className="text-[8px] font-black text-red-600 uppercase tracking-widest mb-0.5">Faltam</p>
+                      <p className="text-2xl font-black text-red-800">{formatCurrency(remaining)}</p>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* TOTAL A PAGAR (Grande, no final) */}
+              <div className="bg-emerald-50 p-6 rounded-[2rem] text-center mt-4">
                 <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Total a Pagar</p>
                 <p className="text-4xl font-black text-emerald-800">{formatCurrency(finalTotal)}</p>
               </div>
-
-              {paymentEntries.some(entry => entry.method === 'Dinheiro') && (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Valor Recebido (Dinheiro)</label>
-                  <div className="relative">
-                    <Plus className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                    <input 
-                      type="number" 
-                      value={amountPaid || ''} 
-                      onChange={(e) => setAmountPaid(Number(e.target.value))}
-                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-black outline-none focus:border-blue-500 transition-colors"
-                      placeholder="0,00"
-                    />
-                  </div>
-                  {amountPaid > 0 && (
-                    <div className="bg-blue-50 p-4 rounded-3xl text-center mt-2">
-                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Troco</p>
-                      <p className="text-3xl font-black text-blue-800">{formatCurrency(amountPaid - finalTotal)}</p>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
-            <div className="space-y-3">
-              {paymentEntries.map((entry, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <select
-                    value={entry.method}
-                    onChange={(e) => updatePaymentEntry(index, 'method', e.target.value as 'Dinheiro' | 'Cartão' | 'PIX')}
-                    className="flex-1 p-3 bg-slate-50 rounded-xl outline-none font-bold text-[10px] uppercase"
-                  >
-                    <option>Dinheiro</option>
-                    <option>Cartão</option>
-                    <option>PIX</option>
-                  </select>
-                  <input
-                    type="number"
-                    value={entry.amount || ''}
-                    onChange={(e) => updatePaymentEntry(index, 'amount', Number(e.target.value))}
-                    placeholder="0.00"
-                    className="flex-1 p-3 bg-slate-50 rounded-xl outline-none font-black text-sm"
-                  />
-                  {paymentEntries.length > 1 && (
-                    <button onClick={() => removePaymentEntry(index)} className="p-2 text-red-500 bg-red-50 rounded-xl active:scale-90">
-                      <Minus size={16} />
-                    </button>
-                  )}
-                </div>
-              ))}
-              <button onClick={addPaymentEntry} className="w-full py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[9px] flex items-center justify-center gap-2 active:scale-95 transition-all">
-                <Plus size={14} /> Adicionar Forma de Pagamento
+            <div className="space-y-2 pt-2">
+              <button 
+                onClick={handleFinalizeSale} 
+                disabled={paymentEntries.reduce((acc, curr) => acc + curr.amount, 0) < finalTotal - 0.001} 
+                className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-xl disabled:opacity-50 active:scale-95 transition-all"
+              >
+                FINALIZAR VENDA
               </button>
+              <button onClick={() => setShowCheckoutModal(false)} className="w-full py-2 text-slate-400 font-black uppercase text-[8px]">Cancelar</button>
             </div>
-            {paymentEntries.reduce((acc, curr) => acc + curr.amount, 0) !== finalTotal && (
-              <p className="text-center text-[9px] font-black text-red-500 uppercase mb-4 animate-bounce">O total dos pagamentos deve ser igual ao total a pagar!</p>
-            )}
-            <button onClick={handleFinalizeSale} disabled={paymentEntries.reduce((acc, curr) => acc + curr.amount, 0) !== finalTotal} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-xl disabled:opacity-50">FINALIZAR VENDA</button>
-            <button onClick={() => setShowCheckoutModal(false)} className="w-full text-slate-400 font-black uppercase text-[9px]">Cancelar</button>
           </div>
         </div>
       )}
@@ -536,7 +653,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
               <button onClick={() => window.print()} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
                 <Printer size={18} /> Imprimir Direto
               </button>
-              <button onClick={() => { setShowReceiptModal(false); setAmountPaid(0); }} className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Nova Venda</button>
+              <button onClick={() => { setShowReceiptModal(false); setLastChange(0); }} className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Nova Venda</button>
             </div>
 
             {/* CONTEÚDO DO RECIBO (OCULTO NA TELA, MAS USADO PARA IMPRESSÃO/PDF) */}
@@ -561,7 +678,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                 
                 <div style={{ marginBottom: '3mm' }}>
                   <p style={{ margin: '2px 0' }}>ID: {lastTransactionId}</p>
-                  <p style={{ margin: '2px 0' }}>DATA: {formatDate(lastSaleDate)}</p>
+                  <p style={{ margin: '2px 0' }}>DATA: {formatDateTime(lastSaleDate)}</p>
                   <p style={{ margin: '2px 0' }}>VEND: {currentUser?.name || 'Sistema'}</p>
                 </div>
 
@@ -594,12 +711,28 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
                 <div style={{ borderTop: '1px dashed black', paddingTop: '2mm', marginBottom: '5mm' }}>
                   <p style={{ fontWeight: 'bold' }}>PAGAMENTO:</p>
-                  <p>{lastPaymentMethod}</p>
-                  {amountPaid > 0 && (
-                    <>
-                      <p>RECEBIDO: {formatCurrency(amountPaid)}</p>
-                      <p>TROCO: {formatCurrency(amountPaid - lastSaleAmount)}</p>
-                    </>
+                  {lastPaymentEntries.map((entry, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>
+                        {entry.method.toUpperCase()}
+                        {entry.method === 'Cartão' && entry.installments && entry.installments > 1 
+                          ? ` (${entry.installments}x de ${formatCurrency(entry.amount / entry.installments)})` 
+                          : ''}:
+                      </span>
+                      <span>{formatCurrency(entry.amount)}</span>
+                    </div>
+                  ))}
+                  {lastChange > 0 && (
+                    <div style={{ marginTop: '1mm', borderTop: '1px dotted #ccc', paddingTop: '1mm' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>RECEBIDO:</span>
+                        <span>{formatCurrency(lastPaymentEntries.reduce((acc, curr) => acc + curr.amount, 0))}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                        <span>TROCO:</span>
+                        <span>{formatCurrency(lastChange)}</span>
+                      </div>
+                    </div>
                   )}
                 </div>
 

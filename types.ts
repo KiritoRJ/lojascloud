@@ -79,6 +79,7 @@ export interface Sale {
   finalPrice: number;
   costAtSale: number;
   paymentMethod?: string;
+  paymentEntriesJson?: string;
   sellerName?: string;
   transactionId?: string;
   isDeleted?: boolean;

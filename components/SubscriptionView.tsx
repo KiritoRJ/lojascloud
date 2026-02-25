@@ -36,29 +36,45 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
   const plans = [
     {
       id: 'monthly',
-      name: 'PLANO START',
+      name: 'PLANO START - MENSAL',
       price: `R$ ${getPrice('monthly').toFixed(2).replace('.', ',')}`,
       period: 'por mês',
       description: 'Ideal para pequenas lojas e assistências iniciantes',
       target: 'Indicado para: 1 a 2 funcionários',
       features: [
-        'Cadastro de produtos',
-        'Controle de estoque básico',
+        'Cadastro de produtos (200)',
+        'Cadastro de ordem de serviços (200)',
+        'Vendas com baixa automatica do estoque',
         'Frente de loja (PDV)',
-        'Ordem de Serviço com registro',
+        'Ordem de Serviço com fotos',
         '2 usuários (1 admin + 1 funcionário)',
         'Acesso via celular e computador',
-        'Sincronização em nuvem'
+        'Sistema 100% em nuvem'
       ],
       months: 1
     },
     {
       id: 'quarterly',
-      name: 'Plano Trimestral',
+      name: 'PLANO PRO - TRIMESTRAL',
       price: `R$ ${getPrice('quarterly').toFixed(2).replace('.', ',')}`,
       period: 'por 3 meses',
-      discount: 'Mais vantajoso',
-      features: ['Tudo do plano mensal', 'Economia garantida', 'Ideal para pequenas empresas'],
+      discount: 'Plano mais vendido', 
+
+      features: [
+      '✔ Tudo do Start +', 
+      'Cadastro de produtos (500)', 
+      'Cadastro de ordem de serviço (500)',
+      'Controle de estoque',
+      'Frente de loja (PDV)',
+      'Ordem de Serviço registros com fotos',
+      '5 usuários (1 admin + 4 funcionário)',
+      'Acesso via celular e computador',
+      'Sistema 100% em nuvem',
+      'Relatórios financeiros de até 6 meses',
+      'Relatórios de vendas, ordem de serviços canceladas',
+      'Acesso via celulares ou computadores',
+     
+      ],
       months: 3,
       popular: true
     },
@@ -68,7 +84,24 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
       price: `R$ ${getPrice('yearly').toFixed(2).replace('.', ',')}`,
       period: 'por ano',
       discount: 'Melhor custo-benefício',
-      features: ['Tudo do plano trimestral', 'Desconto exclusivo', 'Garantia de preço por 1 ano', 'Acesso antecipado'],
+      features: [
+        '✔ Tudo do Pro +',
+        'Desconto exclusivo', 
+        'Garantia de preço por 1 ano',
+        'Suporte garantido',
+        'pedido de novas funções',
+        'cadastro de clientes',
+        'Acesso antecipado a novas atualizaçãoes',
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        ],
       months: 12
     }
   ];

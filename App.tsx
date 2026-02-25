@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { supabase } from './utils/supabaseClient';
 import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
@@ -8,6 +9,7 @@ import SalesTab from './components/SalesTab';
 import FinanceTab from './components/FinanceTab';
 import SettingsTab from './components/SettingsTab';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
+import SqlEditorTab from './components/SqlEditorTab';
 import SubscriptionView from './components/SubscriptionView';
 import { OnlineDB } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
@@ -74,13 +76,44 @@ const App: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
-    OfflineSync.init();
-    const handleStatusChange = () => setIsOnline(navigator.onLine);
-    window.addEventListener('online', handleStatusChange);
-    window.addEventListener('offline', handleStatusChange);
+    const checkAndResetDb = async () => {
+      const dbVersionKey = 'db_schema_version';
+      const currentVersion = '11'; // Deve corresponder à versão no localDb.ts
+      const storedVersion = localStorage.getItem(dbVersionKey);
+      console.log(`[DB Check] Stored version: ${storedVersion}, Required: ${currentVersion}`);
+
+      if (storedVersion !== currentVersion) {
+        console.log(`[DB Check] Schema mismatch. Resetting database.`);
+        try {
+          await db.delete();
+          console.log('[DB Check] Database deleted successfully.');
+          localStorage.setItem(dbVersionKey, currentVersion);
+          window.location.reload();
+        } catch (error) {
+          console.error('[DB Check] Failed to delete database:', error);
+        }
+        return; // Impede a continuação da execução para aguardar o reload
+      }
+    };
+
+    checkAndResetDb().then(() => {
+        OfflineSync.init(); // Apenas inicializa listeners
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
+        
+        const cleanup = () => {
+          window.removeEventListener('online', handleStatusChange);
+          window.removeEventListener('offline', handleStatusChange);
+        };
+        return cleanup;
+    });
+
+    // Adiciona um listener para o evento 'online' para iniciar a sincronização
+    // Isso garante que a sincronização só ocorra quando o app estiver online e o SW estiver pronto
+    window.addEventListener('online', OfflineSync.sincronizarPendentes);
     return () => {
-      window.removeEventListener('online', handleStatusChange);
-      window.removeEventListener('offline', handleStatusChange);
+      window.removeEventListener('online', OfflineSync.sincronizarPendentes);
     };
   }, []);
 
@@ -152,10 +185,11 @@ const App: React.FC = () => {
   useEffect(() => {
     const restoreSession = async () => {
       try {
+        const { data: { session: supabaseSession } } = await supabase.auth.getSession();
         const storedSession = localStorage.getItem('session_pro');
         const storedUser = localStorage.getItem('currentUser_pro');
         
-        if (storedSession) {
+        if (supabaseSession && storedSession) {
           const parsed = JSON.parse(storedSession);
           if (parsed.isSuper) {
             setSession({
@@ -163,27 +197,47 @@ const App: React.FC = () => {
             type: 'super'
           });
           } else if (parsed.tenantId) {
-            const user = storedUser ? JSON.parse(storedUser) : null;
+            // Buscamos o usuário do banco de dados para garantir que os dados estejam atualizados
+            const { data: userData, error: userError } = await supabase
+              .from('users')
+              .select('*, tenants(*, tenant_limits(*))')
+              .eq('id', supabaseSession.user.id)
+              .maybeSingle();
+            
+            if (userError) throw userError;
+            if (!userData) throw new Error('Dados do usuário não encontrados no banco.');
+
+            const tenant = userData.tenants;
+            const limits = tenant?.tenant_limits;
+            const expiresAt = tenant?.subscription_expires_at;
+            const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
+
+            const finalUser = storedUser ? JSON.parse(storedUser) : null; // Ainda usamos o storedUser para o objeto User completo
+
             setSession({
               isLoggedIn: true,
-              type: parsed.type || 'admin',
-              tenantId: parsed.tenantId,
-              user: user,
-              subscriptionStatus: parsed.subscriptionStatus,
-              subscriptionExpiresAt: parsed.subscriptionExpiresAt,
-              customMonthlyPrice: parsed.customMonthlyPrice,
-              customQuarterlyPrice: parsed.customQuarterlyPrice,
-              customYearlyPrice: parsed.customYearlyPrice,
-              enabledFeatures: parsed.enabledFeatures,
-              maxUsers: parsed.maxUsers,
-              maxOS: parsed.maxOS,
-              maxProducts: parsed.maxProducts,
-              printerSize: parsed.printerSize
+              type: userData.role || 'admin',
+              tenantId: userData.tenant_id,
+              user: finalUser,
+              subscriptionStatus: isExpired ? 'expired' : (tenant?.subscription_status || 'trial'),
+              subscriptionExpiresAt: expiresAt,
+              customMonthlyPrice: tenant?.custom_monthly_price,
+              customQuarterlyPrice: tenant?.custom_quarterly_price,
+              customYearlyPrice: tenant?.custom_yearly_price,
+              enabledFeatures: tenant?.enabled_features,
+              maxUsers: tenant?.max_users,
+              maxOS: limits?.max_os,
+              maxProducts: limits?.max_products,
+              printerSize: tenant?.printer_size
             });
           }
+        } else {
+          // Se não há sessão Supabase ou storedSession, faz logout
+          handleLogout();
         }
       } catch (e) {
         console.error("Erro ao restaurar sessão:", e);
+        handleLogout(); // Garante que a sessão seja limpa em caso de erro
       } finally {
         setIsInitializing(false);
       }
@@ -192,53 +246,81 @@ const App: React.FC = () => {
   }, []);
 
   const loadData = useCallback(async (tenantId: string) => {
+    setIsInitializing(true);
     try {
-      setIsCloudConnected(navigator.onLine);
-      
-      // Tenta puxar dados novos se estiver online
       if (navigator.onLine) {
-        const cloudData = await OfflineSync.pullAllData(tenantId);
-        if (cloudData) {
-          const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
-          if (session?.printerSize) {
-            finalSettings.printerSize = session.printerSize;
-          }
-          finalSettings.users = cloudData.users || [];
-          setSettings(finalSettings);
-          setOrders(cloudData.orders || []);
-          setProducts(cloudData.products || []);
-          setSales(cloudData.sales || []);
-          setTransactions(cloudData.transactions || []);
-          return;
-        }
+        setIsCloudConnected(true);
+        // Etapa 1: Puxar dados da nuvem primeiro para garantir a versão mais recente
+        await OfflineSync.pullAllData(tenantId);
+        // Etapa 2: Sincronizar pendentes após o pull, para evitar conflitos
+        await OfflineSync.sincronizarPendentes();
+        // Etapa 3: Carregar os dados locais (agora atualizados com a nuvem) para a UI
+        const refreshedData = await OfflineSync.getLocalData(tenantId);
+        updateStateWithLocalData(refreshedData, session);
+      } else {
+        setIsCloudConnected(false);
+        // Se offline, carregar apenas os dados locais
+        const localData = await OfflineSync.getLocalData(tenantId);
+        updateStateWithLocalData(localData, session);
       }
-
-      // Se offline ou falha no pull, carrega local
-      const localData = await OfflineSync.getLocalData(tenantId);
-      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
-      finalSettings.users = localData.users || [];
-      setSettings(finalSettings);
-      setOrders(localData.orders || []);
-      setProducts(localData.products || []);
-      setSales(localData.sales || []);
-      setTransactions(localData.transactions || []);
-    } catch (e) {
-      console.error("Erro ao carregar dados:", e);
-      setIsCloudConnected(false);
-      const localData = await OfflineSync.getLocalData(tenantId);
-      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
-      finalSettings.users = localData.users || [];
-      setSettings(finalSettings);
-      setOrders(localData.orders || []);
-      setProducts(localData.products || []);
-      setSales(localData.sales || []);
-      setTransactions(localData.transactions || []);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+    } finally {
+      setIsInitializing(false);
     }
-  }, []);
+  }, [session]);
+
+  const updateStateWithLocalData = (data: any, session: any) => {
+    const newSettings = { ...DEFAULT_SETTINGS, ...data.settings };
+    if (session?.printerSize) {
+      newSettings.printerSize = session.printerSize;
+    }
+    newSettings.users = data.users || [];
+    setSettings(newSettings);
+    setOrders(data.orders || []);
+    setProducts(data.products || []);
+    setSales(data.sales || []);
+    setTransactions(data.transactions || []);
+    // Se a sessão não tem um usuário, tenta usar o primeiro usuário local (admin)
+    if (!session?.user && data.users && data.users.length > 0) {
+      const adminUser = data.users.find((u: User) => u.role === 'admin');
+      if (adminUser) {
+        setSession(prev => prev ? { ...prev, user: adminUser } : null);
+      }
+    }
+  };
 
   useEffect(() => {
     if (session?.isLoggedIn && session.tenantId) {
       loadData(session.tenantId);
+
+      const channel = supabase
+        .channel('public:products')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'products', filter: `tenant_id=eq.${session.tenantId}` },
+          (payload) => {
+            console.log('Realtime payload recebido:', payload);
+            if (payload.eventType === 'DELETE') {
+              const deletedId = payload.old.id;
+              setProducts((prevProducts) => prevProducts.filter(p => p.id !== deletedId));
+              db.products.delete(deletedId);
+            } else if (payload.eventType === 'INSERT') {
+                const newProduct = payload.new;
+                setProducts((prev) => [...prev, newProduct]);
+                db.products.put(newProduct);
+            } else if (payload.eventType === 'UPDATE') {
+                const updatedProduct = payload.new;
+                setProducts((prev) => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+                db.products.put(updatedProduct);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [session?.isLoggedIn, session?.tenantId, loadData]);
 
@@ -257,23 +339,31 @@ const App: React.FC = () => {
           setSession(superSession as any);
         } else {
           const tenantId = result.tenant?.id;
-            const newSession = { 
-              isLoggedIn: true, 
-              type: result.type as any, 
-              tenantId: tenantId,
-              isSuper: false,
-              subscriptionStatus: result.tenant?.subscriptionStatus,
-              subscriptionExpiresAt: result.tenant?.subscriptionExpiresAt,
-              customMonthlyPrice: result.tenant?.customMonthlyPrice,
-              customQuarterlyPrice: result.tenant?.customQuarterlyPrice,
-              customYearlyPrice: result.tenant?.customYearlyPrice,
-              enabledFeatures: result.tenant?.enabledFeatures,
-              maxUsers: result.tenant?.maxUsers,
-              maxOS: result.tenant?.maxOS,
-              maxProducts: result.tenant?.maxProducts,
-              printerSize: result.tenant?.printerSize
-            };
-          const finalUser = { 
+          const userFromDb = result.tenant?.users?.find((u: any) => u.tenant_id === tenantId && u.role === result.type);
+
+          const newSession = { 
+            isLoggedIn: true, 
+            type: result.type as any, 
+            tenantId: tenantId,
+            isSuper: false,
+            subscriptionStatus: result.tenant?.subscriptionStatus,
+            subscriptionExpiresAt: result.tenant?.subscriptionExpiresAt,
+            customMonthlyPrice: result.tenant?.customMonthlyPrice,
+            customQuarterlyPrice: result.tenant?.customQuarterlyPrice,
+            customYearlyPrice: result.tenant?.customYearlyPrice,
+            enabledFeatures: result.tenant?.enabledFeatures,
+            maxUsers: result.tenant?.maxUsers,
+            maxOS: result.tenant?.maxOS,
+            maxProducts: result.tenant?.maxProducts,
+            printerSize: result.tenant?.printerSize
+          };
+          const finalUser = userFromDb ? {
+            id: userFromDb.id,
+            name: userFromDb.name || userFromDb.username,
+            role: userFromDb.role,
+            photo: userFromDb.photo,
+            specialty: userFromDb.specialty
+          } : {
             id: result.tenant?.id || 'temp', 
             name: result.tenant?.name || result.tenant?.username || 'Administrador', 
             role: result.type as any, 
@@ -335,57 +425,68 @@ const App: React.FC = () => {
   };
 
   const saveSettings = async (newSettings: AppSettings) => {
+    if (!session?.tenantId) return;
     setSettings(newSettings);
-    if (session?.tenantId) {
-      await OfflineSync.saveSettings(session.tenantId, newSettings);
-    }
+    await OfflineSync.salvarLocalmente(session.tenantId, 'settings', 'upsert', newSettings);
   };
 
   const saveOrders = async (newOrders: ServiceOrder[]) => {
+    if (!session?.tenantId) return;
+    // Otimização: Apenas salva as ordens que realmente mudaram.
+    const changedOrders = newOrders.filter(newOrder => {
+      const oldOrder = orders.find(o => o.id === newOrder.id);
+      return !oldOrder || JSON.stringify(oldOrder) !== JSON.stringify(newOrder);
+    });
+
+    if (changedOrders.length === 0) return;
+
     setOrders(newOrders);
-    if (session?.tenantId) {
-      // Identifica o que mudou para salvar individualmente no OfflineSync
-      // Para simplificar, vamos salvar a lista toda localmente e tentar sincronizar
-      // Mas o ideal é salvar apenas o item novo/editado.
-      // Como o app usa o padrão de passar a lista toda, vamos iterar ou salvar a lista.
-      // Ajuste: OfflineSync.saveOrder agora suporta salvar o estado atual.
-      for (const order of newOrders) {
-        await OfflineSync.saveOrder(session.tenantId, order);
-      }
+    for (const order of changedOrders) {
+      await OfflineSync.salvarLocalmente(session.tenantId, 'orders', 'upsert', order);
     }
   };
 
   const removeOrder = async (id: string) => {
-    if (session?.tenantId) {
-      const updated = orders.map(o => o.id === id ? { ...o, isDeleted: true } : o);
-      setOrders(updated);
-      await OfflineSync.deleteOrder(session.tenantId, id);
-    }
+    if (!session?.tenantId) return;
+    const updated = orders.map(o => o.id === id ? { ...o, isDeleted: true } : o);
+    setOrders(updated);
+    await OfflineSync.salvarLocalmente(session.tenantId, 'orders', 'delete', { id });
   };
 
   const saveProducts = async (newProducts: Product[]) => {
+    if (!session?.tenantId) return;
+    const changedProducts = newProducts.filter(newProd => {
+        const oldProd = products.find(p => p.id === newProd.id);
+        return !oldProd || JSON.stringify(oldProd) !== JSON.stringify(newProd);
+    });
+
+    if (changedProducts.length === 0) return;
+
     setProducts(newProducts);
-    if (session?.tenantId) {
-      for (const product of newProducts) {
-        await OfflineSync.saveProduct(session.tenantId, product);
-      }
+    for (const product of changedProducts) {
+        await OfflineSync.salvarLocalmente(session.tenantId, 'products', 'upsert', product);
     }
   };
 
   const removeProduct = async (id: string) => {
+    if (!session?.tenantId) return;
     const updated = products.filter(p => p.id !== id);
     setProducts(updated);
-    if (session?.tenantId) {
-      await OfflineSync.deleteProduct(session.tenantId, id);
-    }
+    await OfflineSync.salvarLocalmente(session.tenantId, 'products', 'delete', { id });
   };
 
   const saveSales = async (newSales: Sale[]) => {
+    if (!session?.tenantId) return;
+    const changedSales = newSales.filter(newSale => {
+      const oldSale = sales.find(s => s.id === newSale.id);
+      return !oldSale || JSON.stringify(oldSale) !== JSON.stringify(newSale);
+    });
+
+    if (changedSales.length === 0) return;
+
     setSales(newSales);
-    if (session?.tenantId) {
-      for (const sale of newSales) {
-        await OfflineSync.saveSale(session.tenantId, sale);
-      }
+    for (const sale of changedSales) {
+      await OfflineSync.salvarLocalmente(session.tenantId, 'sales', 'upsert', sale);
     }
   };
 
@@ -393,26 +494,31 @@ const App: React.FC = () => {
     if (!session?.tenantId) return;
     const updatedSales = sales.map(s => s.id === sale.id ? { ...s, isDeleted: true } : s);
     setSales(updatedSales);
-    const updatedProducts = products.map(p => {
-      if (p.id === sale.productId) {
-        return { ...p, quantity: p.quantity + sale.quantity };
-      }
-      return p;
-    });
-    setProducts(updatedProducts);
-    
-    await Promise.all([
-      OfflineSync.deleteSale(session.tenantId, sale.id),
-      ...updatedProducts.map(p => OfflineSync.saveProduct(session.tenantId!, p))
-    ]);
+
+    // Reverte o estoque do produto
+    const productToUpdate = products.find(p => p.id === sale.productId);
+    if (productToUpdate) {
+      const updatedProduct = { ...productToUpdate, quantity: productToUpdate.quantity + sale.quantity };
+      const updatedProducts = products.map(p => p.id === sale.productId ? updatedProduct : p);
+      setProducts(updatedProducts);
+      await OfflineSync.salvarLocalmente(session.tenantId, 'products', 'upsert', updatedProduct);
+    }
+
+    await OfflineSync.salvarLocalmente(session.tenantId, 'sales', 'delete', { id: sale.id });
   };
 
   const saveTransactions = async (newTransactions: Transaction[]) => {
+    if (!session?.tenantId) return;
+    const changedTransactions = newTransactions.filter(newTrans => {
+      const oldTrans = transactions.find(t => t.id === newTrans.id);
+      return !oldTrans || JSON.stringify(oldTrans) !== JSON.stringify(newTrans);
+    });
+
+    if (changedTransactions.length === 0) return;
+
     setTransactions(newTransactions);
-    if (session?.tenantId) {
-      for (const transaction of newTransactions) {
-        await OfflineSync.saveTransaction(session.tenantId, transaction);
-      }
+    for (const transaction of changedTransactions) {
+      await OfflineSync.salvarLocalmente(session.tenantId, 'transactions', 'upsert', transaction);
     }
   };
 
@@ -420,7 +526,7 @@ const App: React.FC = () => {
     if (!session?.tenantId) return;
     const updated = transactions.map(t => t.id === id ? { ...t, isDeleted: true } : t);
     setTransactions(updated);
-    await OfflineSync.deleteTransaction(session.tenantId, id);
+    await OfflineSync.salvarLocalmente(session.tenantId, 'transactions', 'delete', { id });
   };
 
   const handleSwitchProfile = (user: User) => {
@@ -465,8 +571,8 @@ const App: React.FC = () => {
                 <input type="text" value={registerForm.storeName} onChange={e => setRegisterForm({...registerForm, storeName: e.target.value})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="Ex: Tech Cell" />
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Usuário Administrador</label>
-                <input type="text" value={registerForm.username} onChange={e => setRegisterForm({...registerForm, username: e.target.value.toLowerCase()})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="Seu usuário" />
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Email Administrador</label>
+                <input type="email" value={registerForm.username} onChange={e => setRegisterForm({...registerForm, username: e.target.value})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="seu@email.com" />
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Senha</label>
@@ -488,8 +594,8 @@ const App: React.FC = () => {
           ) : (
             <form onSubmit={handleLogin} className="bg-white/5 p-8 rounded-[3rem] border border-white/10 space-y-4 shadow-2xl">
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Usuário / Login</label>
-                <input type="text" autoFocus value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value.toLowerCase()})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="Seu usuário" />
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Email / Login</label>
+                <input type="email" autoFocus value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value})} className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 font-bold text-white outline-none focus:border-blue-500 transition-colors text-xs" placeholder="seu@email.com" />
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Senha</label>
@@ -548,6 +654,7 @@ const App: React.FC = () => {
   const currentUser = session.user || settings.users[0];
   const navItems = [
     { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
+    { id: 'sqlEditor', label: 'Editor SQL', icon: Terminal, roles: ['super'] },
     { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
@@ -619,6 +726,7 @@ const App: React.FC = () => {
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} />}
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
+        {activeTab === 'sqlEditor' && session.type === 'super' && <SqlEditorTab tenantId={session.tenantId} />}
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">

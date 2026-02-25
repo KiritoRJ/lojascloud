@@ -3,12 +3,13 @@ import Dexie, { Table } from 'dexie';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from '../types';
 
 export interface SyncItem {
-  id?: number;
+  id: string; // Mudei para UUID string
   tenantId: string;
-  type: 'orders' | 'products' | 'sales' | 'transactions' | 'settings';
+  type: 'orders' | 'products' | 'sales' | 'transactions' | 'settings' | 'users';
   action: 'upsert' | 'delete';
   data: any;
-  timestamp: number;
+  sincronizado: 0 | 1; // 0 para false, 1 para true (melhor para indexação)
+  criadoEm: number;
 }
 
 export class AssistenciaProDB extends Dexie {
@@ -18,18 +19,20 @@ export class AssistenciaProDB extends Dexie {
   transactions!: Table<Transaction & { tenantId: string }, string>;
   settings!: Table<AppSettings & { tenantId: string }, string>;
   users!: Table<User & { tenantId: string }, string>;
-  syncQueue!: Table<SyncItem, number>;
+  pendentes!: Table<SyncItem, string>;
 
   constructor() {
     super('AssistenciaPro_OfflineDB');
-    this.version(1).stores({
+    this.version(11).stores({
+      // Mantemos as tabelas de dados para leitura e exibição offline rápida
       orders: 'id, tenantId, customerName, status, isDeleted',
       products: 'id, tenantId, name, barcode',
       sales: 'id, tenantId, productId, date, isDeleted',
       transactions: 'id, tenantId, type, date, isDeleted',
       settings: 'tenantId',
       users: 'id, tenantId, username, role',
-      syncQueue: '++id, tenantId, type, action, timestamp'
+      // A nova fila de sincronização, como solicitado
+      pendentes: 'id, sincronizado, criadoEm'
     });
   }
 }

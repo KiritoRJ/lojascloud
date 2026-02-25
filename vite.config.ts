@@ -15,11 +15,15 @@ export default defineConfig(({ mode }) => {
         react(),
         VitePWA({
           registerType: 'autoUpdate',
-          strategies: 'injectManifest',
-          srcDir: 'public',
-          filename: 'sw.js',
-          injectManifest: {
-            injectionPoint: undefined
+          injectRegister: false,
+          includeAssets: ['icon.svg'],
+          workbox: {
+            globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
+            cleanupOutdatedCaches: true,
+            clientsClaim: true,
+            skipWaiting: true,
+            navigateFallback: 'index.html',
+            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
           },
           manifest: {
             name: 'Assistência Técnica Pro',
@@ -53,7 +57,10 @@ export default defineConfig(({ mode }) => {
               }
             ]
           },
-
+          devOptions: {
+            enabled: true,
+            type: 'module'
+          }
         })
       ],
 

@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from './utils/supabaseClient';
 import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
@@ -75,38 +74,14 @@ const App: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
-    const checkAndResetDb = async () => {
-      const dbVersionKey = 'db_schema_version';
-      const currentVersion = '11'; // Deve corresponder à versão no localDb.ts
-      const storedVersion = localStorage.getItem(dbVersionKey);
-      console.log(`[DB Check] Stored version: ${storedVersion}, Required: ${currentVersion}`);
-
-      if (storedVersion !== currentVersion) {
-        console.log(`[DB Check] Schema mismatch. Resetting database.`);
-        try {
-          await db.delete();
-          console.log('[DB Check] Database deleted successfully.');
-          localStorage.setItem(dbVersionKey, currentVersion);
-          window.location.reload();
-        } catch (error) {
-          console.error('[DB Check] Failed to delete database:', error);
-        }
-        return; // Impede a continuação da execução para aguardar o reload
-      }
+    OfflineSync.init();
+    const handleStatusChange = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', handleStatusChange);
+    window.addEventListener('offline', handleStatusChange);
+    return () => {
+      window.removeEventListener('online', handleStatusChange);
+      window.removeEventListener('offline', handleStatusChange);
     };
-
-    checkAndResetDb().then(() => {
-        OfflineSync.init();
-        const handleStatusChange = () => setIsOnline(navigator.onLine);
-        window.addEventListener('online', handleStatusChange);
-        window.addEventListener('offline', handleStatusChange);
-        
-        const cleanup = () => {
-          window.removeEventListener('online', handleStatusChange);
-          window.removeEventListener('offline', handleStatusChange);
-        };
-        return cleanup;
-    });
   }, []);
 
   useEffect(() => {
@@ -217,73 +192,53 @@ const App: React.FC = () => {
   }, []);
 
   const loadData = useCallback(async (tenantId: string) => {
-    setIsInitializing(true);
     try {
-      // Etapa 1: Carregar dados locais imediatamente para uma UI responsiva.
-      const localData = await OfflineSync.getLocalData(tenantId);
-      updateStateWithLocalData(localData, session);
-
-      // Etapa 2: Iniciar o processo de sincronização e atualização em segundo plano se estiver online.
+      setIsCloudConnected(navigator.onLine);
+      
+      // Tenta puxar dados novos se estiver online
       if (navigator.onLine) {
-        setIsCloudConnected(true);
-        await OfflineSync.sincronizarPendentes();
-        await OfflineSync.pullAllData(tenantId);
-        const refreshedData = await OfflineSync.getLocalData(tenantId);
-        updateStateWithLocalData(refreshedData, session);
-      } else {
-        setIsCloudConnected(false);
+        const cloudData = await OfflineSync.pullAllData(tenantId);
+        if (cloudData) {
+          const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
+          if (session?.printerSize) {
+            finalSettings.printerSize = session.printerSize;
+          }
+          finalSettings.users = cloudData.users || [];
+          setSettings(finalSettings);
+          setOrders(cloudData.orders || []);
+          setProducts(cloudData.products || []);
+          setSales(cloudData.sales || []);
+          setTransactions(cloudData.transactions || []);
+          return;
+        }
       }
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-    } finally {
-      setIsInitializing(false);
-    }
-  }, [session]);
 
-  const updateStateWithLocalData = (data: any, session: any) => {
-    const newSettings = { ...DEFAULT_SETTINGS, ...data.settings };
-    if (session?.printerSize) {
-      newSettings.printerSize = session.printerSize;
+      // Se offline ou falha no pull, carrega local
+      const localData = await OfflineSync.getLocalData(tenantId);
+      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+      finalSettings.users = localData.users || [];
+      setSettings(finalSettings);
+      setOrders(localData.orders || []);
+      setProducts(localData.products || []);
+      setSales(localData.sales || []);
+      setTransactions(localData.transactions || []);
+    } catch (e) {
+      console.error("Erro ao carregar dados:", e);
+      setIsCloudConnected(false);
+      const localData = await OfflineSync.getLocalData(tenantId);
+      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+      finalSettings.users = localData.users || [];
+      setSettings(finalSettings);
+      setOrders(localData.orders || []);
+      setProducts(localData.products || []);
+      setSales(localData.sales || []);
+      setTransactions(localData.transactions || []);
     }
-    newSettings.users = data.users || [];
-    setSettings(newSettings);
-    setOrders(data.orders || []);
-    setProducts(data.products || []);
-    setSales(data.sales || []);
-    setTransactions(data.transactions || []);
-  };
+  }, []);
 
   useEffect(() => {
     if (session?.isLoggedIn && session.tenantId) {
       loadData(session.tenantId);
-
-      const channel = supabase
-        .channel('public:products')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'products', filter: `tenant_id=eq.${session.tenantId}` },
-          (payload) => {
-            console.log('Realtime payload recebido:', payload);
-            if (payload.eventType === 'DELETE') {
-              const deletedId = payload.old.id;
-              setProducts((prevProducts) => prevProducts.filter(p => p.id !== deletedId));
-              db.products.delete(deletedId);
-            } else if (payload.eventType === 'INSERT') {
-                const newProduct = payload.new;
-                setProducts((prev) => [...prev, newProduct]);
-                db.products.put(newProduct);
-            } else if (payload.eventType === 'UPDATE') {
-                const updatedProduct = payload.new;
-                setProducts((prev) => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
-                db.products.put(updatedProduct);
-            }
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
     }
   }, [session?.isLoggedIn, session?.tenantId, loadData]);
 
@@ -380,68 +335,57 @@ const App: React.FC = () => {
   };
 
   const saveSettings = async (newSettings: AppSettings) => {
-    if (!session?.tenantId) return;
     setSettings(newSettings);
-    await OfflineSync.salvarLocalmente(session.tenantId, 'settings', 'upsert', newSettings);
+    if (session?.tenantId) {
+      await OfflineSync.saveSettings(session.tenantId, newSettings);
+    }
   };
 
   const saveOrders = async (newOrders: ServiceOrder[]) => {
-    if (!session?.tenantId) return;
-    // Otimização: Apenas salva as ordens que realmente mudaram.
-    const changedOrders = newOrders.filter(newOrder => {
-      const oldOrder = orders.find(o => o.id === newOrder.id);
-      return !oldOrder || JSON.stringify(oldOrder) !== JSON.stringify(newOrder);
-    });
-
-    if (changedOrders.length === 0) return;
-
     setOrders(newOrders);
-    for (const order of changedOrders) {
-      await OfflineSync.salvarLocalmente(session.tenantId, 'orders', 'upsert', order);
+    if (session?.tenantId) {
+      // Identifica o que mudou para salvar individualmente no OfflineSync
+      // Para simplificar, vamos salvar a lista toda localmente e tentar sincronizar
+      // Mas o ideal é salvar apenas o item novo/editado.
+      // Como o app usa o padrão de passar a lista toda, vamos iterar ou salvar a lista.
+      // Ajuste: OfflineSync.saveOrder agora suporta salvar o estado atual.
+      for (const order of newOrders) {
+        await OfflineSync.saveOrder(session.tenantId, order);
+      }
     }
   };
 
   const removeOrder = async (id: string) => {
-    if (!session?.tenantId) return;
-    const updated = orders.map(o => o.id === id ? { ...o, isDeleted: true } : o);
-    setOrders(updated);
-    await OfflineSync.salvarLocalmente(session.tenantId, 'orders', 'delete', { id });
+    if (session?.tenantId) {
+      const updated = orders.map(o => o.id === id ? { ...o, isDeleted: true } : o);
+      setOrders(updated);
+      await OfflineSync.deleteOrder(session.tenantId, id);
+    }
   };
 
   const saveProducts = async (newProducts: Product[]) => {
-    if (!session?.tenantId) return;
-    const changedProducts = newProducts.filter(newProd => {
-        const oldProd = products.find(p => p.id === newProd.id);
-        return !oldProd || JSON.stringify(oldProd) !== JSON.stringify(newProd);
-    });
-
-    if (changedProducts.length === 0) return;
-
     setProducts(newProducts);
-    for (const product of changedProducts) {
-        await OfflineSync.salvarLocalmente(session.tenantId, 'products', 'upsert', product);
+    if (session?.tenantId) {
+      for (const product of newProducts) {
+        await OfflineSync.saveProduct(session.tenantId, product);
+      }
     }
   };
 
   const removeProduct = async (id: string) => {
-    if (!session?.tenantId) return;
     const updated = products.filter(p => p.id !== id);
     setProducts(updated);
-    await OfflineSync.salvarLocalmente(session.tenantId, 'products', 'delete', { id });
+    if (session?.tenantId) {
+      await OfflineSync.deleteProduct(session.tenantId, id);
+    }
   };
 
   const saveSales = async (newSales: Sale[]) => {
-    if (!session?.tenantId) return;
-    const changedSales = newSales.filter(newSale => {
-      const oldSale = sales.find(s => s.id === newSale.id);
-      return !oldSale || JSON.stringify(oldSale) !== JSON.stringify(newSale);
-    });
-
-    if (changedSales.length === 0) return;
-
     setSales(newSales);
-    for (const sale of changedSales) {
-      await OfflineSync.salvarLocalmente(session.tenantId, 'sales', 'upsert', sale);
+    if (session?.tenantId) {
+      for (const sale of newSales) {
+        await OfflineSync.saveSale(session.tenantId, sale);
+      }
     }
   };
 
@@ -449,31 +393,26 @@ const App: React.FC = () => {
     if (!session?.tenantId) return;
     const updatedSales = sales.map(s => s.id === sale.id ? { ...s, isDeleted: true } : s);
     setSales(updatedSales);
-
-    // Reverte o estoque do produto
-    const productToUpdate = products.find(p => p.id === sale.productId);
-    if (productToUpdate) {
-      const updatedProduct = { ...productToUpdate, quantity: productToUpdate.quantity + sale.quantity };
-      const updatedProducts = products.map(p => p.id === sale.productId ? updatedProduct : p);
-      setProducts(updatedProducts);
-      await OfflineSync.salvarLocalmente(session.tenantId, 'products', 'upsert', updatedProduct);
-    }
-
-    await OfflineSync.salvarLocalmente(session.tenantId, 'sales', 'delete', { id: sale.id });
+    const updatedProducts = products.map(p => {
+      if (p.id === sale.productId) {
+        return { ...p, quantity: p.quantity + sale.quantity };
+      }
+      return p;
+    });
+    setProducts(updatedProducts);
+    
+    await Promise.all([
+      OfflineSync.deleteSale(session.tenantId, sale.id),
+      ...updatedProducts.map(p => OfflineSync.saveProduct(session.tenantId!, p))
+    ]);
   };
 
   const saveTransactions = async (newTransactions: Transaction[]) => {
-    if (!session?.tenantId) return;
-    const changedTransactions = newTransactions.filter(newTrans => {
-      const oldTrans = transactions.find(t => t.id === newTrans.id);
-      return !oldTrans || JSON.stringify(oldTrans) !== JSON.stringify(newTrans);
-    });
-
-    if (changedTransactions.length === 0) return;
-
     setTransactions(newTransactions);
-    for (const transaction of changedTransactions) {
-      await OfflineSync.salvarLocalmente(session.tenantId, 'transactions', 'upsert', transaction);
+    if (session?.tenantId) {
+      for (const transaction of newTransactions) {
+        await OfflineSync.saveTransaction(session.tenantId, transaction);
+      }
     }
   };
 
@@ -481,7 +420,7 @@ const App: React.FC = () => {
     if (!session?.tenantId) return;
     const updated = transactions.map(t => t.id === id ? { ...t, isDeleted: true } : t);
     setTransactions(updated);
-    await OfflineSync.salvarLocalmente(session.tenantId, 'transactions', 'delete', { id });
+    await OfflineSync.deleteTransaction(session.tenantId, id);
   };
 
   const handleSwitchProfile = (user: User) => {

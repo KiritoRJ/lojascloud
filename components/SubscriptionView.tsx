@@ -58,8 +58,9 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
       name: 'PLANO PRO - TRIMESTRAL',
       price: `R$ ${getPrice('quarterly').toFixed(2).replace('.', ',')}`,
       period: 'por 3 meses',
-      discount: 'Plano mais vendido', 
-
+      description: 'Ideal para lojas estruturadas que querem crescer',
+      discount: 'Plano mais vendido',
+      target: 'Indicado para: 3 a 5 funcionários',
       features: [
       '✔ Tudo do Start +', 
       'Cadastro de produtos (500)', 
@@ -80,17 +81,19 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
     },
     {
       id: 'yearly',
-      name: 'Plano Anual',
+      name: 'Plano Premium - Anual',
       price: `R$ ${getPrice('yearly').toFixed(2).replace('.', ',')}`,
       period: 'por ano',
+      description: 'Ideal para lojas grandes que precisam de soluções',
       discount: 'Melhor custo-benefício',
+      target: 'Indicado para: 6 a 10 funcionários',
       features: [
         '✔ Tudo do Pro +',
         'Desconto exclusivo', 
         'Garantia de preço por 1 ano',
         'Suporte garantido',
-        'pedido de novas funções',
-        'cadastro de clientes',
+        'Pedido de novas funções',
+        'Cadastro de clientes',
         'Acesso antecipado a novas atualizaçãoes',
         
         

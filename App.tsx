@@ -1,15 +1,18 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, Users } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
-import ServiceOrderTab from './components/ServiceOrderTab';
-import StockTab from './components/StockTab';
-import SalesTab from './components/SalesTab';
-import FinanceTab from './components/FinanceTab';
-import CustomersTab from './components/CustomersTab';
-import SettingsTab from './components/SettingsTab';
-import SuperAdminDashboard from './components/SuperAdminDashboard';
-import SubscriptionView from './components/SubscriptionView';
+
+// Lazy load components
+const ServiceOrderTab = lazy(() => import('./components/ServiceOrderTab'));
+const StockTab = lazy(() => import('./components/StockTab'));
+const SalesTab = lazy(() => import('./components/SalesTab'));
+const FinanceTab = lazy(() => import('./components/FinanceTab'));
+const CustomersTab = lazy(() => import('./components/CustomersTab'));
+const SettingsTab = lazy(() => import('./components/SettingsTab'));
+const SuperAdminDashboard = lazy(() => import('./components/SuperAdminDashboard'));
+const SubscriptionView = lazy(() => import('./components/SubscriptionView'));
+
 import { OnlineDB } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { db } from './utils/localDb';
@@ -778,12 +781,14 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 p-4 pt-24 pb-28 md:pt-10 md:pb-4 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
-        {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
-        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
-        {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
-        {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-        {activeTab === 'clientes' && <CustomersTab customers={customers.filter(c => !c.isDeleted)} setCustomers={handleSetCustomers} onDeleteCustomer={handleDeleteCustomer} settings={settings} />}
-        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
+        <Suspense fallback={<div className="w-full h-full flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={40} /></div>}>
+          {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
+          {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
+          {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
+          {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
+          {activeTab === 'clientes' && <CustomersTab customers={customers.filter(c => !c.isDeleted)} setCustomers={handleSetCustomers} onDeleteCustomer={handleDeleteCustomer} settings={settings} />}
+          {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
+        </Suspense>
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">

@@ -9,7 +9,6 @@ import SalesTab from './components/SalesTab';
 import FinanceTab from './components/FinanceTab';
 import SettingsTab from './components/SettingsTab';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
-import SqlEditorTab from './components/SqlEditorTab';
 import SubscriptionView from './components/SubscriptionView';
 import { OnlineDB } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';

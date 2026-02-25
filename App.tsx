@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from './utils/supabaseClient';
 import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
@@ -96,7 +95,7 @@ const App: React.FC = () => {
     };
 
     checkAndResetDb().then(() => {
-        OfflineSync.init(); // Apenas inicializa listeners
+        OfflineSync.init();
         const handleStatusChange = () => setIsOnline(navigator.onLine);
         window.addEventListener('online', handleStatusChange);
         window.addEventListener('offline', handleStatusChange);
@@ -107,13 +106,6 @@ const App: React.FC = () => {
         };
         return cleanup;
     });
-
-    // Adiciona um listener para o evento 'online' para iniciar a sincronização
-    // Isso garante que a sincronização só ocorra quando o app estiver online e o SW estiver pronto
-    window.addEventListener('online', OfflineSync.sincronizarPendentes);
-    return () => {
-      window.removeEventListener('online', OfflineSync.sincronizarPendentes);
-    };
   }, []);
 
   useEffect(() => {
@@ -226,20 +218,19 @@ const App: React.FC = () => {
   const loadData = useCallback(async (tenantId: string) => {
     setIsInitializing(true);
     try {
+      // Etapa 1: Carregar dados locais imediatamente para uma UI responsiva.
+      const localData = await OfflineSync.getLocalData(tenantId);
+      updateStateWithLocalData(localData, session);
+
+      // Etapa 2: Iniciar o processo de sincronização e atualização em segundo plano se estiver online.
       if (navigator.onLine) {
         setIsCloudConnected(true);
-        // Etapa 1: Puxar dados da nuvem primeiro para garantir a versão mais recente
-        await OfflineSync.pullAllData(tenantId);
-        // Etapa 2: Sincronizar pendentes após o pull, para evitar conflitos
         await OfflineSync.sincronizarPendentes();
-        // Etapa 3: Carregar os dados locais (agora atualizados com a nuvem) para a UI
+        await OfflineSync.pullAllData(tenantId);
         const refreshedData = await OfflineSync.getLocalData(tenantId);
         updateStateWithLocalData(refreshedData, session);
       } else {
         setIsCloudConnected(false);
-        // Se offline, carregar apenas os dados locais
-        const localData = await OfflineSync.getLocalData(tenantId);
-        updateStateWithLocalData(localData, session);
       }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
@@ -264,34 +255,6 @@ const App: React.FC = () => {
   useEffect(() => {
     if (session?.isLoggedIn && session.tenantId) {
       loadData(session.tenantId);
-
-      const channel = supabase
-        .channel('public:products')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'products', filter: `tenant_id=eq.${session.tenantId}` },
-          (payload) => {
-            console.log('Realtime payload recebido:', payload);
-            if (payload.eventType === 'DELETE') {
-              const deletedId = payload.old.id;
-              setProducts((prevProducts) => prevProducts.filter(p => p.id !== deletedId));
-              db.products.delete(deletedId);
-            } else if (payload.eventType === 'INSERT') {
-                const newProduct = payload.new;
-                setProducts((prev) => [...prev, newProduct]);
-                db.products.put(newProduct);
-            } else if (payload.eventType === 'UPDATE') {
-                const updatedProduct = payload.new;
-                setProducts((prev) => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
-                db.products.put(updatedProduct);
-            }
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
     }
   }, [session?.isLoggedIn, session?.tenantId, loadData]);
 

@@ -11,15 +11,21 @@ export class OfflineSync {
     // Listener para quando o app voltar a ficar online
     window.addEventListener('online', this.sincronizarPendentes);
 
-    // Listener para mensagens do Service Worker
-    navigator.serviceWorker.addEventListener('message', event => {
-      if (event.data && event.data.type === 'SYNC_REQUEST') {
-        console.log('[App] Mensagem SYNC_REQUEST recebida do SW. Iniciando sincronização.');
-        this.sincronizarPendentes();
+    // Listener para o evento de sync do Service Worker
+    navigator.serviceWorker.ready.then(registration => {
+      if ('sync' in registration) {
+        registration.addEventListener('sync', (event: any) => {
+          if (event.tag === 'sync-pendentes') {
+            event.waitUntil(this.sincronizarPendentes());
+          }
+        });
       }
     });
 
-
+    // Sincroniza ao iniciar se estiver online
+    if (navigator.onLine) {
+      this.sincronizarPendentes();
+    }
   }
 
   // Função unificada para salvar qualquer tipo de dado localmente
@@ -139,30 +145,15 @@ export class OfflineSync {
     }
   }
 
-  private static async requestBackgroundSync(retries = 3, delay = 100) {
-    // Verifica se o SW está no controle. Se não, espera e tenta novamente.
-    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
-      console.warn(`[Sync] Service worker não está no controle. Tentativas restantes: ${retries}`);
-      if (retries > 0) {
-        setTimeout(() => this.requestBackgroundSync(retries - 1, delay), delay);
-      }
-      return;
-    }
-
+  private static async requestBackgroundSync() {
     try {
       const registration = await navigator.serviceWorker.ready;
       if ('sync' in registration) {
         await registration.sync.register('sync-pendentes');
-        console.log('Background sync registrado com sucesso.');
-      } else {
-        console.warn('[Sync] Background Sync API não disponível.');
+        console.log('Background sync registrado com a tag: sync-pendentes');
       }
     } catch (error) {
-      console.error(`Registro do background sync falhou (tentativas restantes: ${retries}):`, error);
-      if (retries > 0) {
-        // Tenta novamente com um delay maior (exponential backoff)
-        setTimeout(() => this.requestBackgroundSync(retries - 1, delay * 2), delay);
-      }
+      console.error('Registro do background sync falhou:', error);
     }
   }
   

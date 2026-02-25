@@ -20,6 +20,7 @@ export interface Tenant {
     profiles: boolean;
     xmlExportImport: boolean;
     hideFinancialReports?: boolean;
+    customersTab?: boolean;
   };
   maxUsers?: number;
   maxOS?: number;
@@ -132,5 +133,17 @@ export interface AppSettings {
   receiptLabelTotal?: string;
   receiptLabelEntryPhotos?: string;
   receiptLabelExitPhotos?: string;
-  itemsPerPage: 4 | 8 | 16 | 999;
+  itemsPerPage: 8 | 16 | 24 | 32;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  document?: string;
+  notes?: string;
+  createdAt: string;
+  isDeleted?: boolean;
 }

@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
-import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from './types';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, Users } from 'lucide-react';
+import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import StockTab from './components/StockTab';
 import SalesTab from './components/SalesTab';
 import FinanceTab from './components/FinanceTab';
+import CustomersTab from './components/CustomersTab';
 import SettingsTab from './components/SettingsTab';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import SubscriptionView from './components/SubscriptionView';
@@ -13,7 +14,7 @@ import { OnlineDB } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { db } from './utils/localDb';
 
-type Tab = 'os' | 'estoque' | 'vendas' | 'financeiro' | 'config';
+type Tab = 'os' | 'estoque' | 'vendas' | 'financeiro' | 'clientes' | 'config';
 
 const DEFAULT_SETTINGS: AppSettings = {
   storeName: 'Minha Assistência',
@@ -55,6 +56,7 @@ const App: React.FC = () => {
       profiles: boolean;
       xmlExportImport: boolean;
       hideFinancialReports?: boolean;
+      customersTab?: boolean;
     };
     maxUsers?: number;
     maxOS?: number;
@@ -66,6 +68,7 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('os');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -257,6 +260,7 @@ const App: React.FC = () => {
           setProducts(cloudData.products || []);
           setSales(cloudData.sales || []);
           setTransactions(cloudData.transactions || []);
+          setCustomers(cloudData.customers || []);
           return;
         }
       }
@@ -270,6 +274,7 @@ const App: React.FC = () => {
       setProducts(localData.products || []);
       setSales(localData.sales || []);
       setTransactions(localData.transactions || []);
+      setCustomers(localData.customers || []);
     } catch (e) {
       console.error("Erro ao carregar dados:", e);
       setIsCloudConnected(false);
@@ -281,6 +286,7 @@ const App: React.FC = () => {
       setProducts(localData.products || []);
       setSales(localData.sales || []);
       setTransactions(localData.transactions || []);
+      setCustomers(localData.customers || []);
     }
   }, []);
 
@@ -497,6 +503,21 @@ const App: React.FC = () => {
     await OfflineSync.deleteTransaction(session.tenantId, id);
   };
 
+  const handleSetCustomers = async (newCustomers: Customer[]) => {
+    setCustomers(newCustomers);
+    const lastCustomer = newCustomers.find(c => !customers.some(oc => oc.id === c.id));
+    if (lastCustomer && session?.tenantId) {
+      await OfflineSync.saveCustomer(session.tenantId, lastCustomer);
+    }
+  };
+
+  const handleDeleteCustomer = async (id: string) => {
+    if (!session?.tenantId) return;
+    const updated = customers.map(c => c.id === id ? { ...c, isDeleted: true } : c);
+    setCustomers(updated);
+    await OfflineSync.deleteCustomer(session.tenantId, id);
+  };
+
   const handleSwitchProfile = (user: User) => {
     if (session) {
       const newType = user.role;
@@ -693,6 +714,7 @@ const App: React.FC = () => {
     { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
+    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin'], feature: 'customersTab' },
     { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
   ];
   
@@ -760,6 +782,7 @@ const App: React.FC = () => {
         {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
+        {activeTab === 'clientes' && <CustomersTab customers={customers.filter(c => !c.isDeleted)} setCustomers={handleSetCustomers} onDeleteCustomer={handleDeleteCustomer} settings={settings} />}
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
       </main>
 

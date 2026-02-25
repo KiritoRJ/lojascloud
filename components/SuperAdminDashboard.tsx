@@ -790,7 +790,7 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                 </div>
                 <div className="grid grid-cols-3 gap-2 pt-2">
                   <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 2, maxOS: 50, maxProducts: 50 })} className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Start</button>
-                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 5, maxOS: 500, maxProducts: 500 })} className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Pro</button>
+                  <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 5, maxOS: 200, maxProducts: 200 })} className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Pro</button>
                   <button onClick={() => setTenantToEditFeatures({ ...tenantToEditFeatures, maxUsers: 999, maxOS: 999, maxProducts: 999 })} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-[8px] font-black uppercase">Ilimitado</button>
                 </div>
                 <p className="text-[8px] text-slate-400 ml-4 pt-1">No Plano Start o limite é 2 (Admin + 1 Funcionário)</p>

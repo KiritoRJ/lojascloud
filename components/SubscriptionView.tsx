@@ -36,72 +36,39 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
   const plans = [
     {
       id: 'monthly',
-      name: 'PLANO START MENSAL',
+      name: 'PLANO START',
       price: `R$ ${getPrice('monthly').toFixed(2).replace('.', ',')}`,
       period: 'por mês',
       description: 'Ideal para pequenas lojas e assistências iniciantes',
       target: 'Indicado para: 1 a 2 funcionários',
       features: [
-        'Cadastro de produtos (200)',
-        'Cadastro de ordem de serviço (200)',
+        'Cadastro de produtos',
         'Controle de estoque básico',
         'Frente de loja (PDV)',
-        'Ordem de Serviço com registro de fotos',
+        'Ordem de Serviço com registro',
         '2 usuários (1 admin + 1 funcionário)',
         'Acesso via celular e computador',
-        'Sincronização 100% em nuvem',
-        'Impressão cupom N/Fiscal das vendas'
+        'Sincronização em nuvem'
       ],
       months: 1
     },
     {
       id: 'quarterly',
-      name: 'PLANO PRO TRIMESTRAL',
+      name: 'Plano Trimestral',
       price: `R$ ${getPrice('quarterly').toFixed(2).replace('.', ',')}`,
       period: 'por 3 meses',
-      description: '💰 Ideal para lojas estruturadas que querem crescer',
-      target: 'Indicado para: 3 a 5 funcionários',
-      discount: '🔥 Mais Vendido',
-      features: [
-        '✔ Tudo do Start +',
-        'Cadastro de produtos (500)',
-        'Cadastro de ordem de serviço (500)',
-        'Controle de estoque',
-        'Frente de loja (PDV)',
-        'Ordem de Serviço com registro de fotos',
-        '5 usuários (1 admin + 4 funcionário)',
-        'Acesso via celular e computador',
-        'Sistema 100% em nuvem',
-        'Relatórios financeiros de até 6 meses',
-        'Relatórios de vendas, ordem de serviços canceladas',
-        'Impressão cupom N/Fiscal das vendas'
-      ],
+      discount: 'Mais vantajoso',
+      features: ['Tudo do plano mensal', 'Economia garantida', 'Ideal para pequenas empresas'],
       months: 3,
       popular: true
     },
     {
       id: 'yearly',
-      name: 'PLANO PREMIUM ANUAL',
+      name: 'Plano Anual',
       price: `R$ ${getPrice('yearly').toFixed(2).replace('.', ',')}`,
       period: 'por ano',
       discount: 'Melhor custo-benefício',
-      features: [
-        '✔ Tudo do Pro +',
-        'Cadastro de produtos (ilimitado)',
-        'Cadastro de ordem de serviço (ilimitado)',
-        'Controle de estoque',
-        'Frente de loja (PDV)',
-        'Ordem de Serviço com registro de fotos',
-        '10 usuários (1 admin + 9 funcionário)',
-        'Acesso via celular e computador',
-        'Sistema 100% em nuvem',
-        'Relatórios financeiros de até 6 meses',
-        'Relatórios de vendas, ordem de serviços canceladas',
-        'Impressão cupom N/Fiscal das vendas',
-        'Suporte técnico direto com o programador para pedido de funções',
-        'Primeiros a receberem atualizações',
-        ],
-
+      features: ['Tudo do plano trimestral', 'Desconto exclusivo', 'Garantia de preço por 1 ano', 'Acesso antecipado'],
       months: 12
     }
   ];

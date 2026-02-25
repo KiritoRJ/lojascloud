@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck } from 'lucide-react';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import StockTab from './components/StockTab';
@@ -54,6 +54,7 @@ const App: React.FC = () => {
       financeTab: boolean;
       profiles: boolean;
       xmlExportImport: boolean;
+      hideFinancialReports?: boolean;
     };
     maxUsers?: number;
     maxOS?: number;
@@ -68,6 +69,10 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('os');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [logoutPassword, setLogoutPassword] = useState('');
+  const [isVerifyingLogout, setIsVerifyingLogout] = useState(false);
+  const [logoutError, setLogoutError] = useState(false);
   const [isCloudConnected, setIsCloudConnected] = useState(true);
   const [isInitializing, setIsInitializing] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -108,6 +113,26 @@ const App: React.FC = () => {
       setDeferredPrompt(null);
     }
   };
+
+  useEffect(() => {
+    if (session?.isLoggedIn && session.subscriptionExpiresAt && session.type !== 'super') {
+      const checkExpiry = () => {
+        const expiresAt = new Date(session.subscriptionExpiresAt!);
+        if (expiresAt < new Date() && session.subscriptionStatus !== 'expired') {
+          setSession(prev => {
+            if (!prev) return null;
+            const updated = { ...prev, subscriptionStatus: 'expired' };
+            localStorage.setItem('session_pro', JSON.stringify(updated));
+            return updated;
+          });
+        }
+      };
+
+      checkExpiry();
+      const interval = setInterval(checkExpiry, 30000); // Verifica a cada 30 segundos
+      return () => clearInterval(interval);
+    }
+  }, [session?.isLoggedIn, session?.subscriptionExpiresAt, session?.subscriptionStatus, session?.type]);
 
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ storeName: '', username: '', password: '' });
@@ -195,6 +220,29 @@ const App: React.FC = () => {
     try {
       setIsCloudConnected(navigator.onLine);
       
+      // Se estiver online, aproveita para atualizar o status da assinatura
+      if (navigator.onLine && session?.type !== 'super') {
+        const tenant = await OnlineDB.getTenantById(tenantId);
+        if (tenant) {
+          const expiresAt = tenant.subscription_expires_at;
+          const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
+          const newStatus = isExpired ? 'expired' : (tenant.subscription_status || 'trial');
+          
+          if (newStatus !== session?.subscriptionStatus || expiresAt !== session?.subscriptionExpiresAt) {
+            setSession(prev => {
+              if (!prev) return null;
+              const updated = { 
+                ...prev, 
+                subscriptionStatus: newStatus, 
+                subscriptionExpiresAt: expiresAt 
+              };
+              localStorage.setItem('session_pro', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      }
+
       // Tenta puxar dados novos se estiver online
       if (navigator.onLine) {
         const cloudData = await OfflineSync.pullAllData(tenantId);
@@ -240,6 +288,14 @@ const App: React.FC = () => {
     if (session?.isLoggedIn && session.tenantId) {
       loadData(session.tenantId);
     }
+    
+    const handleFocus = () => {
+      if (session?.isLoggedIn && session.tenantId) {
+        loadData(session.tenantId);
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [session?.isLoggedIn, session?.tenantId, loadData]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -332,6 +388,24 @@ const App: React.FC = () => {
     setProducts([]);
     setSales([]);
     setActiveTab('os');
+    setIsLogoutModalOpen(false);
+    setLogoutPassword('');
+  };
+
+  const confirmLogout = async () => {
+    if (!session?.tenantId) return handleLogout();
+    setIsVerifyingLogout(true);
+    setLogoutError(false);
+    
+    const result = await OnlineDB.verifyAdminPassword(session.tenantId, logoutPassword);
+    if (result.success) {
+      handleLogout();
+    } else {
+      setLogoutError(true);
+      setLogoutPassword('');
+      setTimeout(() => setLogoutError(false), 2000);
+    }
+    setIsVerifyingLogout(false);
   };
 
   const saveSettings = async (newSettings: AppSettings) => {
@@ -518,20 +592,55 @@ const App: React.FC = () => {
 
   if (session.subscriptionStatus === 'expired') {
     return (
-      <SubscriptionView 
-        tenantId={session.tenantId!} 
-        storeName={settings?.storeName || 'Sua Loja'} 
-        expiresAt={session.subscriptionExpiresAt!}
-        customMonthlyPrice={session.customMonthlyPrice}
-        customQuarterlyPrice={session.customQuarterlyPrice}
-        customYearlyPrice={session.customYearlyPrice}
-        onLogout={handleLogout}
-        onSuccess={(newExpiresAt) => {
-          const updatedSession = { ...session, subscriptionStatus: 'active', subscriptionExpiresAt: newExpiresAt };
-          setSession(updatedSession);
-          localStorage.setItem('session_pro', JSON.stringify(updatedSession));
-        }}
-      />
+      <>
+        <SubscriptionView 
+          tenantId={session.tenantId!} 
+          storeName={settings?.storeName || 'Sua Loja'} 
+          expiresAt={session.subscriptionExpiresAt!}
+          customMonthlyPrice={session.customMonthlyPrice}
+          customQuarterlyPrice={session.customQuarterlyPrice}
+          customYearlyPrice={session.customYearlyPrice}
+          onLogout={() => setIsLogoutModalOpen(true)}
+          onSuccess={(newExpiresAt) => {
+            const updatedSession = { ...session, subscriptionStatus: 'active', subscriptionExpiresAt: newExpiresAt };
+            setSession(updatedSession);
+            localStorage.setItem('session_pro', JSON.stringify(updatedSession));
+          }}
+        />
+        {isLogoutModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/90 z-[300] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
+             <div className="bg-white w-full max-w-xs rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+                <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner">
+                   <LogOut size={36} />
+                </div>
+                <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">Confirmar Saída</h3>
+                <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-10 leading-tight">Para deslogar, digite a<br/>senha do ADM da Loja</p>
+                
+                <div className={`flex items-center gap-3 bg-slate-50 border rounded-2xl px-5 py-5 mb-4 transition-all ${logoutError ? 'border-red-500 bg-red-50 ring-4 ring-red-100' : 'border-slate-100 focus-within:border-blue-500'}`}>
+                   <KeyRound size={20} className={logoutError ? 'text-red-500' : 'text-slate-300'} />
+                   <input 
+                     type="password" 
+                     autoFocus
+                     value={logoutPassword}
+                     onChange={(e) => setLogoutPassword(e.target.value)}
+                     onKeyDown={(e) => e.key === 'Enter' && confirmLogout()}
+                     placeholder="SENHA DO ADM"
+                     className="bg-transparent w-full outline-none font-black text-sm uppercase placeholder:text-slate-200"
+                   />
+                </div>
+                
+                {logoutError && <p className="text-center text-[9px] font-black text-red-500 uppercase mb-4 animate-bounce">Senha Incorreta!</p>}
+
+                <div className="flex flex-col gap-2">
+                   <button onClick={confirmLogout} disabled={isVerifyingLogout} className="w-full py-5 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
+                     {isVerifyingLogout ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar Saída'}
+                   </button>
+                   <button onClick={() => { setIsLogoutModalOpen(false); setLogoutPassword(''); }} className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Cancelar</button>
+                </div>
+             </div>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -540,7 +649,40 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-6 p-10 text-center">
         <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
         <p className="text-blue-600 font-black uppercase tracking-[0.3em] text-xs">Sincronizando Dados</p>
-        <button onClick={handleLogout} className="text-[10px] font-black text-red-400 uppercase tracking-widest mt-10">Sair</button>
+        <button onClick={() => setIsLogoutModalOpen(true)} className="text-[10px] font-black text-red-400 uppercase tracking-widest mt-10">Sair</button>
+        {isLogoutModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/90 z-[300] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
+             <div className="bg-white w-full max-w-xs rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+                <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner">
+                   <LogOut size={36} />
+                </div>
+                <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">Confirmar Saída</h3>
+                <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-10 leading-tight">Para deslogar, digite a<br/>senha do ADM da Loja</p>
+                
+                <div className={`flex items-center gap-3 bg-slate-50 border rounded-2xl px-5 py-5 mb-4 transition-all ${logoutError ? 'border-red-500 bg-red-50 ring-4 ring-red-100' : 'border-slate-100 focus-within:border-blue-500'}`}>
+                   <KeyRound size={20} className={logoutError ? 'text-red-500' : 'text-slate-300'} />
+                   <input 
+                     type="password" 
+                     autoFocus
+                     value={logoutPassword}
+                     onChange={(e) => setLogoutPassword(e.target.value)}
+                     onKeyDown={(e) => e.key === 'Enter' && confirmLogout()}
+                     placeholder="SENHA DO ADM"
+                     className="bg-transparent w-full outline-none font-black text-sm uppercase placeholder:text-slate-200"
+                   />
+                </div>
+                
+                {logoutError && <p className="text-center text-[9px] font-black text-red-500 uppercase mb-4 animate-bounce">Senha Incorreta!</p>}
+
+                <div className="flex flex-col gap-2">
+                   <button onClick={confirmLogout} disabled={isVerifyingLogout} className="w-full py-5 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
+                     {isVerifyingLogout ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar Saída'}
+                   </button>
+                   <button onClick={() => { setIsLogoutModalOpen(false); setLogoutPassword(''); }} className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Cancelar</button>
+                </div>
+             </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -596,7 +738,7 @@ const App: React.FC = () => {
               </div>
             )}
           </div>
-          <button onClick={handleLogout} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-4 px-6'} py-4 text-slate-500 hover:text-red-400 font-black text-[10px] uppercase tracking-widest transition-colors`}>
+          <button onClick={() => setIsLogoutModalOpen(true)} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-4 px-6'} py-4 text-slate-500 hover:text-red-400 font-black text-[10px] uppercase tracking-widest transition-colors`}>
             <LogOut size={20} className="shrink-0" />
             {!isSidebarCollapsed && <span className="animate-in fade-in">Sair</span>}
           </button>
@@ -617,7 +759,7 @@ const App: React.FC = () => {
         {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
         {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
-        {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} />}
+        {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
       </main>
 
@@ -649,11 +791,44 @@ const App: React.FC = () => {
                   </button>
                 ))}
               </nav>
-              <button onClick={handleLogout} className="w-full flex items-center gap-4 px-6 py-4 text-red-400 font-black text-[10px] uppercase tracking-widest border border-red-400/20 rounded-xl bg-red-400/5">
+              <button onClick={() => setIsLogoutModalOpen(true)} className="w-full flex items-center gap-4 px-6 py-4 text-red-400 font-black text-[10px] uppercase tracking-widest border border-red-400/20 rounded-xl bg-red-400/5">
                 <LogOut size={20} /> Sair do Sistema
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {isLogoutModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/90 z-[300] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
+           <div className="bg-white w-full max-w-xs rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+              <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner">
+                 <LogOut size={36} />
+              </div>
+              <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">Confirmar Saída</h3>
+              <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-10 leading-tight">Para deslogar, digite a<br/>senha do ADM da Loja</p>
+              
+              <div className={`flex items-center gap-3 bg-slate-50 border rounded-2xl px-5 py-5 mb-4 transition-all ${logoutError ? 'border-red-500 bg-red-50 ring-4 ring-red-100' : 'border-slate-100 focus-within:border-blue-500'}`}>
+                 <KeyRound size={20} className={logoutError ? 'text-red-500' : 'text-slate-300'} />
+                 <input 
+                   type="password" 
+                   autoFocus
+                   value={logoutPassword}
+                   onChange={(e) => setLogoutPassword(e.target.value)}
+                   onKeyDown={(e) => e.key === 'Enter' && confirmLogout()}
+                   placeholder="SENHA DO ADM"
+                   className="bg-transparent w-full outline-none font-black text-sm uppercase placeholder:text-slate-200"
+                 />
+              </div>
+              
+              {logoutError && <p className="text-center text-[9px] font-black text-red-500 uppercase mb-4 animate-bounce">Senha Incorreta!</p>}
+
+              <div className="flex flex-col gap-2">
+                 <button onClick={confirmLogout} disabled={isVerifyingLogout} className="w-full py-5 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
+                   {isVerifyingLogout ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar Saída'}
+                 </button>
+                 <button onClick={() => { setIsLogoutModalOpen(false); setLogoutPassword(''); }} className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Cancelar</button>
+              </div>
+           </div>
         </div>
       )}
     </div>

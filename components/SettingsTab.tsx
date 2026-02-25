@@ -24,6 +24,7 @@ interface Props {
     financeTab: boolean;
     profiles: boolean;
     xmlExportImport: boolean;
+    hideFinancialReports?: boolean;
   };
   maxUsers?: number;
   maxOS?: number;

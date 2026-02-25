@@ -760,6 +760,7 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                     { id: 'stockTab', label: 'Aba Estoque' },
                     { id: 'salesTab', label: 'Aba Vendas' },
                     { id: 'financeTab', label: 'Aba Financeira' },
+                    { id: 'hideFinancialReports', label: 'Ocultar Botão Relatórios' },
                     { id: 'profiles', label: 'Criar Perfis/Usuários' },
                     { id: 'xmlExportImport', label: 'Exportar/Importar XML' },
                   ].map(feature => (

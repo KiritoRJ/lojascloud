@@ -20,9 +20,12 @@ interface Props {
   onDeleteSale: (sale: Sale) => Promise<void>;
   tenantId: string;
   settings: AppSettings;
+  enabledFeatures?: {
+    hideFinancialReports?: boolean;
+  };
 }
 
-const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, setTransactions, onDeleteTransaction, onDeleteSale, tenantId, settings }) => {
+const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, setTransactions, onDeleteTransaction, onDeleteSale, tenantId, settings, enabledFeatures }) => {
   const [saleSearch, setSaleSearch] = useState('');
   const [isCancelling, setIsCancelling] = useState<string | null>(null);
   
@@ -155,27 +158,29 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
       y += 4;
 
       // Resumo de Quantidades
-      const totalSalesDone = sales.filter(s => !s.isDeleted && isWithinPeriod(s.date)).length;
-      const totalOSPending = orders.filter(o => !o.isDeleted && o.status === 'Pendente' && isWithinPeriod(o.date)).length;
-      const totalOSCompleted = orders.filter(o => !o.isDeleted && o.status === 'Concluído' && isWithinPeriod(o.date)).length;
-      const totalOSDelivered = orders.filter(o => !o.isDeleted && o.status === 'Entregue' && isWithinPeriod(o.date)).length;
+      if (!onlyCanceled) {
+        const totalSalesDone = sales.filter(s => !s.isDeleted && isWithinPeriod(s.date)).length;
+        const totalOSPending = orders.filter(o => !o.isDeleted && o.status === 'Pendente' && isWithinPeriod(o.date)).length;
+        const totalOSCompleted = orders.filter(o => !o.isDeleted && o.status === 'Concluído' && isWithinPeriod(o.date)).length;
+        const totalOSDelivered = orders.filter(o => !o.isDeleted && o.status === 'Entregue' && isWithinPeriod(o.date)).length;
 
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7);
-      doc.text('RESUMO DE OPERAÇÕES', pageWidth / 2, y, { align: 'center' });
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6);
-      doc.text(`Vendas Efetivadas: ${totalSalesDone}`, margin, y);
-      y += 4;
-      doc.text(`O.S. Pendentes: ${totalOSPending}`, margin, y);
-      y += 4;
-      doc.text(`O.S. Concluídas: ${totalOSCompleted}`, margin, y);
-      y += 4;
-      doc.text(`O.S. Entregues: ${totalOSDelivered}`, margin, y);
-      y += 5;
-      doc.line(margin, y - 1, pageWidth - margin, y - 1);
-      y += 4;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.text('RESUMO DE OPERAÇÕES', pageWidth / 2, y, { align: 'center' });
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6);
+        doc.text(`Vendas Efetivadas: ${totalSalesDone}`, margin, y);
+        y += 4;
+        doc.text(`O.S. Pendentes: ${totalOSPending}`, margin, y);
+        y += 4;
+        doc.text(`O.S. Concluídas: ${totalOSCompleted}`, margin, y);
+        y += 4;
+        doc.text(`O.S. Entregues: ${totalOSDelivered}`, margin, y);
+        y += 5;
+        doc.line(margin, y - 1, pageWidth - margin, y - 1);
+        y += 4;
+      }
       
       // Filtros de dados para o relatório
       const reportSales = sales.filter(s => (!userFilter || s.sellerName === userFilter) && isWithinPeriod(s.date) && (onlyCanceled ? s.isDeleted : !s.isDeleted));
@@ -416,10 +421,12 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
           <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">Dashboard de Performance</p>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
-          <button onClick={() => setIsReportModalOpen(true)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg active:scale-95 transition-all">
-            <FileText size={12} />
-            Relatório
-          </button>
+          {!enabledFeatures?.hideFinancialReports && (
+            <button onClick={() => setIsReportModalOpen(true)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg active:scale-95 transition-all">
+              <FileText size={12} />
+              Relatório
+            </button>
+          )}
           <button onClick={() => setIsCancellationReportModalOpen(true)} className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg active:scale-95 transition-all">
             <Trash2 size={12} />
             Cancelados

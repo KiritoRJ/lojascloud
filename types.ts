@@ -19,6 +19,7 @@ export interface Tenant {
     financeTab: boolean;
     profiles: boolean;
     xmlExportImport: boolean;
+    hideFinancialReports?: boolean;
   };
   maxUsers?: number;
   maxOS?: number;

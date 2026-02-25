@@ -158,7 +158,8 @@ export class OnlineDB {
             salesTab: true,
             financeTab: true,
             profiles: true,
-            xmlExportImport: true
+            xmlExportImport: true,
+            hideFinancialReports: false
           },
           maxUsers: tenant?.max_users || 999,
           maxOS: limits?.max_os || 999,
@@ -251,7 +252,8 @@ export class OnlineDB {
             salesTab: true,
             financeTab: true,
             profiles: true,
-            xmlExportImport: true
+            xmlExportImport: true,
+            hideFinancialReports: false
           },
           max_users: trialLimits.maxUsers
         }]);
@@ -308,7 +310,8 @@ export class OnlineDB {
             salesTab: true,
             financeTab: true,
             profiles: true,
-            xmlExportImport: true
+            xmlExportImport: true,
+            hideFinancialReports: false
           };
 
           const { error: limitsError } = await supabase
@@ -357,7 +360,8 @@ export class OnlineDB {
           salesTab: true,
           financeTab: true,
           profiles: true,
-          xmlExportImport: true
+          xmlExportImport: true,
+          hideFinancialReports: false
         };
         const { error: limitsError } = await supabase
           .from('tenant_limits')

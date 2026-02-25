@@ -96,7 +96,7 @@ const App: React.FC = () => {
     };
 
     checkAndResetDb().then(() => {
-        OfflineSync.init();
+        OfflineSync.init(); // Apenas inicializa listeners
         const handleStatusChange = () => setIsOnline(navigator.onLine);
         window.addEventListener('online', handleStatusChange);
         window.addEventListener('offline', handleStatusChange);
@@ -107,6 +107,13 @@ const App: React.FC = () => {
         };
         return cleanup;
     });
+
+    // Adiciona um listener para o evento 'online' para iniciar a sincronização
+    // Isso garante que a sincronização só ocorra quando o app estiver online e o SW estiver pronto
+    window.addEventListener('online', OfflineSync.sincronizarPendentes);
+    return () => {
+      window.removeEventListener('online', OfflineSync.sincronizarPendentes);
+    };
   }, []);
 
   useEffect(() => {
@@ -219,19 +226,20 @@ const App: React.FC = () => {
   const loadData = useCallback(async (tenantId: string) => {
     setIsInitializing(true);
     try {
-      // Etapa 1: Carregar dados locais imediatamente para uma UI responsiva.
-      const localData = await OfflineSync.getLocalData(tenantId);
-      updateStateWithLocalData(localData, session);
-
-      // Etapa 2: Iniciar o processo de sincronização e atualização em segundo plano se estiver online.
       if (navigator.onLine) {
         setIsCloudConnected(true);
-        await OfflineSync.sincronizarPendentes();
+        // Etapa 1: Puxar dados da nuvem primeiro para garantir a versão mais recente
         await OfflineSync.pullAllData(tenantId);
+        // Etapa 2: Sincronizar pendentes após o pull, para evitar conflitos
+        await OfflineSync.sincronizarPendentes();
+        // Etapa 3: Carregar os dados locais (agora atualizados com a nuvem) para a UI
         const refreshedData = await OfflineSync.getLocalData(tenantId);
         updateStateWithLocalData(refreshedData, session);
       } else {
         setIsCloudConnected(false);
+        // Se offline, carregar apenas os dados locais
+        const localData = await OfflineSync.getLocalData(tenantId);
+        updateStateWithLocalData(localData, session);
       }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);

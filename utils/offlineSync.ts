@@ -19,10 +19,7 @@ export class OfflineSync {
       }
     });
 
-    // Sincroniza ao iniciar se estiver online
-    if (navigator.onLine) {
-      this.sincronizarPendentes();
-    }
+
   }
 
   // Função unificada para salvar qualquer tipo de dado localmente

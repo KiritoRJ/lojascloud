@@ -1,5 +1,10 @@
 
-import { supabase } from './supabaseClient';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = 'https://lawcmqsjhwuhogsukhbf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export class OnlineDB {
   // Busca configurações globais do sistema
@@ -118,44 +123,31 @@ export class OnlineDB {
     const cleanPass = passwordPlain.trim();
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: cleanUser, // Supabase Auth usa 'email' como identificador, mesmo que seja um username
-        password: cleanPass,
-      });
-
-      if (error) {
-        console.error("Erro de autenticação Supabase:", error.message);
-        return { success: false, message: "Usuário ou senha incorretos." };
-      }
-
-      if (!data.user) return { success: false, message: "Usuário não encontrado." };
-
-      // Agora, buscamos os dados do usuário e do tenant na nossa tabela 'users'
-      // usando o ID do usuário retornado pelo Supabase Auth.
-      const { data: userData, error: userError } = await supabase
+      const { data, error } = await supabase
         .from('users')
         .select('*, tenants(*, tenant_limits(*))')
-        .eq('id', data.user.id)
+        .eq('username', cleanUser)
+        .eq('password', cleanPass)
         .maybeSingle();
 
-      if (userError) throw userError;
-      if (!userData) return { success: false, message: "Dados do usuário não encontrados no banco." };
+      if (error) throw error;
+      if (!data) return { success: false, message: "Usuário ou senha incorretos." };
 
-      const tenant = userData.tenants;
+      const tenant = data.tenants;
       const limits = tenant?.tenant_limits;
       const expiresAt = tenant?.subscription_expires_at;
       const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
 
       return { 
         success: true, 
-        type: userData.role || 'admin', 
-        tenant: userData.tenant_id ? { 
-          id: userData.tenant_id, 
-          username: userData.username,
-          name: userData.name || userData.username,
-          role: userData.role,
+        type: data.role || 'admin', 
+        tenant: data.tenant_id ? { 
+          id: data.tenant_id, 
+          username: data.username,
+          name: data.name || data.username,
+          role: data.role,
           subscriptionStatus: isExpired ? 'expired' : (tenant?.subscription_status || 'trial'),
-          subscriptionExpiresAt: expiresAt, // Use a data de expiração do tenant
+          subscriptionExpiresAt: expiresAt,
           customMonthlyPrice: tenant?.custom_monthly_price,
           customQuarterlyPrice: tenant?.custom_quarterly_price,
           customYearlyPrice: tenant?.custom_yearly_price,
@@ -176,49 +168,28 @@ export class OnlineDB {
         } : null 
       };
     } catch (err: any) {
-      console.error("Erro no login:", err);
-      return { success: false, message: "Erro de rede. Verifique sua conexão ou tente novamente." };
+      return { success: false, message: "Erro ao conectar com o banco de dados." };
     }
   }
 
   // Verifica a senha do administrador para ações sensíveis
   static async verifyAdminPassword(tenantId: string, passwordPlain: string) {
     if (!tenantId) return { success: false, message: "ID da loja não encontrado." };
-    const currentUser = await supabase.auth.getUser();
-    if (!currentUser.data.user) return { success: false, message: "Nenhum usuário logado." };
-
     try {
-      // Primeiro, tente fazer login com as credenciais fornecidas
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: currentUser.data.user.email || '', // Assumindo que o email do usuário logado é o username
-        password: passwordPlain.trim(),
-      });
-
-      if (error) {
-        console.error("Erro de autenticação para verificação de senha:", error.message);
-        return { success: false, message: "Senha de administrador incorreta." };
-      }
-
-      if (!data.user) return { success: false, message: "Usuário não autenticado." };
-
-      // Agora, verifique se o usuário autenticado é um administrador do tenant correto
-      const { data: userData, error: userError } = await supabase
+      const { data, error } = await supabase
         .from('users')
-        .select('role, tenant_id')
-        .eq('id', data.user.id)
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'admin')
+        .eq('password', passwordPlain.trim())
         .maybeSingle();
-
-      if (userError) throw userError;
-      if (!userData) return { success: false, message: "Dados do usuário não encontrados." };
-
-      if (userData.role === 'admin' && userData.tenant_id === tenantId) {
-        return { success: true };
-      } else {
-        return { success: false, message: "Permissão negada ou senha incorreta." };
-      }
+      
+      if (error) throw error;
+      if (!data) return { success: false, message: "Senha de administrador incorreta." };
+      
+      return { success: true };
     } catch (err: any) {
-      console.error("Erro na verificação de senha do administrador:", err);
-      return { success: false, message: "Erro de comunicação com o banco de dados." };
+        return { success: false, message: "Erro de comunicação com o banco de dados." };
     }
   }
 
@@ -264,23 +235,6 @@ export class OnlineDB {
       const globalSettings = await this.getGlobalSettings();
       const trialLimits = globalSettings.trial || { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 };
 
-      // 1. Criar o usuário no Supabase Auth primeiro
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: tenantData.adminUsername.toLowerCase().trim(),
-        password: tenantData.adminPasswordPlain.trim(),
-      });
-
-      if (authError) {
-        console.error("Erro ao criar usuário no Supabase Auth:", authError.message);
-        return { success: false, message: authError.message };
-      }
-
-      if (!authData.user) {
-        return { success: false, message: "Usuário Auth não retornado." };
-      }
-
-      const userId = authData.user.id; // Usar o ID do usuário do Supabase Auth
-
       const { error: tError } = await supabase
         .from('tenants')
         .insert([{
@@ -312,13 +266,12 @@ export class OnlineDB {
         }]);
       if (limitsError) throw limitsError;
 
-      // 3. Inserir os dados do usuário na nossa tabela 'users' com o ID do Supabase Auth
       const { error: uError } = await supabase
         .from('users')
         .insert([{
-          id: userId, // Usar o ID do usuário do Supabase Auth
+          id: 'USR_ADM_' + Math.random().toString(36).substr(2, 5).toUpperCase(),
           username: tenantData.adminUsername.toLowerCase().trim(),
-          password: '', // Temporário: Define uma string vazia para satisfazer a restrição NOT NULL
+          password: tenantData.adminPasswordPlain.trim(),
           name: tenantData.storeName,
           role: 'admin',
           tenant_id: tenantData.id,
@@ -329,7 +282,6 @@ export class OnlineDB {
 
       return { success: true };
     } catch (e: any) {
-      console.error("Erro ao criar loja:", e.message);
       return { success: false, message: e.message };
     }
   }
@@ -459,9 +411,7 @@ export class OnlineDB {
         tenant_id: tenantId,
         store_name: storeName,
         photo: user.photo,
-        // A senha não é mais armazenada diretamente aqui após a autenticação via Supabase Auth.
-        // Atualizações de senha devem ser feitas via supabase.auth.updateUser({ password: '...' })
-        password: '', // Temporário: Define uma string vazia para satisfazer a restrição NOT NULL
+        password: user.password || '123456',
         specialty: user.specialty
       };
 
@@ -472,7 +422,6 @@ export class OnlineDB {
       if (error) throw error;
       return { success: true, username };
     } catch (e: any) {
-      console.error("Erro ao salvar/atualizar usuário:", e.message);
       return { success: false, message: e.message };
     }
   }

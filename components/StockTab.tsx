@@ -156,21 +156,22 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     setIsSaving(true);
     
     try {
+      let newList: Product[];
       if (editingProduct) {
-        const newList = products.map(p => p.id === editingProduct.id ? { ...p, ...formData } as Product : p);
-        await setProducts(newList);
+        newList = products.map(p => p.id === editingProduct.id ? { ...p, ...formData } as Product : p);
       } else {
-        const newProd = {
-          ...formData,
+        const newProd = { 
+          ...formData, 
           id: 'PROD_' + Math.random().toString(36).substr(2, 6).toUpperCase(),
           quantity: formData.quantity || 0,
           costPrice: formData.costPrice || 0,
           salePrice: formData.salePrice || 0,
           barcode: formData.barcode || ''
         } as Product;
-        await setProducts([newProd, ...products]);
+        newList = [newProd, ...products];
       }
       
+      await setProducts(newList);
       setIsModalOpen(false);
       resetForm();
     } catch (err) {

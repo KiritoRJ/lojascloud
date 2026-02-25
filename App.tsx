@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './utils/supabaseClient';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck } from 'lucide-react';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, Terminal } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import StockTab from './components/StockTab';
@@ -15,7 +15,7 @@ import { OnlineDB } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { db } from './utils/localDb';
 
-type Tab = 'os' | 'estoque' | 'vendas' | 'financeiro' | 'config';
+type Tab = 'os' | 'estoque' | 'vendas' | 'financeiro' | 'config' | 'sqlEditor';
 
 const DEFAULT_SETTINGS: AppSettings = {
   storeName: 'Minha Assistência',
@@ -306,13 +306,13 @@ const App: React.FC = () => {
               setProducts((prevProducts) => prevProducts.filter(p => p.id !== deletedId));
               db.products.delete(deletedId);
             } else if (payload.eventType === 'INSERT') {
-                const newProduct = payload.new;
+                const newProduct = payload.new as Product;
                 setProducts((prev) => [...prev, newProduct]);
-                db.products.put(newProduct);
+                db.products.put({ ...newProduct, tenantId: session.tenantId! });
             } else if (payload.eventType === 'UPDATE') {
-                const updatedProduct = payload.new;
+                const updatedProduct = payload.new as Product;
                 setProducts((prev) => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
-                db.products.put(updatedProduct);
+                db.products.put({ ...updatedProduct, tenantId: session.tenantId! });
             }
           }
         )
@@ -339,7 +339,7 @@ const App: React.FC = () => {
           setSession(superSession as any);
         } else {
           const tenantId = result.tenant?.id;
-          const userFromDb = result.tenant?.users?.find((u: any) => u.tenant_id === tenantId && u.role === result.type);
+          const userFromDb = (result.tenant as any)?.users?.find((u: any) => u.tenant_id === tenantId && u.role === result.type);
 
           const newSession = { 
             isLoggedIn: true, 
@@ -402,8 +402,8 @@ const App: React.FC = () => {
         maxProducts: tenant.tenant_limits?.max_products,
       };
       const finalUser = {
-        id: tenant.users.find((u: any) => u.role === 'admin')?.id || 'admin',
-        name: tenant.users.find((u: any) => u.role === 'admin')?.name || 'Admin',
+        id: (tenant as any).users.find((u: any) => u.role === 'admin')?.id || 'admin',
+        name: (tenant as any).users.find((u: any) => u.role === 'admin')?.name || 'Admin',
         role: 'admin' as const,
         photo: null,
       };
@@ -654,7 +654,6 @@ const App: React.FC = () => {
   const currentUser = session.user || settings.users[0];
   const navItems = [
     { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
-    { id: 'sqlEditor', label: 'Editor SQL', icon: Terminal, roles: ['super'] },
     { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
@@ -726,7 +725,6 @@ const App: React.FC = () => {
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} />}
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
-        {activeTab === 'sqlEditor' && session.type === 'super' && <SqlEditorTab tenantId={session.tenantId} />}
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">

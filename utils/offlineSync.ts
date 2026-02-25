@@ -152,7 +152,7 @@ export class OfflineSync {
     try {
       const registration = await navigator.serviceWorker.ready;
       if ('sync' in registration) {
-        await registration.sync.register('sync-pendentes');
+        await (registration as any).sync.register('sync-pendentes');
         console.log('Background sync registrado com sucesso.');
       } else {
         console.warn('[Sync] Background Sync API não disponível.');
@@ -166,6 +166,51 @@ export class OfflineSync {
     }
   }
   
+  // Funções de conveniência para salvar tipos específicos
+  static async saveOrder(tenantId: string, order: ServiceOrder) {
+    return this.salvarLocalmente(tenantId, 'orders', 'upsert', order);
+  }
+
+  static async deleteOrder(tenantId: string, id: string) {
+    return this.salvarLocalmente(tenantId, 'orders', 'delete', { id });
+  }
+
+  static async saveProduct(tenantId: string, product: Product) {
+    return this.salvarLocalmente(tenantId, 'products', 'upsert', product);
+  }
+
+  static async deleteProduct(tenantId: string, id: string) {
+    return this.salvarLocalmente(tenantId, 'products', 'delete', { id });
+  }
+
+  static async saveSale(tenantId: string, sale: Sale) {
+    return this.salvarLocalmente(tenantId, 'sales', 'upsert', sale);
+  }
+
+  static async deleteSale(tenantId: string, id: string) {
+    return this.salvarLocalmente(tenantId, 'sales', 'delete', { id });
+  }
+
+  static async saveTransaction(tenantId: string, transaction: Transaction) {
+    return this.salvarLocalmente(tenantId, 'transactions', 'upsert', transaction);
+  }
+
+  static async deleteTransaction(tenantId: string, id: string) {
+    return this.salvarLocalmente(tenantId, 'transactions', 'delete', { id });
+  }
+
+  static async saveSettings(tenantId: string, settings: AppSettings) {
+    return this.salvarLocalmente(tenantId, 'settings', 'upsert', settings);
+  }
+
+  static async saveUser(tenantId: string, user: User) {
+    return this.salvarLocalmente(tenantId, 'users', 'upsert', user);
+  }
+
+  static async deleteUser(tenantId: string, id: string) {
+    return this.salvarLocalmente(tenantId, 'users', 'delete', { id });
+  }
+
   // Funções para obter dados (lêem das tabelas locais)
   static async getLocalData(tenantId: string) {
      const [settings, orders, products, sales, transactions, users] = await Promise.all([
@@ -194,7 +239,7 @@ export class OfflineSync {
         OnlineDB.fetchUsers(tenantId)
       ]);
 
-      await db.transaction('rw', db.settings, db.users, db.orders, db.products, db.sales, db.transactions, async () => {
+      await db.transaction('rw', [db.settings, db.users, db.orders, db.products, db.sales, db.transactions], async () => {
         if (cloudSettings) await db.settings.put({ ...cloudSettings, tenantId });
         if (cloudUsers && cloudUsers.length > 0) await db.users.bulkPut(cloudUsers.map((u: any) => ({ ...u, tenantId })));
         if (cloudOrders && cloudOrders.length > 0) await db.orders.bulkPut(cloudOrders.map((o: any) => ({ ...o, tenantId })));

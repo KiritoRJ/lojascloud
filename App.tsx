@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { supabase } from './utils/supabaseClient';
 import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
@@ -255,6 +256,34 @@ const App: React.FC = () => {
   useEffect(() => {
     if (session?.isLoggedIn && session.tenantId) {
       loadData(session.tenantId);
+
+      const channel = supabase
+        .channel('public:products')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'products', filter: `tenant_id=eq.${session.tenantId}` },
+          (payload) => {
+            console.log('Realtime payload recebido:', payload);
+            if (payload.eventType === 'DELETE') {
+              const deletedId = payload.old.id;
+              setProducts((prevProducts) => prevProducts.filter(p => p.id !== deletedId));
+              db.products.delete(deletedId);
+            } else if (payload.eventType === 'INSERT') {
+                const newProduct = payload.new;
+                setProducts((prev) => [...prev, newProduct]);
+                db.products.put(newProduct);
+            } else if (payload.eventType === 'UPDATE') {
+                const updatedProduct = payload.new;
+                setProducts((prev) => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+                db.products.put(updatedProduct);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [session?.isLoggedIn, session?.tenantId, loadData]);
 

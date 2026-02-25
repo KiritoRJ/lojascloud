@@ -1,39 +1,79 @@
 
 import { db, SyncItem } from './localDb';
 import { OnlineDB } from './api';
+import { v4 as uuidv4 } from 'uuid';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from '../types';
 
 export class OfflineSync {
   private static isSyncing = false;
 
   static async init() {
-    window.addEventListener('online', () => {
-      console.log('App is online. Starting sync...');
-      this.processQueue();
+    // Listener para quando o app voltar a ficar online
+    window.addEventListener('online', this.sincronizarPendentes);
+
+    // Listener para o evento de sync do Service Worker
+    navigator.serviceWorker.ready.then(registration => {
+      if ('sync' in registration) {
+        registration.addEventListener('sync', (event: any) => {
+          if (event.tag === 'sync-pendentes') {
+            event.waitUntil(this.sincronizarPendentes());
+          }
+        });
+      }
     });
 
-    // Process queue on init if online
+    // Sincroniza ao iniciar se estiver online
     if (navigator.onLine) {
-      this.processQueue();
+      this.sincronizarPendentes();
     }
   }
 
-  static async processQueue() {
-    if (this.isSyncing) return;
+  // Função unificada para salvar qualquer tipo de dado localmente
+  static async salvarLocalmente(tenantId: string, type: SyncItem['type'], action: SyncItem['action'], data: any) {
+    const id = data.id || uuidv4();
+    const item: SyncItem = {
+      id,
+      tenantId,
+      type,
+      action,
+      data: { ...data, id },
+      sincronizado: 0,
+      criadoEm: Date.now(),
+    };
+
+    await db.transaction('rw', db.pendentes, async () => {
+      await db.pendentes.put(item);
+    });
+
+    // Tenta registrar um background sync
+    this.requestBackgroundSync();
+
+    // Se estiver online, tenta sincronizar imediatamente como fallback
+    if (navigator.onLine) {
+      this.sincronizarPendentes();
+    }
+
+    return item.data; // Retorna o dado com o ID gerado
+  }
+
+  static async sincronizarPendentes() {
+    if (this.isSyncing || !navigator.onLine) return;
     this.isSyncing = true;
+    console.log('Iniciando sincronização de pendentes...');
 
     try {
-      const queue = await db.syncQueue.orderBy('timestamp').toArray();
-      if (queue.length === 0) {
-        this.isSyncing = false;
+      const pendentes = await db.pendentes.where('sincronizado').equals(0).sortBy('criadoEm');
+      if (pendentes.length === 0) {
+        console.log('Nenhum item para sincronizar.');
         return;
       }
 
-      console.log(`Processing ${queue.length} items from sync queue...`);
+      console.log(`Encontrados ${pendentes.length} itens para sincronizar.`);
 
-      for (const item of queue) {
+      for (const item of pendentes) {
         let success = false;
         try {
+          // Lógica de envio para a API baseada no tipo e ação
           switch (item.type) {
             case 'users':
               if (item.action === 'upsert') {
@@ -85,226 +125,41 @@ export class OfflineSync {
               success = res.success;
               break;
           }
-        } catch (err) {
-          console.error('Error syncing item:', item, err);
+        } catch (error) {
+          console.error(`Falha ao sincronizar item ${item.id}:`, error);
           success = false;
         }
 
         if (success) {
-          await db.syncQueue.delete(item.id!);
+          await db.pendentes.update(item.id, { sincronizado: 1 });
+          console.log(`Item ${item.id} sincronizado com sucesso.`);
         } else {
-          // If one fails, stop and wait for next online event or retry
-          console.warn('Sync failed for item, stopping queue processing.');
-          break;
+          console.warn(`Não foi possível sincronizar o item ${item.id}. Tentará novamente mais tarde.`);
         }
       }
+    } catch (error) {
+      console.error('Erro geral no processo de sincronização:', error);
     } finally {
       this.isSyncing = false;
+      console.log('Sincronização finalizada.');
     }
   }
 
-  static async saveOrder(tenantId: string, order: ServiceOrder) {
-    console.log('[OfflineSync] Attempting to save order to local DB:', order);
+  private static async requestBackgroundSync() {
     try {
-      await db.orders.put({ ...order, tenantId });
-      console.log('[OfflineSync] Order saved to local DB successfully.');
-      await db.syncQueue.add({
-        tenantId,
-        type: 'orders',
-        action: 'upsert',
-        data: order,
-        timestamp: Date.now()
-      });
-      console.log('[OfflineSync] Order added to sync queue.');
-      this.processQueue(); // Tenta sincronizar imediatamente
+      const registration = await navigator.serviceWorker.ready;
+      if ('sync' in registration) {
+        await registration.sync.register('sync-pendentes');
+        console.log('Background sync registrado com a tag: sync-pendentes');
+      }
     } catch (error) {
-      console.error('[OfflineSync] CRITICAL: Error saving order to local DB:', error);
+      console.error('Registro do background sync falhou:', error);
     }
   }
-
-  static async deleteOrder(tenantId: string, orderId: string) {
-    const order = await db.orders.get(orderId);
-    if (order) {
-      await db.orders.update(orderId, { isDeleted: true });
-    }
-    await db.syncQueue.add({
-      tenantId,
-      type: 'orders',
-      action: 'delete',
-      data: { id: orderId },
-      timestamp: Date.now()
-    });
-    this.processQueue();
-  }
-
-  static async saveProduct(tenantId: string, product: Product) {
-    console.log('[OfflineSync] Attempting to save product to local DB:', product);
-    try {
-      await db.products.put({ ...product, tenantId });
-      console.log('[OfflineSync] Product saved to local DB successfully.');
-      await db.syncQueue.add({
-        tenantId,
-        type: 'products',
-        action: 'upsert',
-        data: product,
-        timestamp: Date.now()
-      });
-      console.log('[OfflineSync] Product added to sync queue.');
-      this.processQueue();
-    } catch (error) {
-      console.error('[OfflineSync] CRITICAL: Error saving product to local DB:', error);
-    }
-  }
-
-  static async deleteProduct(tenantId: string, productId: string) {
-    await db.products.delete(productId);
-    await db.syncQueue.add({
-      tenantId,
-      type: 'products',
-      action: 'delete',
-      data: { id: productId },
-      timestamp: Date.now()
-    });
-    this.processQueue();
-  }
-
-  static async saveSale(tenantId: string, sale: Sale) {
-    await db.sales.put({ ...sale, tenantId });
-    await db.syncQueue.add({
-      tenantId,
-      type: 'sales',
-      action: 'upsert',
-      data: sale,
-      timestamp: Date.now()
-    });
-    this.processQueue();
-  }
-
-  static async deleteSale(tenantId: string, saleId: string) {
-    const sale = await db.sales.get(saleId);
-    if (sale) {
-      await db.sales.update(saleId, { isDeleted: true });
-    }
-    await db.syncQueue.add({
-      tenantId,
-      type: 'sales',
-      action: 'delete',
-      data: { id: saleId },
-      timestamp: Date.now()
-    });
-    this.processQueue();
-  }
-
-  static async saveTransaction(tenantId: string, transaction: Transaction) {
-    await db.transactions.put({ ...transaction, tenantId });
-    await db.syncQueue.add({
-      tenantId,
-      type: 'transactions',
-      action: 'upsert',
-      data: transaction,
-      timestamp: Date.now()
-    });
-    this.processQueue();
-  }
-
-  static async deleteTransaction(tenantId: string, transactionId: string) {
-    const transaction = await db.transactions.get(transactionId);
-    if (transaction) {
-      await db.transactions.update(transactionId, { isDeleted: true });
-    }
-    await db.syncQueue.add({
-      tenantId,
-      type: 'transactions',
-      action: 'delete',
-      data: { id: transactionId },
-      timestamp: Date.now()
-    });
-    this.processQueue();
-  }
-
-  static async saveUser(tenantId: string, user: User, storeName: string) {
-    await db.users.put({ ...user, tenantId });
-    await db.syncQueue.add({
-      tenantId,
-      type: 'users',
-      action: 'upsert',
-      data: { ...user, store_name: storeName },
-      timestamp: Date.now()
-    });
-    this.processQueue();
-  }
-
-  static async deleteUser(tenantId: string, userId: string) {
-    await db.users.delete(userId);
-    await db.syncQueue.add({
-      tenantId,
-      type: 'users',
-      action: 'delete',
-      data: { id: userId },
-      timestamp: Date.now()
-    });
-    this.processQueue();
-  }
-
-  static async saveSettings(tenantId: string, settings: AppSettings) {
-    await db.settings.put({ ...settings, tenantId });
-    await db.syncQueue.add({
-      tenantId,
-      type: 'settings',
-      action: 'upsert',
-      data: settings,
-      timestamp: Date.now()
-    });
-    this.processQueue();
-  }
-
-  static async syncAndPullAllData(tenantId: string) {
-    if (!navigator.onLine) return;
-    console.log('Starting sync and pull...');
-    await this.processQueue();
-    console.log('Queue processed, now pulling data.');
-    await this.pullAllData(tenantId);
-  }
-
-  static async pullAllData(tenantId: string) {
-    if (!navigator.onLine) return;
-
-    try {
-      const [cloudSettings, cloudOrders, cloudProducts, cloudSales, cloudTransactions, cloudUsers] = await Promise.all([
-        OnlineDB.syncPull(tenantId, 'settings'),
-        OnlineDB.fetchOrders(tenantId),
-        OnlineDB.fetchProducts(tenantId),
-        OnlineDB.fetchSales(tenantId),
-        OnlineDB.fetchTransactions(tenantId),
-        OnlineDB.fetchUsers(tenantId)
-      ]);
-
-      if (cloudSettings) await db.settings.put({ ...cloudSettings, tenantId });
-      if (cloudUsers && cloudUsers.length > 0) {
-        await db.users.bulkPut(cloudUsers.map((u: any) => ({ ...u, tenantId })));
-      }
-      if (cloudOrders && cloudOrders.length > 0) {
-        await db.orders.bulkPut(cloudOrders.map((o: any) => ({ ...o, tenantId })));
-      }
-      if (cloudProducts && cloudProducts.length > 0) {
-        await db.products.bulkPut(cloudProducts.map((p: any) => ({ ...p, tenantId })));
-      }
-      if (cloudSales && cloudSales.length > 0) {
-        await db.sales.bulkPut(cloudSales.map((s: any) => ({ ...s, tenantId })));
-      }
-      if (cloudTransactions && cloudTransactions.length > 0) {
-        await db.transactions.bulkPut(cloudTransactions.map((t: any) => ({ ...t, tenantId })));
-      }
-
-
-    } catch (e) {
-      console.error('Error pulling data from cloud:', e);
-      throw e;
-    }
-  }
-
+  
+  // Funções para obter dados (lêem das tabelas locais)
   static async getLocalData(tenantId: string) {
-    const [settings, orders, products, sales, transactions, users] = await Promise.all([
+     const [settings, orders, products, sales, transactions, users] = await Promise.all([
       db.settings.get(tenantId),
       db.orders.where('tenantId').equals(tenantId).toArray(),
       db.products.where('tenantId').equals(tenantId).toArray(),
@@ -314,5 +169,35 @@ export class OfflineSync {
     ]);
 
     return { settings, orders, products, sales, transactions, users };
+  }
+
+  static async pullAllData(tenantId: string) {
+    if (!navigator.onLine) return;
+
+    try {
+      console.log('Puxando todos os dados da nuvem...');
+      const [cloudSettings, cloudOrders, cloudProducts, cloudSales, cloudTransactions, cloudUsers] = await Promise.all([
+        OnlineDB.syncPull(tenantId, 'settings'),
+        OnlineDB.fetchOrders(tenantId),
+        OnlineDB.fetchProducts(tenantId),
+        OnlineDB.fetchSales(tenantId),
+        OnlineDB.fetchTransactions(tenantId),
+        OnlineDB.fetchUsers(tenantId)
+      ]);
+
+      await db.transaction('rw', db.settings, db.users, db.orders, db.products, db.sales, db.transactions, async () => {
+        if (cloudSettings) await db.settings.put({ ...cloudSettings, tenantId });
+        if (cloudUsers && cloudUsers.length > 0) await db.users.bulkPut(cloudUsers.map((u: any) => ({ ...u, tenantId })));
+        if (cloudOrders && cloudOrders.length > 0) await db.orders.bulkPut(cloudOrders.map((o: any) => ({ ...o, tenantId })));
+        if (cloudProducts && cloudProducts.length > 0) await db.products.bulkPut(cloudProducts.map((p: any) => ({ ...p, tenantId })));
+        if (cloudSales && cloudSales.length > 0) await db.sales.bulkPut(cloudSales.map((s: any) => ({ ...s, tenantId })));
+        if (cloudTransactions && cloudTransactions.length > 0) await db.transactions.bulkPut(cloudTransactions.map((t: any) => ({ ...t, tenantId })));
+      });
+
+      console.log('Dados da nuvem salvos localmente com sucesso.');
+
+    } catch (e) {
+      console.error('Erro ao puxar dados da nuvem:', e);
+    }
   }
 }

@@ -38,6 +38,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const App: React.FC = () => {
+  const [error, setError] = useState<Error | null>(null);
   const [session, setSession] = useState<{ 
     isLoggedIn: boolean; 
     type: 'super' | 'admin' | 'colaborador'; 
@@ -80,9 +81,48 @@ const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isDBReady, setIsDBReady] = useState(false);
 
   useEffect(() => {
-    OfflineSync.init();
+    const handleError = (event: ErrorEvent) => {
+      console.error('App: Global Error:', event.error);
+      setError(event.error || new Error(event.message));
+    };
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      console.error('App: Unhandled Rejection:', event.reason);
+      setError(event.reason instanceof Error ? event.reason : new Error(String(event.reason)));
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
+  }, []);
+
+  useEffect(() => {
+    const checkDB = async () => {
+      try {
+        const counts = {
+          orders: await db.orders.count(),
+          products: await db.products.count(),
+          sales: await db.sales.count(),
+          transactions: await db.transactions.count(),
+          settings: await db.settings.count(),
+          customers: await db.customers.count(),
+          users: await db.users.count()
+        };
+        console.log('App: Estado do Banco Local:', counts);
+      } catch (err) {
+        console.error('App: Erro ao verificar banco local:', err);
+      }
+    };
+    
+    OfflineSync.init().then(() => {
+      setIsDBReady(true);
+      checkDB();
+    });
     const handleStatusChange = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', handleStatusChange);
     window.addEventListener('offline', handleStatusChange);
@@ -179,9 +219,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const restoreSession = async () => {
+      console.log('App: Restaurando sessão...');
       try {
         const storedSession = localStorage.getItem('session_pro');
         const storedUser = localStorage.getItem('currentUser_pro');
+        console.log('App: Sessão armazenada:', storedSession ? 'Encontrada' : 'Não encontrada');
         
         if (storedSession) {
           const parsed = JSON.parse(storedSession);
@@ -263,12 +305,18 @@ const App: React.FC = () => {
           setSales(cloudData.sales || []);
           setTransactions(cloudData.transactions || []);
           setCustomers(cloudData.customers || []);
+          console.log('App: Dados carregados via Nuvem com sucesso.');
           return;
         }
       }
 
       // Se offline ou falha no pull, carrega local
       const localData = await OfflineSync.getLocalData(tenantId);
+      console.log('App: Dados carregados via Banco Local:', { 
+        orders: localData.orders?.length, 
+        products: localData.products?.length,
+        settings: !!localData.settings
+      });
       const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
       finalSettings.users = localData.users || [];
       setSettings(finalSettings);
@@ -293,7 +341,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (session?.isLoggedIn && session.tenantId) {
+    if (session?.isLoggedIn && session.tenantId && isDBReady) {
       loadData(session.tenantId);
     }
     
@@ -531,6 +579,32 @@ const App: React.FC = () => {
       }
     }
   };
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-10 text-center">
+        <div className="w-20 h-20 bg-red-500 rounded-3xl flex items-center justify-center mb-6 shadow-2xl shadow-red-500/20">
+          <ShieldCheck size={40} />
+        </div>
+        <h1 className="text-xl font-black uppercase tracking-tighter mb-2">Erro Inesperado</h1>
+        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8 max-w-xs leading-relaxed">
+          Ocorreu um erro ao carregar a interface. Tente limpar o cache ou recarregar.
+        </p>
+        <div className="bg-black/20 p-4 rounded-2xl mb-8 w-full max-w-md overflow-auto">
+          <code className="text-[10px] text-red-400 font-mono break-all">{error.message}</code>
+        </div>
+        <button 
+          onClick={() => {
+            localStorage.clear();
+            window.location.reload();
+          }} 
+          className="bg-blue-600 px-8 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
+        >
+          Limpar Dados e Reiniciar
+        </button>
+      </div>
+    );
+  }
 
   if (isInitializing) {
     return (

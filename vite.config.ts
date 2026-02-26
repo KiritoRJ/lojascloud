@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
         VitePWA({
           registerType: 'autoUpdate',
           injectRegister: false,
-          includeAssets: ['icon.svg'],
+          includeAssets: ['icon.svg', 'manifest.webmanifest'],
           workbox: {
             globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
             cleanupOutdatedCaches: true,

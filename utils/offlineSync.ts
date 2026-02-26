@@ -298,8 +298,9 @@ export class OfflineSync {
   static async pullAllData(tenantId: string) {
     if (!navigator.onLine) return;
 
+    console.log('OfflineSync: Iniciando sincronização total para:', tenantId);
     try {
-      const [cloudSettings, cloudOrders, cloudProducts, cloudSales, cloudTransactions, cloudUsers, cloudCustomers] = await Promise.all([
+      const results = await Promise.allSettled([
         OnlineDB.syncPull(tenantId, 'settings'),
         OnlineDB.fetchOrders(tenantId),
         OnlineDB.fetchProducts(tenantId),
@@ -309,43 +310,61 @@ export class OfflineSync {
         OnlineDB.fetchCustomers(tenantId)
       ]);
 
-      if (cloudSettings) await db.settings.put({ ...cloudSettings, tenantId });
-      if (cloudUsers) {
+      const [settingsRes, ordersRes, productsRes, salesRes, transactionsRes, usersRes, customersRes] = results;
+
+      if (settingsRes.status === 'fulfilled' && settingsRes.value) {
+        await db.settings.put({ ...settingsRes.value, tenantId });
+      } else {
+        // Garante que pelo menos o registro do tenant existe no banco local
+        const existing = await db.settings.get(tenantId);
+        if (!existing) {
+          await db.settings.put({ tenantId } as any);
+        }
+      }
+      
+      if (usersRes.status === 'fulfilled' && usersRes.value) {
         await db.users.where('tenantId').equals(tenantId).delete();
-        await db.users.bulkPut(cloudUsers.map((u: any) => ({ ...u, tenantId })));
-      }
-      if (cloudOrders) {
-        await db.orders.where('tenantId').equals(tenantId).delete();
-        await db.orders.bulkPut(cloudOrders.map((o: any) => ({ ...o, tenantId })));
-      }
-      if (cloudProducts) {
-        await db.products.where('tenantId').equals(tenantId).delete();
-        await db.products.bulkPut(cloudProducts.map((p: any) => ({ ...p, tenantId })));
-      }
-      if (cloudSales) {
-        await db.sales.where('tenantId').equals(tenantId).delete();
-        await db.sales.bulkPut(cloudSales.map((s: any) => ({ ...s, tenantId })));
-      }
-      if (cloudTransactions) {
-        await db.transactions.where('tenantId').equals(tenantId).delete();
-        await db.transactions.bulkPut(cloudTransactions.map((t: any) => ({ ...t, tenantId })));
-      }
-      if (cloudCustomers) {
-        await db.customers.where('tenantId').equals(tenantId).delete();
-        await db.customers.bulkPut(cloudCustomers.map((c: any) => ({ ...c, tenantId })));
+        await db.users.bulkPut(usersRes.value.map((u: any) => ({ ...u, tenantId })));
       }
 
+      if (ordersRes.status === 'fulfilled' && ordersRes.value) {
+        await db.orders.where('tenantId').equals(tenantId).delete();
+        await db.orders.bulkPut(ordersRes.value.map((o: any) => ({ ...o, tenantId })));
+      }
+
+      if (productsRes.status === 'fulfilled' && productsRes.value) {
+        await db.products.where('tenantId').equals(tenantId).delete();
+        await db.products.bulkPut(productsRes.value.map((p: any) => ({ ...p, tenantId })));
+      }
+
+      if (salesRes.status === 'fulfilled' && salesRes.value) {
+        await db.sales.where('tenantId').equals(tenantId).delete();
+        await db.sales.bulkPut(salesRes.value.map((s: any) => ({ ...s, tenantId })));
+      }
+
+      if (transactionsRes.status === 'fulfilled' && transactionsRes.value) {
+        await db.transactions.where('tenantId').equals(tenantId).delete();
+        await db.transactions.bulkPut(transactionsRes.value.map((t: any) => ({ ...t, tenantId })));
+      }
+
+      if (customersRes.status === 'fulfilled' && customersRes.value) {
+        await db.customers.where('tenantId').equals(tenantId).delete();
+        await db.customers.bulkPut(customersRes.value.map((c: any) => ({ ...c, tenantId })));
+      }
+
+      console.log('OfflineSync: Sincronização concluída.');
+
       return {
-        settings: cloudSettings,
-        orders: cloudOrders,
-        products: cloudProducts,
-        sales: cloudSales,
-        transactions: cloudTransactions,
-        users: cloudUsers,
-        customers: cloudCustomers
+        settings: settingsRes.status === 'fulfilled' ? settingsRes.value : null,
+        orders: ordersRes.status === 'fulfilled' ? ordersRes.value : [],
+        products: productsRes.status === 'fulfilled' ? productsRes.value : [],
+        sales: salesRes.status === 'fulfilled' ? salesRes.value : [],
+        transactions: transactionsRes.status === 'fulfilled' ? transactionsRes.value : [],
+        users: usersRes.status === 'fulfilled' ? usersRes.value : [],
+        customers: customersRes.status === 'fulfilled' ? customersRes.value : []
       };
     } catch (e) {
-      console.error('Error pulling data from cloud:', e);
+      console.error('OfflineSync: Erro crítico na sincronização:', e);
       throw e;
     }
   }

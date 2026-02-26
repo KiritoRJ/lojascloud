@@ -226,29 +226,6 @@ const App: React.FC = () => {
     try {
       setIsCloudConnected(navigator.onLine);
       
-      // Se estiver online, aproveita para atualizar o status da assinatura
-      if (navigator.onLine && session?.type !== 'super') {
-        const tenant = await OnlineDB.getTenantById(tenantId);
-        if (tenant) {
-          const expiresAt = tenant.subscription_expires_at;
-          const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
-          const newStatus = isExpired ? 'expired' : (tenant.subscription_status || 'trial');
-          
-          if (newStatus !== session?.subscriptionStatus || expiresAt !== session?.subscriptionExpiresAt) {
-            setSession(prev => {
-              if (!prev) return null;
-              const updated = { 
-                ...prev, 
-                subscriptionStatus: newStatus, 
-                subscriptionExpiresAt: expiresAt 
-              };
-              localStorage.setItem('session_pro', JSON.stringify(updated));
-              return updated;
-            });
-          }
-        }
-      }
-
       // Tenta puxar dados novos se estiver online
       if (navigator.onLine) {
         const cloudData = await OfflineSync.pullAllData(tenantId);
@@ -297,14 +274,6 @@ const App: React.FC = () => {
     if (session?.isLoggedIn && session.tenantId) {
       loadData(session.tenantId);
     }
-    
-    const handleFocus = () => {
-      if (session?.isLoggedIn && session.tenantId) {
-        loadData(session.tenantId);
-      }
-    };
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
   }, [session?.isLoggedIn, session?.tenantId, loadData]);
 
   const handleLogin = async (e: React.FormEvent) => {

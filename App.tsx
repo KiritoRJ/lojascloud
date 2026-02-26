@@ -344,11 +344,13 @@ const App: React.FC = () => {
       console.error("Erro ao carregar dados:", e);
       setIsCloudConnected(false);
     }
-  }, [session]);
+  }, [session, isDBReady]);
 
   useEffect(() => {
     if (session?.isLoggedIn && session.tenantId && isDBReady) {
-      loadData(session.tenantId);
+      loadData(session.tenantId).finally(() => {
+        if (isInitializing) setIsInitializing(false);
+      });
     }
     
     const handleFocus = () => {
@@ -815,10 +817,10 @@ const App: React.FC = () => {
           <button onClick={() => window.location.reload()} className="ml-4 bg-white/20 px-2 py-0.5 rounded hover:bg-white/30 transition-colors">Recarregar</button>
         </div>
       )}
-      {isOnline && isSyncing && (
-        <div className="fixed top-0 left-0 right-0 bg-blue-600 text-white text-[9px] font-black uppercase py-1.5 text-center z-[200] shadow-lg flex items-center justify-center gap-2">
-          <Loader2 size={10} className="animate-spin" />
-          Sincronizando com a Nuvem...
+      {isSyncing && isOnline && (
+        <div className="fixed top-0 left-0 right-0 bg-blue-500 text-white text-[9px] font-black uppercase py-1.5 text-center z-[200] shadow-lg flex items-center justify-center gap-2 animate-pulse">
+          <Loader2 size={12} className="animate-spin"/>
+          Sincronizando com a nuvem...
         </div>
       )}
       <aside className={`hidden md:flex flex-col ${isSidebarCollapsed ? 'w-24' : 'w-72'} bg-slate-900 text-white p-6 h-screen sticky top-0 overflow-y-auto transition-all duration-300 ease-in-out`}>

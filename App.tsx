@@ -1,23 +1,19 @@
 
-import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, Users } from 'lucide-react';
-import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
-
-// Lazy load components
-const ServiceOrderTab = lazy(() => import('./components/ServiceOrderTab'));
-const StockTab = lazy(() => import('./components/StockTab'));
-const SalesTab = lazy(() => import('./components/SalesTab'));
-const FinanceTab = lazy(() => import('./components/FinanceTab'));
-const CustomersTab = lazy(() => import('./components/CustomersTab'));
-const SettingsTab = lazy(() => import('./components/SettingsTab'));
-const SuperAdminDashboard = lazy(() => import('./components/SuperAdminDashboard'));
-const SubscriptionView = lazy(() => import('./components/SubscriptionView'));
-
+import React, { useState, useEffect, useCallback } from 'react';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
+import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from './types';
+import ServiceOrderTab from './components/ServiceOrderTab';
+import StockTab from './components/StockTab';
+import SalesTab from './components/SalesTab';
+import FinanceTab from './components/FinanceTab';
+import SettingsTab from './components/SettingsTab';
+import SuperAdminDashboard from './components/SuperAdminDashboard';
+import SubscriptionView from './components/SubscriptionView';
 import { OnlineDB } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { db } from './utils/localDb';
 
-type Tab = 'os' | 'estoque' | 'vendas' | 'financeiro' | 'clientes' | 'config';
+type Tab = 'os' | 'estoque' | 'vendas' | 'financeiro' | 'config';
 
 const DEFAULT_SETTINGS: AppSettings = {
   storeName: 'Minha Assistência',
@@ -59,7 +55,6 @@ const App: React.FC = () => {
       profiles: boolean;
       xmlExportImport: boolean;
       hideFinancialReports?: boolean;
-      customersTab?: boolean;
     };
     maxUsers?: number;
     maxOS?: number;
@@ -71,7 +66,6 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('os');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -226,6 +220,29 @@ const App: React.FC = () => {
     try {
       setIsCloudConnected(navigator.onLine);
       
+      // Se estiver online, aproveita para atualizar o status da assinatura
+      if (navigator.onLine && session?.type !== 'super') {
+        const tenant = await OnlineDB.getTenantById(tenantId);
+        if (tenant) {
+          const expiresAt = tenant.subscription_expires_at;
+          const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
+          const newStatus = isExpired ? 'expired' : (tenant.subscription_status || 'trial');
+          
+          if (newStatus !== session?.subscriptionStatus || expiresAt !== session?.subscriptionExpiresAt) {
+            setSession(prev => {
+              if (!prev) return null;
+              const updated = { 
+                ...prev, 
+                subscriptionStatus: newStatus, 
+                subscriptionExpiresAt: expiresAt 
+              };
+              localStorage.setItem('session_pro', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      }
+
       // Tenta puxar dados novos se estiver online
       if (navigator.onLine) {
         const cloudData = await OfflineSync.pullAllData(tenantId);
@@ -240,7 +257,6 @@ const App: React.FC = () => {
           setProducts(cloudData.products || []);
           setSales(cloudData.sales || []);
           setTransactions(cloudData.transactions || []);
-          setCustomers(cloudData.customers || []);
           return;
         }
       }
@@ -254,7 +270,6 @@ const App: React.FC = () => {
       setProducts(localData.products || []);
       setSales(localData.sales || []);
       setTransactions(localData.transactions || []);
-      setCustomers(localData.customers || []);
     } catch (e) {
       console.error("Erro ao carregar dados:", e);
       setIsCloudConnected(false);
@@ -266,7 +281,6 @@ const App: React.FC = () => {
       setProducts(localData.products || []);
       setSales(localData.sales || []);
       setTransactions(localData.transactions || []);
-      setCustomers(localData.customers || []);
     }
   }, []);
 
@@ -274,6 +288,14 @@ const App: React.FC = () => {
     if (session?.isLoggedIn && session.tenantId) {
       loadData(session.tenantId);
     }
+    
+    const handleFocus = () => {
+      if (session?.isLoggedIn && session.tenantId) {
+        loadData(session.tenantId);
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [session?.isLoggedIn, session?.tenantId, loadData]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -475,21 +497,6 @@ const App: React.FC = () => {
     await OfflineSync.deleteTransaction(session.tenantId, id);
   };
 
-  const handleSetCustomers = async (newCustomers: Customer[]) => {
-    setCustomers(newCustomers);
-    const lastCustomer = newCustomers.find(c => !customers.some(oc => oc.id === c.id));
-    if (lastCustomer && session?.tenantId) {
-      await OfflineSync.saveCustomer(session.tenantId, lastCustomer);
-    }
-  };
-
-  const handleDeleteCustomer = async (id: string) => {
-    if (!session?.tenantId) return;
-    const updated = customers.map(c => c.id === id ? { ...c, isDeleted: true } : c);
-    setCustomers(updated);
-    await OfflineSync.deleteCustomer(session.tenantId, id);
-  };
-
   const handleSwitchProfile = (user: User) => {
     if (session) {
       const newType = user.role;
@@ -581,17 +588,11 @@ const App: React.FC = () => {
     );
   }
 
-  if (session.type === 'super') {
-    return (
-      <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={40} /></div>}>
-        <SuperAdminDashboard onLogout={handleLogout} onLoginAs={handleLoginAs} />
-      </Suspense>
-    );
-  }
+  if (session.type === 'super') return <SuperAdminDashboard onLogout={handleLogout} onLoginAs={handleLoginAs} />;
 
   if (session.subscriptionStatus === 'expired') {
     return (
-      <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={40} /></div>}>
+      <>
         <SubscriptionView 
           tenantId={session.tenantId!} 
           storeName={settings?.storeName || 'Sua Loja'} 
@@ -639,7 +640,7 @@ const App: React.FC = () => {
              </div>
           </div>
         )}
-      </Suspense>
+      </>
     );
   }
 
@@ -692,7 +693,6 @@ const App: React.FC = () => {
     { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
-    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin'], feature: 'customersTab' },
     { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
   ];
   
@@ -756,14 +756,11 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 p-4 pt-24 pb-28 md:pt-10 md:pb-4 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
-        <Suspense fallback={<div className="w-full h-full flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={40} /></div>}>
-          {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
-          {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
-          {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
-          {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-          {activeTab === 'clientes' && <CustomersTab customers={customers.filter(c => !c.isDeleted)} setCustomers={handleSetCustomers} onDeleteCustomer={handleDeleteCustomer} settings={settings} />}
-          {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
-        </Suspense>
+        {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
+        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
+        {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
+        {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
+        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">

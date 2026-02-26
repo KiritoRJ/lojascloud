@@ -253,8 +253,7 @@ export class OnlineDB {
             financeTab: true,
             profiles: true,
             xmlExportImport: true,
-            hideFinancialReports: false,
-            customersTab: true
+            hideFinancialReports: false
           },
           max_users: trialLimits.maxUsers
         }]);
@@ -312,8 +311,7 @@ export class OnlineDB {
             financeTab: true,
             profiles: true,
             xmlExportImport: true,
-            hideFinancialReports: false,
-            customersTab: planType === 'yearly'
+            hideFinancialReports: false
           };
 
           const { error: limitsError } = await supabase
@@ -363,8 +361,7 @@ export class OnlineDB {
           financeTab: true,
           profiles: true,
           xmlExportImport: true,
-          hideFinancialReports: false,
-          customersTab: planType === 'yearly'
+          hideFinancialReports: false
         };
         const { error: limitsError } = await supabase
           .from('tenant_limits')
@@ -603,35 +600,6 @@ export class OnlineDB {
     }
   }
 
-  // Busca clientes
-  static async fetchCustomers(tenantId: string) {
-    if (!tenantId) return [];
-    try {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .order('name', { ascending: true });
-      
-      if (error) throw error;
-      
-      return (data || []).map(d => ({
-        id: d.id,
-        name: d.name,
-        phone: d.phone,
-        email: d.email,
-        address: d.address,
-        document: d.document,
-        notes: d.notes,
-        createdAt: d.created_at,
-        isDeleted: d.is_deleted || false
-      }));
-    } catch (e) {
-      console.error("Erro ao buscar clientes do Supabase:", e);
-      return [];
-    }
-  }
-
   // Salva Ordens de Serviço no Banco de Dados
   static async upsertOrders(tenantId: string, orders: any[]) {
     if (!tenantId || !orders.length) return { success: true };
@@ -827,50 +795,6 @@ export class OnlineDB {
       return { success: true };
     } catch (e: any) {
       console.error("Erro Delete User:", e);
-      return { success: false, message: e.message };
-    }
-  }
-
-  // Salva Clientes no Banco de Dados
-  static async upsertCustomers(tenantId: string, customers: any[]) {
-    if (!tenantId || !customers.length) return { success: true };
-    try {
-      const dataToUpsert = customers.map(c => ({
-        id: c.id,
-        tenant_id: tenantId,
-        name: c.name,
-        phone: c.phone,
-        email: c.email,
-        address: c.address,
-        document: c.document,
-        notes: c.notes,
-        created_at: c.createdAt,
-        is_deleted: c.isDeleted || false,
-        updated_at: new Date().toISOString()
-      }));
-
-      const { error } = await supabase
-        .from('customers')
-        .upsert(dataToUpsert, { onConflict: 'id' });
-      
-      if (error) throw error;
-      return { success: true };
-    } catch (e) {
-      console.error("Erro ao salvar clientes no Supabase:", e);
-      return { success: false };
-    }
-  }
-
-  // Remove um cliente (Soft Delete)
-  static async deleteCustomer(id: string) {
-    try {
-      const { error, status } = await supabase
-        .from('customers')
-        .update({ is_deleted: true })
-        .eq('id', id);
-      if (error) return { success: false, message: error.message };
-      return { success: status >= 200 && status < 300 };
-    } catch (e: any) {
       return { success: false, message: e.message };
     }
   }

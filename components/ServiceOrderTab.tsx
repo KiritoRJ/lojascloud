@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar, KeyRound, Lock } from 'lucide-react';
 import { ServiceOrder, AppSettings } from '../types';
+import { OnlineDB } from '../utils/api';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
 
 interface Props {
@@ -394,7 +395,6 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
     setAuthError(false);
 
     try {
-      const { OnlineDB } = await import('../utils/api');
       const authResult = await OnlineDB.verifyAdminPassword(tenantId, passwordInput);
       if (authResult.success) {
         onDeleteOrder(orderToDelete);

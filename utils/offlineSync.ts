@@ -248,10 +248,7 @@ export class OfflineSync {
   }
 
   static async deleteCustomer(tenantId: string, customerId: string) {
-    const customer = await db.customers.get(customerId);
-    if (customer) {
-      await db.customers.update(customerId, { isDeleted: true });
-    }
+    await db.customers.delete(customerId);
     if (navigator.onLine) {
       const res = await OnlineDB.deleteCustomer(customerId);
       if (res.success) return;

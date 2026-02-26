@@ -503,17 +503,18 @@ const App: React.FC = () => {
     await OfflineSync.deleteTransaction(session.tenantId, id);
   };
 
-  const handleSetCustomers = async (newCustomers: Customer[]) => {
+  const saveCustomers = async (newCustomers: Customer[]) => {
     setCustomers(newCustomers);
-    const lastCustomer = newCustomers.find(c => !customers.some(oc => oc.id === c.id));
-    if (lastCustomer && session?.tenantId) {
-      await OfflineSync.saveCustomer(session.tenantId, lastCustomer);
+    if (session?.tenantId) {
+      for (const customer of newCustomers) {
+        await OfflineSync.saveCustomer(session.tenantId, customer);
+      }
     }
   };
 
-  const handleDeleteCustomer = async (id: string) => {
+  const removeCustomer = async (id: string) => {
     if (!session?.tenantId) return;
-    const updated = customers.map(c => c.id === id ? { ...c, isDeleted: true } : c);
+    const updated = customers.filter(c => c.id !== id);
     setCustomers(updated);
     await OfflineSync.deleteCustomer(session.tenantId, id);
   };
@@ -714,7 +715,7 @@ const App: React.FC = () => {
     { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
-    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin'], feature: 'customersTab' },
+    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin', 'colaborador'], feature: 'customersTab' },
     { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
   ];
   
@@ -782,7 +783,7 @@ const App: React.FC = () => {
         {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-        {activeTab === 'clientes' && <CustomersTab customers={customers.filter(c => !c.isDeleted)} setCustomers={handleSetCustomers} onDeleteCustomer={handleDeleteCustomer} settings={settings} />}
+        {activeTab === 'clientes' && <CustomersTab customers={customers} setCustomers={saveCustomers} onDeleteCustomer={removeCustomer} settings={settings} />}
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
       </main>
 

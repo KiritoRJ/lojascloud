@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { CreditCard, Check, ShieldCheck, Clock, Calendar, Smartphone, LogOut, Loader2 } from 'lucide-react';
-import { supabase } from '../services';
+import { OnlineDB } from '../utils/api';
 
 interface SubscriptionViewProps {
   tenantId: string;
@@ -23,15 +23,7 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
 
   React.useEffect(() => {
-    supabase.from('global_settings').select('*').then(({ data }) => {
-      if (data) {
-        const settings = data.reduce((acc, item) => {
-          acc[item.key] = item.value;
-          return acc;
-        }, {} as any);
-        setGlobalPlans(settings);
-      }
-    });
+    OnlineDB.getGlobalSettings().then(setGlobalPlans);
   }, []);
 
   const getPrice = (id: string) => {

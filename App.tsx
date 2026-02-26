@@ -9,7 +9,9 @@ import FinanceTab from './components/FinanceTab';
 import SettingsTab from './components/SettingsTab';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import SubscriptionView from './components/SubscriptionView';
-import { initDB, LocalData, SyncEngine, supabase } from './services';
+import { OnlineDB } from './utils/api';
+import { OfflineSync } from './utils/offlineSync';
+import { db } from './utils/localDb';
 
 type Tab = 'os' | 'estoque' | 'vendas' | 'financeiro' | 'config';
 
@@ -77,12 +79,10 @@ const App: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
+    OfflineSync.init();
     const handleStatusChange = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', handleStatusChange);
     window.addEventListener('offline', handleStatusChange);
-    if (isOnline && session?.isLoggedIn && session.tenantId) {
-      SyncEngine.pushLocalData(session.tenantId);
-    }
     return () => {
       window.removeEventListener('online', handleStatusChange);
       window.removeEventListener('offline', handleStatusChange);
@@ -114,26 +114,6 @@ const App: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (session?.isLoggedIn && session.subscriptionExpiresAt && session.type !== 'super') {
-      const checkExpiry = () => {
-        const expiresAt = new Date(session.subscriptionExpiresAt!);
-        if (expiresAt < new Date() && session.subscriptionStatus !== 'expired') {
-          setSession(prev => {
-            if (!prev) return null;
-            const updated = { ...prev, subscriptionStatus: 'expired' };
-            localStorage.setItem('session_pro', JSON.stringify(updated));
-            return updated;
-          });
-        }
-      };
-
-      checkExpiry();
-      const interval = setInterval(checkExpiry, 30000); // Verifica a cada 30 segundos
-      return () => clearInterval(interval);
-    }
-  }, [session?.isLoggedIn, session?.subscriptionExpiresAt, session?.subscriptionStatus, session?.type]);
-
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ storeName: '', username: '', password: '' });
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -141,18 +121,32 @@ const App: React.FC = () => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
-  // NOTE: Registration is an online-only feature.
-  // This functionality is simplified and needs the full business logic from the original OnlineDB.createTenant method.
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    // ... (form validation) ...
+    if (!registerForm.storeName || !registerForm.username || !registerForm.password) {
+      setLoginError("Preencha todos os campos.");
+      return;
+    }
     setIsRegistering(true);
     setLoginError(null);
     try {
-      // This is a complex online-only operation that should be handled carefully.
-      // The logic from OnlineDB.createTenant needs to be fully migrated here.
-      console.warn('handleRegister needs to be fully implemented');
-      setLoginError('A função de registro ainda não está totalmente implementada.');
+      const tenantId = 'T_' + Math.random().toString(36).substr(2, 6).toUpperCase();
+      const res = await OnlineDB.createTenant({
+        id: tenantId,
+        storeName: registerForm.storeName,
+        adminUsername: registerForm.username,
+        adminPasswordPlain: registerForm.password,
+        logoUrl: null,
+        phoneNumber: ''
+      });
+
+      if (res.success) {
+        setLoginForm({ username: registerForm.username, password: registerForm.password });
+        setIsRegisterMode(false);
+        setLoginError("Loja criada com sucesso! Faça login para começar seus 7 dias grátis.");
+      } else {
+        setLoginError(res.message || "Erro ao criar loja.");
+      }
     } catch (e) {
       setLoginError("Erro de conexão.");
     } finally {
@@ -162,10 +156,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const restoreSession = async () => {
-      const storedTenantId = localStorage.getItem('session_pro') ? JSON.parse(localStorage.getItem('session_pro')!).tenantId : null;
-      if (storedTenantId) {
-        initDB(storedTenantId);
-      }
       try {
         const storedSession = localStorage.getItem('session_pro');
         const storedUser = localStorage.getItem('currentUser_pro');
@@ -208,37 +198,46 @@ const App: React.FC = () => {
 
   const loadData = useCallback(async (tenantId: string) => {
     try {
-      // 1. Attempt to sync from cloud in the background
+      setIsCloudConnected(navigator.onLine);
+      
+      // Tenta puxar dados novos se estiver online
       if (navigator.onLine) {
-        SyncEngine.pullAllData(tenantId).then(success => {
-          if (success) {
-            // After a successful sync, reload local data to update UI
-            loadData(tenantId);
+        const cloudData = await OfflineSync.pullAllData(tenantId);
+        if (cloudData) {
+          const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
+          if (session?.printerSize) {
+            finalSettings.printerSize = session.printerSize;
           }
-        });
+          finalSettings.users = cloudData.users || [];
+          setSettings(finalSettings);
+          setOrders(cloudData.orders || []);
+          setProducts(cloudData.products || []);
+          setSales(cloudData.sales || []);
+          setTransactions(cloudData.transactions || []);
+          return;
+        }
       }
 
-      // 2. Immediately load all data from local DB
-      const [orders, products, sales, transactions, settings, users] = await Promise.all([
-        LocalData.getOrders(),
-        LocalData.getProducts(),
-        LocalData.getSales(),
-        LocalData.getTransactions(),
-        LocalData.getSettings(),
-        LocalData.getUsers(),
-      ]);
-
-      const finalSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
-      finalSettings.users = users || [];
+      // Se offline ou falha no pull, carrega local
+      const localData = await OfflineSync.getLocalData(tenantId);
+      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+      finalSettings.users = localData.users || [];
       setSettings(finalSettings);
-      setOrders(orders);
-      setProducts(products);
-      setSales(sales);
-      setTransactions(transactions);
-
+      setOrders(localData.orders || []);
+      setProducts(localData.products || []);
+      setSales(localData.sales || []);
+      setTransactions(localData.transactions || []);
     } catch (e) {
-      console.error("Error loading data from local DB:", e);
-      // Handle case where local DB might be corrupted or empty
+      console.error("Erro ao carregar dados:", e);
+      setIsCloudConnected(false);
+      const localData = await OfflineSync.getLocalData(tenantId);
+      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+      finalSettings.users = localData.users || [];
+      setSettings(finalSettings);
+      setOrders(localData.orders || []);
+      setProducts(localData.products || []);
+      setSales(localData.sales || []);
+      setTransactions(localData.transactions || []);
     }
   }, []);
 
@@ -246,14 +245,6 @@ const App: React.FC = () => {
     if (session?.isLoggedIn && session.tenantId) {
       loadData(session.tenantId);
     }
-    
-    const handleFocus = () => {
-      if (session?.isLoggedIn && session.tenantId) {
-        loadData(session.tenantId);
-      }
-    };
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
   }, [session?.isLoggedIn, session?.tenantId, loadData]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -262,45 +253,44 @@ const App: React.FC = () => {
     setIsLoggingIn(true);
     
     try {
-      // Login is an online-only operation. This part remains.
-      // It should be the gateway to initializing the local DB.
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('*, tenants(*, tenant_limits(*))')
-        .eq('username', loginForm.username.trim().toLowerCase())
-        .eq('password', loginForm.password.trim())
-        .maybeSingle();
-
-      if (error || !user) {
-        setLoginError(error?.message || "Acesso negado.");
-        return;
-      }
-
-      const tenant = user.tenants;
-      if (user.role === 'super') {
-        const superSession = { isLoggedIn: true, type: 'super', isSuper: true };
-        localStorage.setItem('session_pro', JSON.stringify(superSession));
-        setSession(superSession as any);
-      } else if (tenant) {
-        initDB(tenant.id);
-        const expiresAt = tenant.subscription_expires_at;
-        const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
-        const newSession = {
-          isLoggedIn: true,
-          type: user.role as any,
-          tenantId: tenant.id,
-          isSuper: false,
-          subscriptionStatus: isExpired ? 'expired' : (tenant.subscription_status || 'trial'),
-          subscriptionExpiresAt: expiresAt,
-          // ... copy other properties from original logic
-        };
-        const finalUser = { id: user.id, name: user.name, role: user.role as any, photo: user.photo };
-        localStorage.setItem('session_pro', JSON.stringify(newSession));
-        localStorage.setItem('currentUser_pro', JSON.stringify(finalUser));
-        setSession({ ...newSession, user: finalUser });
-      }
+      const result = await OnlineDB.login(loginForm.username, loginForm.password);
       
-      
+      if (result.success) {
+        if (result.type === 'super') {
+          const superSession = { isLoggedIn: true, type: 'super', isSuper: true };
+          localStorage.setItem('session_pro', JSON.stringify(superSession));
+          setSession(superSession as any);
+        } else {
+          const tenantId = result.tenant?.id;
+            const newSession = { 
+              isLoggedIn: true, 
+              type: result.type as any, 
+              tenantId: tenantId,
+              isSuper: false,
+              subscriptionStatus: result.tenant?.subscriptionStatus,
+              subscriptionExpiresAt: result.tenant?.subscriptionExpiresAt,
+              customMonthlyPrice: result.tenant?.customMonthlyPrice,
+              customQuarterlyPrice: result.tenant?.customQuarterlyPrice,
+              customYearlyPrice: result.tenant?.customYearlyPrice,
+              enabledFeatures: result.tenant?.enabledFeatures,
+              maxUsers: result.tenant?.maxUsers,
+              maxOS: result.tenant?.maxOS,
+              maxProducts: result.tenant?.maxProducts,
+              printerSize: result.tenant?.printerSize
+            };
+          const finalUser = { 
+            id: result.tenant?.id || 'temp', 
+            name: result.tenant?.name || result.tenant?.username || 'Administrador', 
+            role: result.type as any, 
+            photo: null 
+          };
+          localStorage.setItem('session_pro', JSON.stringify(newSession));
+          localStorage.setItem('currentUser_pro', JSON.stringify(finalUser));
+          setSession({ ...newSession, user: finalUser });
+        }
+      } else {
+        setLoginError(result.message || "Acesso negado.");
+      }
     } catch (err) {
       setLoginError("Erro de rede. Verifique sua conexão.");
     } finally {
@@ -309,7 +299,7 @@ const App: React.FC = () => {
   };
 
   const handleLoginAs = async (tenantId: string) => {
-    const { data: tenant } = await supabase.from('tenants').select('*, users(*), tenant_limits(*)').eq('id', tenantId).single();
+    const tenant = await OnlineDB.getTenantById(tenantId);
     if (tenant) {
       const newSession = {
         isLoggedIn: true,
@@ -356,8 +346,7 @@ const App: React.FC = () => {
     setIsVerifyingLogout(true);
     setLogoutError(false);
     
-    const { data, error } = await supabase.from('users').select('id').eq('tenant_id', session.tenantId).eq('role', 'admin').eq('password', logoutPassword.trim()).maybeSingle();
-    const result = { success: !error && data };
+    const result = await OnlineDB.verifyAdminPassword(session.tenantId, logoutPassword);
     if (result.success) {
       handleLogout();
     } else {
@@ -370,82 +359,91 @@ const App: React.FC = () => {
 
   const saveSettings = async (newSettings: AppSettings) => {
     setSettings(newSettings);
-    await LocalData.saveSettings(newSettings, session.tenantId!);
-    // TODO: Add to sync queue
+    if (session?.tenantId) {
+      await OfflineSync.saveSettings(session.tenantId, newSettings);
+    }
   };
 
   const saveOrders = async (newOrders: ServiceOrder[]) => {
     setOrders(newOrders);
-    // This is inefficient, the component should save individual orders
-    for (const order of newOrders) {
-            await LocalData.saveOrder(order, session.tenantId!);
-      // TODO: Add to sync queue
+    if (session?.tenantId) {
+      // Identifica o que mudou para salvar individualmente no OfflineSync
+      // Para simplificar, vamos salvar a lista toda localmente e tentar sincronizar
+      // Mas o ideal é salvar apenas o item novo/editado.
+      // Como o app usa o padrão de passar a lista toda, vamos iterar ou salvar a lista.
+      // Ajuste: OfflineSync.saveOrder agora suporta salvar o estado atual.
+      for (const order of newOrders) {
+        await OfflineSync.saveOrder(session.tenantId, order);
+      }
     }
   };
 
   const removeOrder = async (id: string) => {
-    const updated = orders.filter(o => o.id !== id);
-    setOrders(updated);
-    await LocalData.deleteOrder(id, session.tenantId!);
-    // TODO: Add to sync queue
+    if (session?.tenantId) {
+      const updated = orders.map(o => o.id === id ? { ...o, isDeleted: true } : o);
+      setOrders(updated);
+      await OfflineSync.deleteOrder(session.tenantId, id);
+    }
   };
 
   const saveProducts = async (newProducts: Product[]) => {
     setProducts(newProducts);
-    for (const product of newProducts) {
-            await LocalData.saveProduct(product, session.tenantId!);
-      // TODO: Add to sync queue
+    if (session?.tenantId) {
+      for (const product of newProducts) {
+        await OfflineSync.saveProduct(session.tenantId, product);
+      }
     }
   };
 
   const removeProduct = async (id: string) => {
     const updated = products.filter(p => p.id !== id);
     setProducts(updated);
-    await LocalData.deleteProduct(id, session.tenantId!);
-    // TODO: Add to sync queue
+    if (session?.tenantId) {
+      await OfflineSync.deleteProduct(session.tenantId, id);
+    }
   };
 
   const saveSales = async (newSales: Sale[]) => {
     setSales(newSales);
-    for (const sale of newSales) {
-            await LocalData.saveSale(sale, session.tenantId!);
-      // TODO: Add to sync queue
+    if (session?.tenantId) {
+      for (const sale of newSales) {
+        await OfflineSync.saveSale(session.tenantId, sale);
+      }
     }
   };
 
   const removeSale = async (sale: Sale) => {
     if (!session?.tenantId) return;
-    const updatedSales = sales.filter(s => s.id !== sale.id);
+    const updatedSales = sales.map(s => s.id === sale.id ? { ...s, isDeleted: true } : s);
     setSales(updatedSales);
+    const updatedProducts = products.map(p => {
+      if (p.id === sale.productId) {
+        return { ...p, quantity: p.quantity + sale.quantity };
+      }
+      return p;
+    });
+    setProducts(updatedProducts);
     
-    // Re-add stock
-    const product = products.find(p => p.id === sale.productId);
-    if (product) {
-      const updatedProduct = { ...product, quantity: product.quantity + sale.quantity };
-      const updatedProducts = products.map(p => p.id === sale.productId ? updatedProduct : p);
-      setProducts(updatedProducts);
-            await LocalData.saveProduct(updatedProduct, session.tenantId!);
-      // TODO: Add product update to sync queue
-    }
-
-    await LocalData.deleteSale(sale.id, session.tenantId!);
-    // TODO: Add sale deletion to sync queue
+    await Promise.all([
+      OfflineSync.deleteSale(session.tenantId, sale.id),
+      ...updatedProducts.map(p => OfflineSync.saveProduct(session.tenantId!, p))
+    ]);
   };
 
   const saveTransactions = async (newTransactions: Transaction[]) => {
     setTransactions(newTransactions);
-    for (const transaction of newTransactions) {
-            await LocalData.saveTransaction(transaction, session.tenantId!);
-      // TODO: Add to sync queue
+    if (session?.tenantId) {
+      for (const transaction of newTransactions) {
+        await OfflineSync.saveTransaction(session.tenantId, transaction);
+      }
     }
   };
 
   const removeTransaction = async (id: string) => {
     if (!session?.tenantId) return;
-    const updated = transactions.filter(t => t.id !== id);
+    const updated = transactions.map(t => t.id === id ? { ...t, isDeleted: true } : t);
     setTransactions(updated);
-    await LocalData.deleteTransaction(id, session.tenantId!);
-    // TODO: Add to sync queue
+    await OfflineSync.deleteTransaction(session.tenantId, id);
   };
 
   const handleSwitchProfile = (user: User) => {
@@ -706,14 +704,12 @@ const App: React.FC = () => {
         <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-400"><Menu size={24} /></button>
       </header>
 
-      <main className="flex-1 p-4 md:pt-10 md:pb-4 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
-        <div className="md:hidden h-16"></div>
-        {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />} 
+      <main className="flex-1 p-4 pt-24 pb-28 md:pt-10 md:pb-4 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
+        {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
         {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />} 
-        <div className="md:hidden h-16"></div>
+        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">

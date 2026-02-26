@@ -2,8 +2,9 @@
 import React, { useState, useMemo } from 'react';
 import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload } from 'lucide-react';
 import { AppSettings, User, ServiceOrder, Product, Sale, Transaction } from '../types';
-import { supabase, LocalData } from '../services';
-
+import { OnlineDB } from '../utils/api';
+import { OfflineSync } from '../utils/offlineSync';
+import { db } from '../utils/localDb';
 
 interface Props {
   settings: AppSettings;
@@ -97,8 +98,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
         return;
     }
 
-    const { data, error } = await supabase.from('users').select('id').eq('tenant_id', tenantId).eq('role', 'admin').eq('password', authPassword.trim()).maybeSingle();
-    const result = { success: !error && data };
+    const result = await OnlineDB.verifyAdminPassword(tenantId, authPassword);
     
     if (result.success) {
       if (pendingUserToSwitch) {
@@ -180,31 +180,13 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     };
 
     try {
-      const { data: existingUser, error: selectError } = await supabase.from('users').select('username').eq('tenant_id', tenantId).eq('name', newUserName).single();
-      
-      let username = newUserName.toLowerCase().replace(/\s+/g, '.') + '.' + settings.storeName.toLowerCase().split(' ')[0];
-      if (existingUser) {
-        username = existingUser.username;
-      }
-
-      const { error: upsertError } = await supabase.from('users').upsert([{
-        id: newUser.id,
-        tenant_id: tenantId,
-        name: newUser.name,
-        role: newUser.role,
-        password: newUser.password,
-        photo: newUser.photo,
-        specialty: newUser.specialty,
-        username: username
-      }]);
-
-      const res = { success: !upsertError, username: username, message: upsertError?.message };
+      const res = await OnlineDB.upsertUser(tenantId, settings.storeName, newUser);
       
       if (res.success) {
         const newUserWithUsername = { ...newUser, username: res.username };
         const updatedUsers = [...settings.users, newUserWithUsername];
         setSettings({ ...settings, users: updatedUsers });
-        await LocalData.saveUser(newUserWithUsername, tenantId!);
+        await OfflineSync.saveUser(tenantId, newUserWithUsername);
         
         setIsUserModalOpen(false);
         setNewUserName('');
@@ -226,12 +208,11 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     if (!isAdmin) return;
     setIsDeleting(true);
     try {
-      const { error } = await supabase.from('users').delete().eq('id', userToDelete.id);
-        const result = { success: !error, message: error?.message };
+      const result = await OnlineDB.deleteRemoteUser(userToDelete.id);
       if (result.success) {
         const updatedUsers = settings.users.filter(u => u.id !== userToDelete.id);
         setSettings({ ...settings, users: updatedUsers });
-        // Deletion from local DB will be handled by the main data sync logic
+        await OfflineSync.deleteUser(tenantId, userToDelete.id);
         setUserToDelete(null);
         triggerSaveFeedback("Perfil Removido!");
       } else {
@@ -248,13 +229,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     if (!tenantId) return;
     setIsExporting(true);
     try {
-      const [orders, products, sales, transactions] = await Promise.all([
-        LocalData.getOrders(),
-        LocalData.getProducts(),
-        LocalData.getSales(),
-        LocalData.getTransactions(),
-      ]);
-      const data = { orders, products, sales, transactions };
+      const data = await OfflineSync.getLocalData(tenantId);
       
       let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
       xml += '<AssistenciaProBackup>\n';
@@ -369,10 +344,10 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
 
           if (confirm(`Deseja importar ${orders.length} OS, ${products.length} Produtos, ${sales.length} Vendas e ${transactions.length} Transações? Isso substituirá dados locais com IDs conflitantes.`)) {
             // Bulk save to local DB and sync queue
-            for (const o of orders) await LocalData.saveOrder(o as ServiceOrder, tenantId!);
-            for (const p of products) await LocalData.saveProduct(p as Product, tenantId!);
-            for (const s of sales) await LocalData.saveSale(s as Sale, tenantId!);
-            for (const t of transactions) await LocalData.saveTransaction(t as Transaction, tenantId!);
+            for (const o of orders) await OfflineSync.saveOrder(tenantId, o);
+            for (const p of products) await OfflineSync.saveProduct(tenantId, p);
+            for (const s of sales) await OfflineSync.saveSale(tenantId, s);
+            for (const t of transactions) await OfflineSync.saveTransaction(tenantId, t);
             
             triggerSaveFeedback("Backup Importado!");
             setTimeout(() => window.location.reload(), 1500);
@@ -808,12 +783,12 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
           <div className="w-full space-y-3 pt-4">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><Layout size={12}/> Itens por Página</label>
             <div className="grid grid-cols-4 gap-2">
-              {[8, 16, 24, 32].map(num => (
+              {[4, 8, 16, 999].map(num => (
                 <button 
                   key={num}
                   onClick={() => updateSetting('itemsPerPage', num)}
                   className={`py-4 rounded-2xl text-xs font-black uppercase transition-all ${settings.itemsPerPage === num ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-500'}`}>
-                  {num}
+                  {num === 999 ? 'Todos' : num}
                 </button>
               ))}
             </div>

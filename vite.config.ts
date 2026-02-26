@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
         react(),
         VitePWA({
           registerType: 'autoUpdate',
-          injectRegister: 'auto',
+          injectRegister: false,
           includeAssets: ['icon.svg'],
           workbox: {
             globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
@@ -26,9 +26,9 @@ export default defineConfig(({ mode }) => {
             maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
           },
           manifest: {
-            name: 'LOJAS CLOUD PWA',
-            short_name: 'Lojas PWA',
-            description: 'Sua loja nas nuvens, agora com suporte offline!',
+            name: 'Assistência Técnica Pro',
+            short_name: 'Assistência Pro',
+            description: 'Sistema de Gestão para Assistência Técnica Profissional',
             theme_color: '#2563eb',
             background_color: '#ffffff',
             display: 'standalone',
@@ -58,7 +58,7 @@ export default defineConfig(({ mode }) => {
             ]
           },
           devOptions: {
-            enabled: false,
+            enabled: true,
             type: 'module'
           }
         })

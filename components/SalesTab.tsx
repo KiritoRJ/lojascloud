@@ -7,7 +7,6 @@ import html2canvas from 'html2canvas';
 import { Product, Sale, AppSettings, User } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate, formatDateTime } from '../utils';
 import { Html5Qrcode } from 'html5-qrcode';
-import { supabase } from '../services';
 
 interface Props {
   products: Product[];
@@ -199,8 +198,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     setAuthError(false);
 
     try {
-      const { data, error } = await supabase.from('users').select('id').eq('tenant_id', tenantId).eq('role', 'admin').eq('password', passwordInput.trim()).maybeSingle();
-      const authResult = { success: !error && data };
+      const { OnlineDB } = await import('../utils/api');
+      const authResult = await OnlineDB.verifyAdminPassword(tenantId, passwordInput);
       if (authResult.success) {
         setIsCancelling(selectedSaleToCancel.id);
         setIsAuthModalOpen(false);

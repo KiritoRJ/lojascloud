@@ -1,13 +1,16 @@
 {
-  "name": "assistencia-técnica-pro",
+  "name": "assistencia-tecnica-pro",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "vite", 
+    "server": "tsx server.ts",
+    "dev:full": "concurrently \"vite\" \"tsx server.ts\"",
     "build": "vite build",
+    "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "preview": "vite preview"
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "@mercadopago/sdk-react": "^1.0.7",
@@ -24,8 +27,8 @@
     "lucide-react": "^0.564.0",
     "mercadopago": "^2.12.0",
     "react": "^19.2.4",
-    "react-datepicker": "^9.1.0",
     "react-dom": "^19.2.4",
+    "react-datepicker": "^9.1.0",
     "recharts": "^3.7.0",
     "vite-plugin-pwa": "^1.2.0"
   },
@@ -33,6 +36,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.0.1",
     "express": "^5.2.1",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

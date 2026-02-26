@@ -5,10 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && vite build --ssr -c vite.config.ssr.ts",
+    "build": "vite build",
     "lint": "tsc --noEmit",
-    "preview": "vite preview",
-    "start": "node dist/server/index.mjs"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@mercadopago/sdk-react": "^1.0.7",

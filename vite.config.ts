@@ -17,46 +17,55 @@ export default defineConfig(({ mode }) => {
         tailwindcss(),
         VitePWA({
           registerType: 'autoUpdate',
-          injectRegister: false,
-          includeAssets: ['icon.svg', 'manifest.webmanifest'],
+          injectRegister: 'auto',
           workbox: {
-            globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
+            globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
             cleanupOutdatedCaches: true,
             clientsClaim: true,
             skipWaiting: true,
-            navigateFallback: 'index.html',
-            maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB
+            navigateFallback: '/index.html',
             runtimeCaching: [
               {
-                urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+                urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com',
+                handler: 'StaleWhileRevalidate',
+                options: {
+                  cacheName: 'google-fonts-stylesheets',
+                },
+              },
+              {
+                urlPattern: ({ url }) => url.origin === 'https://fonts.gstatic.com',
                 handler: 'CacheFirst',
                 options: {
-                  cacheName: 'google-fonts-cache',
-                  expiration: {
-                    maxEntries: 10,
-                    maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
-                  },
+                  cacheName: 'google-fonts-webfonts',
                   cacheableResponse: {
                     statuses: [0, 200],
+                  },
+                  expiration: {
+                    maxEntries: 30,
+                    maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
                   },
                 },
               },
               {
-                urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-                handler: 'CacheFirst',
+                urlPattern: ({ url }) => url.hostname === new URL(env.VITE_SUPABASE_URL).hostname,
+                handler: 'NetworkFirst',
                 options: {
-                  cacheName: 'gstatic-fonts-cache',
-                  expiration: {
-                    maxEntries: 10,
-                    maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
-                  },
+                  cacheName: 'supabase-api-cache',
+                  networkTimeoutSeconds: 5, // 5 segundos de timeout
                   cacheableResponse: {
-                    statuses: [0, 200],
+                    statuses: [200, 201, 204], // Cache respostas de sucesso
+                  },
+                  expiration: {
+                    maxEntries: 500,
+                    maxAgeSeconds: 60 * 60 * 24 * 7, // 1 semana
                   },
                 },
-              }
-            ]
+              },
+            ],
           },
+          srcDir: 'src',
+          filename: 'sw.ts',
+          strategies: 'injectManifest',
           manifest: {
             name: 'Assistência Técnica Pro',
             short_name: 'Assistência Pro',
@@ -90,8 +99,7 @@ export default defineConfig(({ mode }) => {
             ]
           },
           devOptions: {
-            enabled: true,
-            type: 'module'
+            enabled: false
           }
         })
       ],

@@ -1,9 +1,17 @@
 import { MercadoPagoConfig, Payment } from 'mercadopago';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://lawcmqsjhwuhogsukhbf.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let supabase: SupabaseClient;
+
+const getSupabaseClient = () => {
+  if (!supabase) {
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+  return supabase;
+};
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -45,7 +53,7 @@ export default async function handler(req: any, res: any) {
             const expiresAt = new Date();
             expiresAt.setMonth(expiresAt.getMonth() + months);
 
-            const { error } = await supabase
+            const { error } = await getSupabaseClient()
               .from('tenants')
               .update({
                 subscription_status: 'active',

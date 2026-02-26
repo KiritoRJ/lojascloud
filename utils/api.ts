@@ -1,16 +1,23 @@
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://lawcmqsjhwuhogsukhbf.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+let supabase: SupabaseClient;
+
+const getSupabaseClient = () => {
+  if (!supabase) {
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+  return supabase;
+};
 
 export class OnlineDB {
   // Busca configurações globais do sistema
   static async getGlobalSettings() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('cloud_data')
         .select('data_json')
         .eq('tenant_id', 'SYSTEM')
@@ -53,7 +60,7 @@ export class OnlineDB {
   // Atualiza configurações globais do sistema
   static async updateGlobalSettings(plans: any) {
     try {
-      const { error } = await supabase
+      const { error } = await getSupabaseClient()
         .from('cloud_data')
         .upsert({
           tenant_id: 'SYSTEM',
@@ -72,7 +79,7 @@ export class OnlineDB {
   // Atualiza preços customizados de uma loja
   static async updateTenantCustomPrices(tenantId: string, prices: { monthly?: number, quarterly?: number, yearly?: number }) {
     try {
-      const { error } = await supabase
+      const { error } = await getSupabaseClient()
         .from('tenants')
         .update({
           custom_monthly_price: prices.monthly,
@@ -91,7 +98,8 @@ export class OnlineDB {
   // Atualiza permissões de recursos e limite de usuários de uma loja
   static async updateTenantFeatures(tenantId: string, features: any, maxUsers: number, maxOS: number, maxProducts: number, printerSize?: 58 | 80, retentionMonths?: number) {
     try {
-      const { error: tenantError } = await supabase
+      const client = getSupabaseClient();
+      const { error: tenantError } = await client
         .from('tenants')
         .update({
           enabled_features: features,
@@ -102,7 +110,7 @@ export class OnlineDB {
         .eq('id', tenantId);
       if (tenantError) throw tenantError;
 
-      const { error: limitsError } = await supabase
+      const { error: limitsError } = await client
         .from('tenant_limits')
         .upsert({ 
           tenant_id: tenantId, 
@@ -123,7 +131,7 @@ export class OnlineDB {
     const cleanPass = passwordPlain.trim();
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('users')
         .select('*, tenants(*, tenant_limits(*))')
         .eq('username', cleanUser)
@@ -177,7 +185,7 @@ export class OnlineDB {
   static async verifyAdminPassword(tenantId: string, passwordPlain: string) {
     if (!tenantId) return { success: false, message: "ID da loja não encontrado." };
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('users')
         .select('id')
         .eq('tenant_id', tenantId)
@@ -198,7 +206,7 @@ export class OnlineDB {
   static async fetchUsers(tenantId: string) {
     if (!tenantId) return [];
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('users')
         .select('*')
         .eq('tenant_id', tenantId)
@@ -229,6 +237,7 @@ export class OnlineDB {
     phoneNumber: string; 
   }) {
     try {
+      const client = getSupabaseClient();
       const trialDays = 7;
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + trialDays);
@@ -236,7 +245,7 @@ export class OnlineDB {
       const globalSettings = await this.getGlobalSettings();
       const trialLimits = globalSettings.trial || { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 };
 
-      const { error: tError } = await supabase
+      const { error: tError } = await client
         .from('tenants')
         .insert([{
           id: tenantData.id,
@@ -260,7 +269,7 @@ export class OnlineDB {
         }]);
       if (tError) throw tError;
 
-      const { error: limitsError } = await supabase
+      const { error: limitsError } = await client
         .from('tenant_limits')
         .insert([{
           tenant_id: tenantData.id,
@@ -269,7 +278,7 @@ export class OnlineDB {
         }]);
       if (limitsError) throw limitsError;
 
-      const { error: uError } = await supabase
+      const { error: uError } = await client
         .from('users')
         .insert([{
           id: 'USR_ADM_' + Math.random().toString(36).substr(2, 5).toUpperCase(),
@@ -292,6 +301,7 @@ export class OnlineDB {
   // Atualiza a assinatura de uma loja para uma data específica
   static async setSubscriptionDate(tenantId: string, date: string, status: 'trial' | 'active' | 'expired' = 'active', planType?: 'monthly' | 'quarterly' | 'yearly') {
     try {
+      const client = getSupabaseClient();
       const updateData: any = {
         subscription_status: status,
         subscription_expires_at: date,
@@ -316,7 +326,7 @@ export class OnlineDB {
             customersTab: planType === 'yearly'
           };
 
-          const { error: limitsError } = await supabase
+          const { error: limitsError } = await client
             .from('tenant_limits')
             .upsert({ 
               tenant_id: tenantId, 
@@ -324,12 +334,10 @@ export class OnlineDB {
               max_products: planLimits.maxProducts 
             }, { onConflict: 'tenant_id' });
           if (limitsError) throw limitsError;
-
-          updateData.enabled_features.customersTab = true;
         }
       }
 
-      const { error } = await supabase
+      const { error } = await client
         .from('tenants')
         .update(updateData)
         .eq('id', tenantId);
@@ -344,6 +352,7 @@ export class OnlineDB {
   // Atualiza a assinatura de uma loja
   static async updateSubscription(tenantId: string, months: number, planType: 'monthly' | 'quarterly' | 'yearly') {
     try {
+      const client = getSupabaseClient();
       const expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + months);
 
@@ -368,7 +377,7 @@ export class OnlineDB {
           hideFinancialReports: false,
           customersTab: planType === 'yearly'
         };
-        const { error: limitsError } = await supabase
+        const { error: limitsError } = await client
           .from('tenant_limits')
           .upsert({ 
             tenant_id: tenantId, 
@@ -376,11 +385,9 @@ export class OnlineDB {
             max_products: planLimits.maxProducts 
           }, { onConflict: 'tenant_id' });
         if (limitsError) throw limitsError;
-
-        updateData.enabled_features.customersTab = true;
       }
 
-      const { error } = await supabase
+      const { error } = await client
         .from('tenants')
         .update(updateData)
         .eq('id', tenantId);
@@ -395,7 +402,7 @@ export class OnlineDB {
   // Remove uma loja do sistema
   static async deleteTenant(tenantId: string) {
     try {
-      const { error } = await supabase
+      const { error } = await getSupabaseClient()
         .from('tenants')
         .delete()
         .eq('id', tenantId);
@@ -426,7 +433,7 @@ export class OnlineDB {
         specialty: user.specialty
       };
 
-      const { error } = await supabase
+      const { error } = await getSupabaseClient()
         .from('users')
         .upsert(payload, { onConflict: 'id' });
 
@@ -440,7 +447,7 @@ export class OnlineDB {
   // Lista todas as lojas cadastradas
   static async getTenants() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('tenants')
         .select('*, tenant_limits(*)')
         .order('created_at', { ascending: false });
@@ -454,7 +461,7 @@ export class OnlineDB {
   // Busca uma loja pelo ID
   static async getTenantById(tenantId: string) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('tenants')
         .select('*, tenant_limits(*), users(*)')
         .eq('id', tenantId)
@@ -471,7 +478,7 @@ export class OnlineDB {
   // Remove uma O.S. pelo ID (Soft Delete)
   static async deleteOS(osId: string) {
     try {
-      const { error } = await supabase
+      const { error } = await getSupabaseClient()
         .from('service_orders')
         .update({ is_deleted: true })
         .eq('id', osId);
@@ -480,81 +487,11 @@ export class OnlineDB {
     } catch (e) { return { success: false }; }
   }
 
-  // Remove um produto
-  static async deleteProduct(id: string) {
-    try {
-      const { error, status } = await supabase.from('products').delete().eq('id', id);
-      return { success: !error };
-    } catch (e) { return { success: false }; }
-  }
-
-  // Remove um cliente (Soft Delete)
-  static async deleteCustomer(id: string) {
-    try {
-      const { error, status } = await supabase
-        .from('customers')
-        .update({ is_deleted: true })
-        .eq('id', id);
-      if (error) return { success: false, message: error.message };
-      return { success: status >= 200 && status < 300 };
-    } catch (e: any) {
-      return { success: false, message: e.message };
-    }
-  }
-
-  // Remove um usuário colaborador
-  static async deleteRemoteUser(id: string) {
-    try {
-      const { error } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      return { success: true };
-    } catch (e: any) {
-      console.error("Erro Delete User:", e);
-      return { success: false, message: e.message };
-    }
-  }
-
-
-
-
-
-  // Cancela uma venda e remove do banco (Soft Delete)
-  static async deleteSale(id: string) {
-    try {
-      const { error, status } = await supabase
-        .from('sales')
-        .update({ is_deleted: true })
-        .eq('id', id);
-      if (error) return { success: false, message: error.message };
-      return { success: status >= 200 && status < 300 };
-    } catch (e: any) {
-      return { success: false, message: e.message };
-    }
-  }
-
-  // Remove uma transação (Soft Delete)
-  static async deleteTransaction(id: string) {
-    try {
-      const { error, status } = await supabase
-        .from('transactions')
-        .update({ is_deleted: true })
-        .eq('id', id);
-      if (error) return { success: false, message: error.message };
-      return { success: status >= 200 && status < 300 };
-    } catch (e: any) {
-      return { success: false, message: e.message };
-    }
-  }
-
   // Busca as Ordens de Serviço e mapeia as novas colunas entry_date e exit_date
   static async fetchOrders(tenantId: string) {
     if (!tenantId) return [];
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('service_orders')
         .select('*')
         .eq('tenant_id', tenantId)
@@ -593,7 +530,7 @@ export class OnlineDB {
   static async fetchProducts(tenantId: string) {
     if (!tenantId) return [];
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('products')
         .select('*')
         .eq('tenant_id', tenantId)
@@ -620,7 +557,7 @@ export class OnlineDB {
   static async fetchSales(tenantId: string) {
     if (!tenantId) return [];
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('sales')
         .select('*')
         .eq('tenant_id', tenantId)
@@ -653,7 +590,7 @@ export class OnlineDB {
   static async fetchTransactions(tenantId: string) {
     if (!tenantId) return [];
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('transactions')
         .select('*')
         .eq('tenant_id', tenantId)
@@ -681,7 +618,7 @@ export class OnlineDB {
   static async fetchCustomers(tenantId: string) {
     if (!tenantId) return [];
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('customers')
         .select('*')
         .eq('tenant_id', tenantId)
@@ -732,7 +669,7 @@ export class OnlineDB {
         exit_date: os.exitDate,
         is_deleted: os.isDeleted || false
       }));
-      const { error } = await supabase.from('service_orders').upsert(payload, { onConflict: 'id' });
+      const { error } = await getSupabaseClient().from('service_orders').upsert(payload, { onConflict: 'id' });
       if (error) throw error;
       return { success: true };
     } catch (e) { 
@@ -755,7 +692,7 @@ export class OnlineDB {
         sale_price: p.salePrice,
         quantity: p.quantity
       }));
-      const { error } = await supabase.from('products').upsert(payload, { onConflict: 'id' });
+      const { error } = await getSupabaseClient().from('products').upsert(payload, { onConflict: 'id' });
       if (error) throw error;
       return { success: true };
     } catch (e) { 
@@ -784,7 +721,7 @@ export class OnlineDB {
         transaction_id: s.transactionId,
         is_deleted: s.isDeleted || false
       }));
-      const { error } = await supabase.from('sales').upsert(payload, { onConflict: 'id' });
+      const { error } = await getSupabaseClient().from('sales').upsert(payload, { onConflict: 'id' });
       if (error) throw error;
       return { success: true };
     } catch (e) {
@@ -808,7 +745,7 @@ export class OnlineDB {
         payment_method: t.paymentMethod,
         is_deleted: t.isDeleted || false
       }));
-      const { error } = await supabase.from('transactions').upsert(payload, { onConflict: 'id' });
+      const { error } = await getSupabaseClient().from('transactions').upsert(payload, { onConflict: 'id' });
       if (error) throw error;
       return { success: true };
     } catch (e) {
@@ -816,16 +753,6 @@ export class OnlineDB {
       return { success: false };
     }
   }
-
-
-
-  // Remove um cliente
-  // static async deleteCustomer(id: string) {
-  //   try {
-  //     const { error, status } = await supabase.from('customers').delete().eq('id', id);
-  //     return { success: !error };
-  //   } catch (e) { return { success: false }; }
-  // }
 
   // Sincroniza configurações globais
   static async syncPush(tenantId: string, storeKey: string, data: any) {
@@ -837,7 +764,7 @@ export class OnlineDB {
         finalData = cleanSettings;
       }
 
-      const { error } = await supabase
+      const { error } = await getSupabaseClient()
         .from('cloud_data')
         .upsert({ 
           tenant_id: tenantId, 
@@ -853,7 +780,7 @@ export class OnlineDB {
   static async syncPull(tenantId: string, storeKey: string) {
     if (!tenantId) return null;
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('cloud_data')
         .select('data_json')
         .eq('tenant_id', tenantId)
@@ -863,15 +790,57 @@ export class OnlineDB {
     } catch (e) { return null; }
   }
 
+  // Remove um produto
+  static async deleteProduct(id: string) {
+    try {
+      const { error, status } = await getSupabaseClient().from('products').delete().eq('id', id);
+      return { success: !error };
+    } catch (e) { return { success: false }; }
+  }
 
+  // Cancela uma venda e remove do banco (Soft Delete)
+  static async deleteSale(id: string) {
+    try {
+      const { error, status } = await supabase
+        .from('sales')
+        .update({ is_deleted: true })
+        .eq('id', id);
+      if (error) return { success: false, message: error.message };
+      return { success: status >= 200 && status < 300 };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
 
+  // Remove uma transação (Soft Delete)
+  static async deleteTransaction(id: string) {
+    try {
+      const { error, status } = await supabase
+        .from('transactions')
+        .update({ is_deleted: true })
+        .eq('id', id);
+      if (error) return { success: false, message: error.message };
+      return { success: status >= 200 && status < 300 };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
 
+  // Remove um usuário colaborador
+  static async deleteRemoteUser(id: string) {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', id);
 
-
-
-
-
-
+      if (error) throw error;
+      return { success: true };
+    } catch (e: any) {
+      console.error("Erro Delete User:", e);
+      return { success: false, message: e.message };
+    }
+  }
 
   // Salva Clientes no Banco de Dados
   static async upsertCustomers(tenantId: string, customers: any[]) {
@@ -903,7 +872,19 @@ export class OnlineDB {
     }
   }
 
-
+  // Remove um cliente (Soft Delete)
+  static async deleteCustomer(id: string) {
+    try {
+      const { error, status } = await supabase
+        .from('customers')
+        .update({ is_deleted: true })
+        .eq('id', id);
+      if (error) return { success: false, message: error.message };
+      return { success: status >= 200 && status < 300 };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
 
   // Limpeza de dados antigos (baseado no tempo de retenção da loja)
   static async cleanupOldData(tenantId: string, retentionMonths: number = 6) {

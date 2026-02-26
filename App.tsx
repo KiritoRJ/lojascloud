@@ -129,7 +129,13 @@ const App: React.FC = () => {
       setIsDBReady(true);
       checkDB();
     });
-    const handleStatusChange = () => setIsOnline(navigator.onLine);
+    const handleStatusChange = () => {
+      setIsOnline(navigator.onLine);
+      if (navigator.onLine) {
+        console.log('App: Conexão restaurada, processando fila de sincronização...');
+        OfflineSync.processQueue();
+      }
+    };
     window.addEventListener('online', handleStatusChange);
     window.addEventListener('offline', handleStatusChange);
     return () => {

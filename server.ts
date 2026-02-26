@@ -4,6 +4,7 @@ import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import { OnlineDB } from './utils/api';
+import path from 'path';
 
 dotenv.config();
 
@@ -130,6 +131,12 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+  } else {
+    const __dirname = path.dirname(new URL(import.meta.url).pathname);
+    app.use(express.static(path.join(__dirname, 'dist')));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {

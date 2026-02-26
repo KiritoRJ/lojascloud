@@ -1,28 +1,12 @@
 
 import { db, SyncItem } from './localDb';
 import { OnlineDB } from './api';
-import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from '../types';
+import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from '../types';
 
 export class OfflineSync {
   private static isSyncing = false;
-  private static onSyncStatusChange: ((isSyncing: boolean) => void) | null = null;
-
-  static setOnSyncStatusChange(callback: (isSyncing: boolean) => void) {
-    this.onSyncStatusChange = callback;
-  }
-
-  private static setSyncing(value: boolean) {
-    this.isSyncing = value;
-    if (this.onSyncStatusChange) this.onSyncStatusChange(value);
-  }
 
   static async init() {
-    try {
-      await db.open();
-    } catch (err) {
-      console.error('Failed to open local database:', err);
-    }
-
     window.addEventListener('online', () => {
       console.log('App is online. Starting sync...');
       this.processQueue();
@@ -35,20 +19,19 @@ export class OfflineSync {
   }
 
   static async processQueue() {
-    if (this.isSyncing || !navigator.onLine) return;
-    this.setSyncing(true);
+    if (this.isSyncing) return;
+    this.isSyncing = true;
 
     try {
       const queue = await db.syncQueue.orderBy('timestamp').toArray();
       if (queue.length === 0) {
+        this.isSyncing = false;
         return;
       }
 
       console.log(`Processing ${queue.length} items from sync queue...`);
 
       for (const item of queue) {
-        if (!navigator.onLine) break;
-        
         let success = false;
         try {
           switch (item.type) {
@@ -88,15 +71,6 @@ export class OfflineSync {
                 success = res.success;
               }
               break;
-            case 'customers':
-              if (item.action === 'upsert') {
-                const res = await OnlineDB.upsertCustomers(item.tenantId, [item.data]);
-                success = res.success;
-              } else if (item.action === 'delete') {
-                const res = await OnlineDB.deleteCustomer(item.data.id);
-                success = res.success;
-              }
-              break;
             case 'settings':
               const res = await OnlineDB.syncPush(item.tenantId, 'settings', item.data);
               success = res.success;
@@ -110,12 +84,13 @@ export class OfflineSync {
         if (success) {
           await db.syncQueue.delete(item.id!);
         } else {
+          // If one fails, stop and wait for next online event or retry
           console.warn('Sync failed for item, stopping queue processing.');
           break;
         }
       }
     } finally {
-      this.setSyncing(false);
+      this.isSyncing = false;
     }
   }
 
@@ -248,39 +223,6 @@ export class OfflineSync {
     });
   }
 
-  static async saveCustomer(tenantId: string, customer: Customer) {
-    await db.customers.put({ ...customer, tenantId });
-    if (navigator.onLine) {
-      const res = await OnlineDB.upsertCustomers(tenantId, [customer]);
-      if (res.success) return;
-    }
-    await db.syncQueue.add({
-      tenantId,
-      type: 'customers',
-      action: 'upsert',
-      data: customer,
-      timestamp: Date.now()
-    });
-  }
-
-  static async deleteCustomer(tenantId: string, customerId: string) {
-    const customer = await db.customers.get(customerId);
-    if (customer) {
-      await db.customers.update(customerId, { isDeleted: true });
-    }
-    if (navigator.onLine) {
-      const res = await OnlineDB.deleteCustomer(customerId);
-      if (res.success) return;
-    }
-    await db.syncQueue.add({
-      tenantId,
-      type: 'customers',
-      action: 'delete',
-      data: { id: customerId },
-      timestamp: Date.now()
-    });
-  }
-
   static async saveUser(tenantId: string, user: User) {
     await db.users.put({ ...user, tenantId });
     // Users are currently managed mostly online, but we keep them local for switching
@@ -308,88 +250,62 @@ export class OfflineSync {
   static async pullAllData(tenantId: string) {
     if (!navigator.onLine) return;
 
-    console.log('OfflineSync: Iniciando sincronização total para:', tenantId);
     try {
-      const results = await Promise.allSettled([
+      const [cloudSettings, cloudOrders, cloudProducts, cloudSales, cloudTransactions, cloudUsers] = await Promise.all([
         OnlineDB.syncPull(tenantId, 'settings'),
         OnlineDB.fetchOrders(tenantId),
         OnlineDB.fetchProducts(tenantId),
         OnlineDB.fetchSales(tenantId),
         OnlineDB.fetchTransactions(tenantId),
-        OnlineDB.fetchUsers(tenantId),
-        OnlineDB.fetchCustomers(tenantId)
+        OnlineDB.fetchUsers(tenantId)
       ]);
 
-      const [settingsRes, ordersRes, productsRes, salesRes, transactionsRes, usersRes, customersRes] = results;
-
-      if (settingsRes.status === 'fulfilled' && settingsRes.value) {
-        await db.settings.put({ ...settingsRes.value, tenantId });
-      } else {
-        // Garante que pelo menos o registro do tenant existe no banco local
-        const existing = await db.settings.get(tenantId);
-        if (!existing) {
-          await db.settings.put({ tenantId } as any);
-        }
-      }
-      
-      if (usersRes.status === 'fulfilled' && usersRes.value) {
+      if (cloudSettings) await db.settings.put({ ...cloudSettings, tenantId });
+      if (cloudUsers) {
         await db.users.where('tenantId').equals(tenantId).delete();
-        await db.users.bulkPut(usersRes.value.map((u: any) => ({ ...u, tenantId })));
+        await db.users.bulkPut(cloudUsers.map((u: any) => ({ ...u, tenantId })));
       }
-
-      if (ordersRes.status === 'fulfilled' && ordersRes.value) {
+      if (cloudOrders) {
         await db.orders.where('tenantId').equals(tenantId).delete();
-        await db.orders.bulkPut(ordersRes.value.map((o: any) => ({ ...o, tenantId })));
+        await db.orders.bulkPut(cloudOrders.map((o: any) => ({ ...o, tenantId })));
       }
-
-      if (productsRes.status === 'fulfilled' && productsRes.value) {
+      if (cloudProducts) {
         await db.products.where('tenantId').equals(tenantId).delete();
-        await db.products.bulkPut(productsRes.value.map((p: any) => ({ ...p, tenantId })));
+        await db.products.bulkPut(cloudProducts.map((p: any) => ({ ...p, tenantId })));
       }
-
-      if (salesRes.status === 'fulfilled' && salesRes.value) {
+      if (cloudSales) {
         await db.sales.where('tenantId').equals(tenantId).delete();
-        await db.sales.bulkPut(salesRes.value.map((s: any) => ({ ...s, tenantId })));
+        await db.sales.bulkPut(cloudSales.map((s: any) => ({ ...s, tenantId })));
       }
-
-      if (transactionsRes.status === 'fulfilled' && transactionsRes.value) {
+      if (cloudTransactions) {
         await db.transactions.where('tenantId').equals(tenantId).delete();
-        await db.transactions.bulkPut(transactionsRes.value.map((t: any) => ({ ...t, tenantId })));
+        await db.transactions.bulkPut(cloudTransactions.map((t: any) => ({ ...t, tenantId })));
       }
-
-      if (customersRes.status === 'fulfilled' && customersRes.value) {
-        await db.customers.where('tenantId').equals(tenantId).delete();
-        await db.customers.bulkPut(customersRes.value.map((c: any) => ({ ...c, tenantId })));
-      }
-
-      console.log('OfflineSync: Sincronização concluída.');
 
       return {
-        settings: settingsRes.status === 'fulfilled' ? settingsRes.value : null,
-        orders: ordersRes.status === 'fulfilled' ? ordersRes.value : [],
-        products: productsRes.status === 'fulfilled' ? productsRes.value : [],
-        sales: salesRes.status === 'fulfilled' ? salesRes.value : [],
-        transactions: transactionsRes.status === 'fulfilled' ? transactionsRes.value : [],
-        users: usersRes.status === 'fulfilled' ? usersRes.value : [],
-        customers: customersRes.status === 'fulfilled' ? customersRes.value : []
+        settings: cloudSettings,
+        orders: cloudOrders,
+        products: cloudProducts,
+        sales: cloudSales,
+        transactions: cloudTransactions,
+        users: cloudUsers
       };
     } catch (e) {
-      console.error('OfflineSync: Erro crítico na sincronização:', e);
+      console.error('Error pulling data from cloud:', e);
       throw e;
     }
   }
 
   static async getLocalData(tenantId: string) {
-    const [settings, orders, products, sales, transactions, users, customers] = await Promise.all([
+    const [settings, orders, products, sales, transactions, users] = await Promise.all([
       db.settings.get(tenantId),
       db.orders.where('tenantId').equals(tenantId).toArray(),
       db.products.where('tenantId').equals(tenantId).toArray(),
       db.sales.where('tenantId').equals(tenantId).toArray(),
       db.transactions.where('tenantId').equals(tenantId).toArray(),
-      db.users.where('tenantId').equals(tenantId).toArray(),
-      db.customers.where('tenantId').equals(tenantId).toArray()
+      db.users.where('tenantId').equals(tenantId).toArray()
     ]);
 
-    return { settings, orders, products, sales, transactions, users, customers };
+    return { settings, orders, products, sales, transactions, users };
   }
 }

@@ -2,7 +2,6 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -14,58 +13,18 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [
         react(),
-        tailwindcss(),
         VitePWA({
           registerType: 'autoUpdate',
-          injectRegister: 'auto',
+          injectRegister: false,
+          includeAssets: ['icon.svg'],
           workbox: {
-            globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+            globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
             cleanupOutdatedCaches: true,
             clientsClaim: true,
             skipWaiting: true,
-            navigateFallback: '/index.html',
-            runtimeCaching: [
-              {
-                urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com',
-                handler: 'StaleWhileRevalidate',
-                options: {
-                  cacheName: 'google-fonts-stylesheets',
-                },
-              },
-              {
-                urlPattern: ({ url }) => url.origin === 'https://fonts.gstatic.com',
-                handler: 'CacheFirst',
-                options: {
-                  cacheName: 'google-fonts-webfonts',
-                  cacheableResponse: {
-                    statuses: [0, 200],
-                  },
-                  expiration: {
-                    maxEntries: 30,
-                    maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
-                  },
-                },
-              },
-              {
-                urlPattern: ({ url }) => url.hostname === new URL(env.VITE_SUPABASE_URL).hostname,
-                handler: 'NetworkFirst',
-                options: {
-                  cacheName: 'supabase-api-cache',
-                  networkTimeoutSeconds: 5, // 5 segundos de timeout
-                  cacheableResponse: {
-                    statuses: [200, 201, 204], // Cache respostas de sucesso
-                  },
-                  expiration: {
-                    maxEntries: 500,
-                    maxAgeSeconds: 60 * 60 * 24 * 7, // 1 semana
-                  },
-                },
-              },
-            ],
+            navigateFallback: 'index.html',
+            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
           },
-          srcDir: 'src',
-          filename: 'sw.ts',
-          strategies: 'injectManifest',
           manifest: {
             name: 'Assistência Técnica Pro',
             short_name: 'Assistência Pro',
@@ -99,7 +58,8 @@ export default defineConfig(({ mode }) => {
             ]
           },
           devOptions: {
-            enabled: false
+            enabled: true,
+            type: 'module'
           }
         })
       ],

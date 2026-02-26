@@ -1,12 +1,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, Users } from 'lucide-react';
-import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
+import { ServiceOrder, Product, Sale, Transaction, AppSettings, User } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import StockTab from './components/StockTab';
 import SalesTab from './components/SalesTab';
 import FinanceTab from './components/FinanceTab';
-import CustomersTab from './components/CustomersTab';
 import SettingsTab from './components/SettingsTab';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import SubscriptionView from './components/SubscriptionView';
@@ -14,7 +13,7 @@ import { OnlineDB } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { db } from './utils/localDb';
 
-type Tab = 'os' | 'estoque' | 'vendas' | 'financeiro' | 'clientes' | 'config';
+type Tab = 'os' | 'estoque' | 'vendas' | 'financeiro' | 'config';
 
 const DEFAULT_SETTINGS: AppSettings = {
   storeName: 'Minha Assistência',
@@ -38,7 +37,6 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const App: React.FC = () => {
-  const [error, setError] = useState<Error | null>(null);
   const [session, setSession] = useState<{ 
     isLoggedIn: boolean; 
     type: 'super' | 'admin' | 'colaborador'; 
@@ -57,7 +55,6 @@ const App: React.FC = () => {
       profiles: boolean;
       xmlExportImport: boolean;
       hideFinancialReports?: boolean;
-      customersTab?: boolean;
     };
     maxUsers?: number;
     maxOS?: number;
@@ -69,7 +66,6 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('os');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -81,61 +77,10 @@ const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isDBReady, setIsDBReady] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
-    OfflineSync.setOnSyncStatusChange(setIsSyncing);
-    const handleError = (event: ErrorEvent) => {
-      const msg = event.message || '';
-      if (msg.includes('WebSocket') || msg.includes('vite')) return;
-      console.error('App: Global Error:', event.error);
-      setError(event.error || new Error(event.message));
-    };
-    const handleRejection = (event: PromiseRejectionEvent) => {
-      const reason = String(event.reason || '');
-      if (reason.includes('WebSocket') || reason.includes('vite')) return;
-      console.error('App: Unhandled Rejection:', event.reason);
-      setError(event.reason instanceof Error ? event.reason : new Error(reason));
-    };
-
-    window.addEventListener('error', handleError);
-    window.addEventListener('unhandledrejection', handleRejection);
-    return () => {
-      window.removeEventListener('error', handleError);
-      window.removeEventListener('unhandledrejection', handleRejection);
-    };
-  }, []);
-
-  useEffect(() => {
-    const checkDB = async () => {
-      try {
-        const counts = {
-          orders: await db.orders.count(),
-          products: await db.products.count(),
-          sales: await db.sales.count(),
-          transactions: await db.transactions.count(),
-          settings: await db.settings.count(),
-          customers: await db.customers.count(),
-          users: await db.users.count()
-        };
-        console.log('App: Estado do Banco Local:', counts);
-      } catch (err) {
-        console.error('App: Erro ao verificar banco local:', err);
-      }
-    };
-    
-    OfflineSync.init().then(() => {
-      setIsDBReady(true);
-      checkDB();
-    });
-    const handleStatusChange = () => {
-      setIsOnline(navigator.onLine);
-      if (navigator.onLine) {
-        console.log('App: Conexão restaurada, processando fila de sincronização...');
-        OfflineSync.processQueue();
-      }
-    };
+    OfflineSync.init();
+    const handleStatusChange = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', handleStatusChange);
     window.addEventListener('offline', handleStatusChange);
     return () => {
@@ -231,11 +176,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const restoreSession = async () => {
-      console.log('App: Restaurando sessão...');
       try {
         const storedSession = localStorage.getItem('session_pro');
         const storedUser = localStorage.getItem('currentUser_pro');
-        console.log('App: Sessão armazenada:', storedSession ? 'Encontrada' : 'Não encontrada');
         
         if (storedSession) {
           const parsed = JSON.parse(storedSession);
@@ -274,89 +217,76 @@ const App: React.FC = () => {
   }, []);
 
   const loadData = useCallback(async (tenantId: string) => {
-    console.log('App: Carregando dados para tenant:', tenantId);
     try {
       setIsCloudConnected(navigator.onLine);
       
-      // 1. CARREGA DADOS LOCAIS IMEDIATAMENTE (Prioridade para evitar tela branca)
-      const localData = await OfflineSync.getLocalData(tenantId);
-      console.log('App: Dados locais carregados:', { 
-        orders: localData.orders?.length, 
-        products: localData.products?.length,
-        settings: !!localData.settings
-      });
+      // Se estiver online, aproveita para atualizar o status da assinatura
+      if (navigator.onLine && session?.type !== 'super') {
+        const tenant = await OnlineDB.getTenantById(tenantId);
+        if (tenant) {
+          const expiresAt = tenant.subscription_expires_at;
+          const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
+          const newStatus = isExpired ? 'expired' : (tenant.subscription_status || 'trial');
+          
+          if (newStatus !== session?.subscriptionStatus || expiresAt !== session?.subscriptionExpiresAt) {
+            setSession(prev => {
+              if (!prev) return null;
+              const updated = { 
+                ...prev, 
+                subscriptionStatus: newStatus, 
+                subscriptionExpiresAt: expiresAt 
+              };
+              localStorage.setItem('session_pro', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      }
 
-      const initialSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
-      if (localData.users?.length) initialSettings.users = localData.users;
-      
-      // Define estados iniciais com o que temos no banco local
-      setSettings(initialSettings);
-      setOrders(localData.orders || []);
-      setProducts(localData.products || []);
-      setSales(localData.sales || []);
-      setTransactions(localData.transactions || []);
-      setCustomers(localData.customers || []);
-
-      // 2. SE ONLINE, SINCRONIZA EM SEGUNDO PLANO
+      // Tenta puxar dados novos se estiver online
       if (navigator.onLine) {
-        console.log('App: Iniciando sincronização em segundo plano...');
-        
-        // Processa fila de pendências antes de puxar novos dados
-        await OfflineSync.processQueue();
-
-        // Puxa dados novos da nuvem
         const cloudData = await OfflineSync.pullAllData(tenantId);
-        
         if (cloudData) {
-          console.log('App: Sincronização de fundo concluída, atualizando interface.');
           const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
           if (session?.printerSize) {
             finalSettings.printerSize = session.printerSize;
           }
           finalSettings.users = cloudData.users || [];
-          
           setSettings(finalSettings);
           setOrders(cloudData.orders || []);
           setProducts(cloudData.products || []);
           setSales(cloudData.sales || []);
           setTransactions(cloudData.transactions || []);
-          setCustomers(cloudData.customers || []);
-        }
-
-        // Verifica assinatura
-        if (session && session.type !== 'super') {
-          const tenant = await OnlineDB.getTenantById(tenantId);
-          if (tenant) {
-            const expiresAt = tenant.subscription_expires_at;
-            const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
-            const newStatus = isExpired ? 'expired' : (tenant.subscription_status || 'trial');
-            
-            if (newStatus !== session?.subscriptionStatus || expiresAt !== session?.subscriptionExpiresAt) {
-              setSession(prev => {
-                if (!prev) return null;
-                const updated = { 
-                  ...prev, 
-                  subscriptionStatus: newStatus, 
-                  subscriptionExpiresAt: expiresAt 
-                };
-                localStorage.setItem('session_pro', JSON.stringify(updated));
-                return updated;
-              });
-            }
-          }
+          return;
         }
       }
+
+      // Se offline ou falha no pull, carrega local
+      const localData = await OfflineSync.getLocalData(tenantId);
+      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+      finalSettings.users = localData.users || [];
+      setSettings(finalSettings);
+      setOrders(localData.orders || []);
+      setProducts(localData.products || []);
+      setSales(localData.sales || []);
+      setTransactions(localData.transactions || []);
     } catch (e) {
       console.error("Erro ao carregar dados:", e);
       setIsCloudConnected(false);
+      const localData = await OfflineSync.getLocalData(tenantId);
+      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+      finalSettings.users = localData.users || [];
+      setSettings(finalSettings);
+      setOrders(localData.orders || []);
+      setProducts(localData.products || []);
+      setSales(localData.sales || []);
+      setTransactions(localData.transactions || []);
     }
-  }, [session, isDBReady]);
+  }, []);
 
   useEffect(() => {
-    if (session?.isLoggedIn && session.tenantId && isDBReady) {
-      loadData(session.tenantId).finally(() => {
-        if (isInitializing) setIsInitializing(false);
-      });
+    if (session?.isLoggedIn && session.tenantId) {
+      loadData(session.tenantId);
     }
     
     const handleFocus = () => {
@@ -567,21 +497,6 @@ const App: React.FC = () => {
     await OfflineSync.deleteTransaction(session.tenantId, id);
   };
 
-  const handleSetCustomers = async (newCustomers: Customer[]) => {
-    setCustomers(newCustomers);
-    const lastCustomer = newCustomers.find(c => !customers.some(oc => oc.id === c.id));
-    if (lastCustomer && session?.tenantId) {
-      await OfflineSync.saveCustomer(session.tenantId, lastCustomer);
-    }
-  };
-
-  const handleDeleteCustomer = async (id: string) => {
-    if (!session?.tenantId) return;
-    const updated = customers.map(c => c.id === id ? { ...c, isDeleted: true } : c);
-    setCustomers(updated);
-    await OfflineSync.deleteCustomer(session.tenantId, id);
-  };
-
   const handleSwitchProfile = (user: User) => {
     if (session) {
       const newType = user.role;
@@ -593,32 +508,6 @@ const App: React.FC = () => {
       }
     }
   };
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-10 text-center">
-        <div className="w-20 h-20 bg-red-500 rounded-3xl flex items-center justify-center mb-6 shadow-2xl shadow-red-500/20">
-          <ShieldCheck size={40} />
-        </div>
-        <h1 className="text-xl font-black uppercase tracking-tighter mb-2">Erro Inesperado</h1>
-        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8 max-w-xs leading-relaxed">
-          Ocorreu um erro ao carregar a interface. Tente limpar o cache ou recarregar.
-        </p>
-        <div className="bg-black/20 p-4 rounded-2xl mb-8 w-full max-w-md overflow-auto">
-          <code className="text-[10px] text-red-400 font-mono break-all">{error.message}</code>
-        </div>
-        <button 
-          onClick={() => {
-            localStorage.clear();
-            window.location.reload();
-          }} 
-          className="bg-blue-600 px-8 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
-        >
-          Limpar Dados e Reiniciar
-        </button>
-      </div>
-    );
-  }
 
   if (isInitializing) {
     return (
@@ -798,13 +687,12 @@ const App: React.FC = () => {
     );
   }
 
-  const currentUser = session?.user || settings?.users?.[0] || { id: 'guest', name: 'Usuário', role: 'colaborador' as const, photo: null };
+  const currentUser = session.user || settings.users[0];
   const navItems = [
     { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
     { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
-    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin'], feature: 'customersTab' },
     { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
   ];
   
@@ -816,19 +704,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans flex flex-col md:flex-row">
-      {!isOnline && (
-        <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white text-[9px] font-black uppercase py-1.5 text-center z-[200] shadow-lg flex items-center justify-center gap-2">
-          <div className="w-2 h-2 bg-white rounded-full animate-ping"></div>
-          Modo Offline - Dados sendo salvos localmente
-          <button onClick={() => window.location.reload()} className="ml-4 bg-white/20 px-2 py-0.5 rounded hover:bg-white/30 transition-colors">Recarregar</button>
-        </div>
-      )}
-      {isSyncing && isOnline && (
-        <div className="fixed top-0 left-0 right-0 bg-blue-500 text-white text-[9px] font-black uppercase py-1.5 text-center z-[200] shadow-lg flex items-center justify-center gap-2 animate-pulse">
-          <Loader2 size={12} className="animate-spin"/>
-          Sincronizando com a nuvem...
-        </div>
-      )}
       <aside className={`hidden md:flex flex-col ${isSidebarCollapsed ? 'w-24' : 'w-72'} bg-slate-900 text-white p-6 h-screen sticky top-0 overflow-y-auto transition-all duration-300 ease-in-out`}>
         <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} mb-12`}>
           {!isSidebarCollapsed && (
@@ -885,7 +760,6 @@ const App: React.FC = () => {
         {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-        {activeTab === 'clientes' && <CustomersTab customers={customers.filter(c => !c.isDeleted)} setCustomers={handleSetCustomers} onDeleteCustomer={handleDeleteCustomer} settings={settings} />}
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
       </main>
 

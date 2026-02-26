@@ -3,12 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { OnlineDB } from './utils/api';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -135,14 +130,6 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    // Production: Serve static files from dist
-    app.use(express.static(path.join(__dirname, 'dist')));
-    
-    // SPA fallback: Serve index.html for all other routes
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {

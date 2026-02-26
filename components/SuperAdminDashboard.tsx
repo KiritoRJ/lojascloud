@@ -6,7 +6,7 @@ import { ptBR } from 'date-fns/locale/pt-BR';
 import 'react-datepicker/dist/react-datepicker.css';
 
 registerLocale('pt-BR', ptBR);
-import { OnlineDB } from '../utils/api';
+import { supabase } from '../services';
 
 interface Props {
   onLogout: () => void;
@@ -63,14 +63,18 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
   };
 
   const loadGlobalSettings = async () => {
-    const settings = await OnlineDB.getGlobalSettings();
+    const { data } = await supabase.from('global_settings').select('*');
+    const settings = data ? data.reduce((acc, item) => {
+      acc[item.key] = item.value;
+      return acc;
+    }, {} as any) : {};
     setGlobalPlans(settings);
   };
 
   const loadTenants = async () => {
     setIsLoading(true);
     try {
-      const data = await OnlineDB.getTenants();
+      const { data } = await supabase.from('tenants').select('*');
       // Filtra a loja de sistema para não aparecer no dashboard
       const filteredData = (data || []).filter(t => 
         t.id !== 'SYSTEM' && 
@@ -147,14 +151,15 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
     setIsSaving(true);
     try {
       const tenantId = 'LOJA_' + Math.random().toString(36).substr(2, 5).toUpperCase();
-      const result = await OnlineDB.createTenant({
-        id: tenantId,
-        storeName: formData.storeName,
-        adminUsername: formData.username,
-        adminPasswordPlain: formData.password,
-        logoUrl: formData.logoUrl,
-        phoneNumber: formData.phoneNumber
+      const { error } = await supabase.rpc('create_tenant_and_admin', {
+        p_id: tenantId,
+        p_store_name: formData.storeName,
+        p_admin_username: formData.username,
+        p_admin_password_plain: formData.password,
+        p_logo_url: formData.logoUrl,
+        p_phone_number: formData.phoneNumber
       });
+      const result = { success: !error, message: error?.message };
 
       if (result.success) {
         setFormData({ storeName: '', username: '', password: '', logoUrl: null, phoneNumber: '' });
@@ -171,11 +176,13 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
 
   const handleUpdateGlobalPlans = async () => {
     setIsSaving(true);
-    const res = await OnlineDB.updateGlobalSettings(globalPlans);
+    const updates = Object.entries(globalPlans).map(([key, value]) => supabase.from('global_settings').upsert({ key, value }));
+    const results = await Promise.all(updates);
+    const res = { success: results.every(r => !r.error) };
     if (res.success) {
       setIsEditingGlobal(false);
     } else {
-      setErrorMsg(res.message || "Erro ao salvar planos.");
+      setErrorMsg((res as any).message || "Erro ao salvar planos.");
     }
     setIsSaving(false);
   };
@@ -183,11 +190,12 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
   const handleUpdateCustomPrices = async () => {
     if (!tenantToEditPrices) return;
     setIsSaving(true);
-    const res = await OnlineDB.updateTenantCustomPrices(tenantToEditPrices.id, {
-      monthly: tenantToEditPrices.monthly,
-      quarterly: tenantToEditPrices.quarterly,
-      yearly: tenantToEditPrices.yearly
-    });
+    const { error } = await supabase.from('tenants').update({
+      custom_monthly_price: tenantToEditPrices.monthly,
+      custom_quarterly_price: tenantToEditPrices.quarterly,
+      custom_yearly_price: tenantToEditPrices.yearly
+    }).eq('id', tenantToEditPrices.id);
+    const res = { success: !error, message: error?.message };
     if (res.success) {
       setTenantToEditPrices(null);
       await loadTenants();
@@ -200,15 +208,17 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
   const handleUpdateFeatures = async () => {
     if (!tenantToEditFeatures) return;
     setIsSaving(true);
-    const res = await OnlineDB.updateTenantFeatures(
-      tenantToEditFeatures.id, 
-      tenantToEditFeatures.features, 
-      tenantToEditFeatures.maxUsers,
-      tenantToEditFeatures.maxOS,
-      tenantToEditFeatures.maxProducts,
-      tenantToEditFeatures.printerSize,
-      tenantToEditFeatures.retentionMonths
-    );
+    const { error } = await supabase.from('tenants').update({
+      enabled_features: tenantToEditFeatures.features,
+      max_users: tenantToEditFeatures.maxUsers,
+      tenant_limits: {
+        max_os: tenantToEditFeatures.maxOS,
+        max_products: tenantToEditFeatures.maxProducts,
+      },
+      printer_size: tenantToEditFeatures.printerSize,
+      retention_months: tenantToEditFeatures.retentionMonths
+    }).eq('id', tenantToEditFeatures.id);
+    const res = { success: !error, message: error?.message };
     if (res.success) {
       setTenantToEditFeatures(null);
       await loadTenants();
@@ -226,7 +236,12 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
       const expirationDate = new Date(newSubDate + 'T23:59:59');
       const status = expirationDate < new Date() ? 'expired' : 'active';
       
-      const result = await OnlineDB.setSubscriptionDate(tenantToEditSub.id, expirationDate.toISOString(), status, newPlanType);
+      const { error } = await supabase.from('tenants').update({
+      subscription_expires_at: expirationDate.toISOString(),
+      subscription_status: status,
+      last_plan_type: newPlanType
+    }).eq('id', tenantToEditSub.id);
+    const result = { success: !error, message: error?.message };
       if (result.success) {
         setTenantToEditSub(null);
         // Pequeno delay para garantir que o Supabase processou antes de recarregar
@@ -248,7 +263,8 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
     setIsDeleting(true);
     setErrorMsg(null);
     try {
-      const result = await OnlineDB.deleteTenant(tenantToDelete.id);
+      const { error } = await supabase.from('tenants').delete().eq('id', tenantToDelete.id);
+    const result = { success: !error, message: error?.message };
       if (result.success) {
         setTenantToDelete(null);
         await loadTenants();

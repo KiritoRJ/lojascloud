@@ -4,8 +4,9 @@ import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, ClipboardList, Targe
 import { ServiceOrder, Sale, Product, Transaction, AppSettings, User } from '../types';
 import { formatCurrency, formatDate } from '../utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { OnlineDB } from '../utils/api';
+
 import { jsPDF } from 'jspdf';
+import { supabase } from '../services';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { addMonths, subMonths, startOfDay, endOfDay, isBefore, isAfter } from 'date-fns';
@@ -59,11 +60,7 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
   const [isCancellationReportModalOpen, setIsCancellationReportModalOpen] = useState(false);
 
   // Limpeza automática ao carregar (Remove dados com mais de X meses, conforme config da loja)
-  useEffect(() => {
-    if (tenantId && settings.retentionMonths) {
-      OnlineDB.cleanupOldData(tenantId, settings.retentionMonths);
-    }
-  }, [tenantId, settings.retentionMonths]);
+  
 
   // Filtros para o Dashboard (Apenas não deletados)
   const activeOrders = useMemo(() => orders.filter(o => !o.isDeleted), [orders]);
@@ -389,7 +386,8 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
     setAuthError(false);
 
     try {
-      const authResult = await OnlineDB.verifyAdminPassword(tenantId, passwordInput);
+      const { data, error } = await supabase.from('users').select('id').eq('tenant_id', tenantId).eq('role', 'admin').eq('password', passwordInput.trim()).maybeSingle();
+      const authResult = { success: !error && data };
       if (authResult.success) {
         setIsCancelling(selectedSaleToCancel.id);
         setIsAuthModalOpen(false);

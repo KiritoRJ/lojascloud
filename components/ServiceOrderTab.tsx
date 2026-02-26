@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar, KeyRound, Lock } from 'lucide-react';
 import { ServiceOrder, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
+import { supabase } from '../services';
 
 interface Props {
   orders: ServiceOrder[];
@@ -394,8 +395,8 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
     setAuthError(false);
 
     try {
-      const { OnlineDB } = await import('../utils/api');
-      const authResult = await OnlineDB.verifyAdminPassword(tenantId, passwordInput);
+      const { data, error } = await supabase.from('users').select('id').eq('tenant_id', tenantId).eq('role', 'admin').eq('password', passwordInput.trim()).maybeSingle();
+      const authResult = { success: !error && data };
       if (authResult.success) {
         onDeleteOrder(orderToDelete);
         setIsAuthModalOpen(false);

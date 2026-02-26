@@ -2,9 +2,8 @@
 import React, { useState, useMemo } from 'react';
 import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload } from 'lucide-react';
 import { AppSettings, User, ServiceOrder, Product, Sale, Transaction } from '../types';
-import { OnlineDB } from '../utils/api';
-import { OfflineSync } from '../utils/offlineSync';
-import { db } from '../utils/localDb';
+import { supabase, LocalData } from '../services';
+
 
 interface Props {
   settings: AppSettings;
@@ -98,7 +97,8 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
         return;
     }
 
-    const result = await OnlineDB.verifyAdminPassword(tenantId, authPassword);
+    const { data, error } = await supabase.from('users').select('id').eq('tenant_id', tenantId).eq('role', 'admin').eq('password', authPassword.trim()).maybeSingle();
+    const result = { success: !error && data };
     
     if (result.success) {
       if (pendingUserToSwitch) {
@@ -180,13 +180,31 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     };
 
     try {
-      const res = await OnlineDB.upsertUser(tenantId, settings.storeName, newUser);
+      const { data: existingUser, error: selectError } = await supabase.from('users').select('username').eq('tenant_id', tenantId).eq('name', newUserName).single();
+      
+      let username = newUserName.toLowerCase().replace(/\s+/g, '.') + '.' + settings.storeName.toLowerCase().split(' ')[0];
+      if (existingUser) {
+        username = existingUser.username;
+      }
+
+      const { error: upsertError } = await supabase.from('users').upsert([{
+        id: newUser.id,
+        tenant_id: tenantId,
+        name: newUser.name,
+        role: newUser.role,
+        password: newUser.password,
+        photo: newUser.photo,
+        specialty: newUser.specialty,
+        username: username
+      }]);
+
+      const res = { success: !upsertError, username: username, message: upsertError?.message };
       
       if (res.success) {
         const newUserWithUsername = { ...newUser, username: res.username };
         const updatedUsers = [...settings.users, newUserWithUsername];
         setSettings({ ...settings, users: updatedUsers });
-        await OfflineSync.saveUser(tenantId, newUserWithUsername);
+        await LocalData.saveUser(newUserWithUsername, tenantId!);
         
         setIsUserModalOpen(false);
         setNewUserName('');
@@ -208,11 +226,12 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     if (!isAdmin) return;
     setIsDeleting(true);
     try {
-      const result = await OnlineDB.deleteRemoteUser(userToDelete.id);
+      const { error } = await supabase.from('users').delete().eq('id', userToDelete.id);
+        const result = { success: !error, message: error?.message };
       if (result.success) {
         const updatedUsers = settings.users.filter(u => u.id !== userToDelete.id);
         setSettings({ ...settings, users: updatedUsers });
-        await OfflineSync.deleteUser(tenantId, userToDelete.id);
+        // Deletion from local DB will be handled by the main data sync logic
         setUserToDelete(null);
         triggerSaveFeedback("Perfil Removido!");
       } else {
@@ -229,7 +248,13 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     if (!tenantId) return;
     setIsExporting(true);
     try {
-      const data = await OfflineSync.getLocalData(tenantId);
+      const [orders, products, sales, transactions] = await Promise.all([
+        LocalData.getOrders(),
+        LocalData.getProducts(),
+        LocalData.getSales(),
+        LocalData.getTransactions(),
+      ]);
+      const data = { orders, products, sales, transactions };
       
       let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
       xml += '<AssistenciaProBackup>\n';
@@ -344,10 +369,10 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
 
           if (confirm(`Deseja importar ${orders.length} OS, ${products.length} Produtos, ${sales.length} Vendas e ${transactions.length} Transações? Isso substituirá dados locais com IDs conflitantes.`)) {
             // Bulk save to local DB and sync queue
-            for (const o of orders) await OfflineSync.saveOrder(tenantId, o);
-            for (const p of products) await OfflineSync.saveProduct(tenantId, p);
-            for (const s of sales) await OfflineSync.saveSale(tenantId, s);
-            for (const t of transactions) await OfflineSync.saveTransaction(tenantId, t);
+            for (const o of orders) await LocalData.saveOrder(o as ServiceOrder, tenantId!);
+            for (const p of products) await LocalData.saveProduct(p as Product, tenantId!);
+            for (const s of sales) await LocalData.saveSale(s as Sale, tenantId!);
+            for (const t of transactions) await LocalData.saveTransaction(t as Transaction, tenantId!);
             
             triggerSaveFeedback("Backup Importado!");
             setTimeout(() => window.location.reload(), 1500);

@@ -1,12 +1,17 @@
 import express from 'express';
+import { createClient } from '@supabase/supabase-js';
 import { createServer as createViteServer } from 'vite';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import { OnlineDB } from './utils/api';
+
 import path from 'path';
 
 dotenv.config();
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL!;
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const app = express();
 const PORT = 3000;
@@ -104,7 +109,18 @@ app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
             expiresAt.setMonth(expiresAt.getMonth() + months);
 
             // Update tenant subscription in your database
-            await OnlineDB.updateSubscription(tenantId, months, planType as any);
+            const { data: tenant } = await supabase.from('tenants').select('subscription_expires_at').eq('id', tenantId).single();
+            let currentExpiry = tenant?.subscription_expires_at ? new Date(tenant.subscription_expires_at) : new Date();
+            if (currentExpiry < new Date()) {
+              currentExpiry = new Date();
+            }
+            currentExpiry.setMonth(currentExpiry.getMonth() + months);
+
+            await supabase.from('tenants').update({ 
+              subscription_status: 'active',
+              subscription_expires_at: currentExpiry.toISOString(),
+              last_plan: planType
+            }).eq('id', tenantId);
             console.log(`Subscription updated successfully for tenant ${tenantId}`);
           }
         } else {

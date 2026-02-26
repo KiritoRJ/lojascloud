@@ -5,6 +5,16 @@ import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer }
 
 export class OfflineSync {
   private static isSyncing = false;
+  private static onSyncStatusChange: ((isSyncing: boolean) => void) | null = null;
+
+  static setOnSyncStatusChange(callback: (isSyncing: boolean) => void) {
+    this.onSyncStatusChange = callback;
+  }
+
+  private static setSyncing(value: boolean) {
+    this.isSyncing = value;
+    if (this.onSyncStatusChange) this.onSyncStatusChange(value);
+  }
 
   static async init() {
     try {
@@ -25,19 +35,20 @@ export class OfflineSync {
   }
 
   static async processQueue() {
-    if (this.isSyncing) return;
-    this.isSyncing = true;
+    if (this.isSyncing || !navigator.onLine) return;
+    this.setSyncing(true);
 
     try {
       const queue = await db.syncQueue.orderBy('timestamp').toArray();
       if (queue.length === 0) {
-        this.isSyncing = false;
         return;
       }
 
       console.log(`Processing ${queue.length} items from sync queue...`);
 
       for (const item of queue) {
+        if (!navigator.onLine) break;
+        
         let success = false;
         try {
           switch (item.type) {
@@ -99,13 +110,12 @@ export class OfflineSync {
         if (success) {
           await db.syncQueue.delete(item.id!);
         } else {
-          // If one fails, stop and wait for next online event or retry
           console.warn('Sync failed for item, stopping queue processing.');
           break;
         }
       }
     } finally {
-      this.isSyncing = false;
+      this.setSyncing(false);
     }
   }
 

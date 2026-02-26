@@ -82,8 +82,10 @@ const App: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isDBReady, setIsDBReady] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
+    OfflineSync.setOnSyncStatusChange(setIsSyncing);
     const handleError = (event: ErrorEvent) => {
       const msg = event.message || '';
       if (msg.includes('WebSocket') || msg.includes('vite')) return;
@@ -270,79 +272,79 @@ const App: React.FC = () => {
     try {
       setIsCloudConnected(navigator.onLine);
       
-      // Se estiver online, aproveita para atualizar o status da assinatura
-      if (navigator.onLine && session && session.type !== 'super') {
-        console.log('App: Online, verificando assinatura...');
-        const tenant = await OnlineDB.getTenantById(tenantId);
-        if (tenant) {
-          const expiresAt = tenant.subscription_expires_at;
-          const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
-          const newStatus = isExpired ? 'expired' : (tenant.subscription_status || 'trial');
-          
-          if (newStatus !== session?.subscriptionStatus || expiresAt !== session?.subscriptionExpiresAt) {
-            setSession(prev => {
-              if (!prev) return null;
-              const updated = { 
-                ...prev, 
-                subscriptionStatus: newStatus, 
-                subscriptionExpiresAt: expiresAt 
-              };
-              localStorage.setItem('session_pro', JSON.stringify(updated));
-              return updated;
-            });
-          }
-        }
-      }
+      // 1. CARREGA DADOS LOCAIS IMEDIATAMENTE (Prioridade para evitar tela branca)
+      const localData = await OfflineSync.getLocalData(tenantId);
+      console.log('App: Dados locais carregados:', { 
+        orders: localData.orders?.length, 
+        products: localData.products?.length,
+        settings: !!localData.settings
+      });
 
-      // Tenta puxar dados novos se estiver online
+      const initialSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+      if (localData.users?.length) initialSettings.users = localData.users;
+      
+      // Define estados iniciais com o que temos no banco local
+      setSettings(initialSettings);
+      setOrders(localData.orders || []);
+      setProducts(localData.products || []);
+      setSales(localData.sales || []);
+      setTransactions(localData.transactions || []);
+      setCustomers(localData.customers || []);
+
+      // 2. SE ONLINE, SINCRONIZA EM SEGUNDO PLANO
       if (navigator.onLine) {
+        console.log('App: Iniciando sincronização em segundo plano...');
+        
+        // Processa fila de pendências antes de puxar novos dados
+        await OfflineSync.processQueue();
+
+        // Puxa dados novos da nuvem
         const cloudData = await OfflineSync.pullAllData(tenantId);
+        
         if (cloudData) {
+          console.log('App: Sincronização de fundo concluída, atualizando interface.');
           const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
           if (session?.printerSize) {
             finalSettings.printerSize = session.printerSize;
           }
           finalSettings.users = cloudData.users || [];
+          
           setSettings(finalSettings);
           setOrders(cloudData.orders || []);
           setProducts(cloudData.products || []);
           setSales(cloudData.sales || []);
           setTransactions(cloudData.transactions || []);
           setCustomers(cloudData.customers || []);
-          console.log('App: Dados carregados via Nuvem com sucesso.');
-          return;
+        }
+
+        // Verifica assinatura
+        if (session && session.type !== 'super') {
+          const tenant = await OnlineDB.getTenantById(tenantId);
+          if (tenant) {
+            const expiresAt = tenant.subscription_expires_at;
+            const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
+            const newStatus = isExpired ? 'expired' : (tenant.subscription_status || 'trial');
+            
+            if (newStatus !== session?.subscriptionStatus || expiresAt !== session?.subscriptionExpiresAt) {
+              setSession(prev => {
+                if (!prev) return null;
+                const updated = { 
+                  ...prev, 
+                  subscriptionStatus: newStatus, 
+                  subscriptionExpiresAt: expiresAt 
+                };
+                localStorage.setItem('session_pro', JSON.stringify(updated));
+                return updated;
+              });
+            }
+          }
         }
       }
-
-      // Se offline ou falha no pull, carrega local
-      const localData = await OfflineSync.getLocalData(tenantId);
-      console.log('App: Dados carregados via Banco Local:', { 
-        orders: localData.orders?.length, 
-        products: localData.products?.length,
-        settings: !!localData.settings
-      });
-      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
-      finalSettings.users = localData.users || [];
-      setSettings(finalSettings);
-      setOrders(localData.orders || []);
-      setProducts(localData.products || []);
-      setSales(localData.sales || []);
-      setTransactions(localData.transactions || []);
-      setCustomers(localData.customers || []);
     } catch (e) {
       console.error("Erro ao carregar dados:", e);
       setIsCloudConnected(false);
-      const localData = await OfflineSync.getLocalData(tenantId);
-      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
-      finalSettings.users = localData.users || [];
-      setSettings(finalSettings);
-      setOrders(localData.orders || []);
-      setProducts(localData.products || []);
-      setSales(localData.sales || []);
-      setTransactions(localData.transactions || []);
-      setCustomers(localData.customers || []);
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     if (session?.isLoggedIn && session.tenantId && isDBReady) {
@@ -811,6 +813,12 @@ const App: React.FC = () => {
           <div className="w-2 h-2 bg-white rounded-full animate-ping"></div>
           Modo Offline - Dados sendo salvos localmente
           <button onClick={() => window.location.reload()} className="ml-4 bg-white/20 px-2 py-0.5 rounded hover:bg-white/30 transition-colors">Recarregar</button>
+        </div>
+      )}
+      {isOnline && isSyncing && (
+        <div className="fixed top-0 left-0 right-0 bg-blue-600 text-white text-[9px] font-black uppercase py-1.5 text-center z-[200] shadow-lg flex items-center justify-center gap-2">
+          <Loader2 size={10} className="animate-spin" />
+          Sincronizando com a Nuvem...
         </div>
       )}
       <aside className={`hidden md:flex flex-col ${isSidebarCollapsed ? 'w-24' : 'w-72'} bg-slate-900 text-white p-6 h-screen sticky top-0 overflow-y-auto transition-all duration-300 ease-in-out`}>

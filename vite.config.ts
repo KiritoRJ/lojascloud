@@ -25,7 +25,37 @@ export default defineConfig(({ mode }) => {
             clientsClaim: true,
             skipWaiting: true,
             navigateFallback: 'index.html',
-            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
+            maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB
+            runtimeCaching: [
+              {
+                urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+                handler: 'CacheFirst',
+                options: {
+                  cacheName: 'google-fonts-cache',
+                  expiration: {
+                    maxEntries: 10,
+                    maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+                  },
+                  cacheableResponse: {
+                    statuses: [0, 200],
+                  },
+                },
+              },
+              {
+                urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+                handler: 'CacheFirst',
+                options: {
+                  cacheName: 'gstatic-fonts-cache',
+                  expiration: {
+                    maxEntries: 10,
+                    maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+                  },
+                  cacheableResponse: {
+                    statuses: [0, 200],
+                  },
+                },
+              }
+            ]
           },
           manifest: {
             name: 'Assistência Técnica Pro',

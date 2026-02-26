@@ -220,11 +220,13 @@ const App: React.FC = () => {
   }, []);
 
   const loadData = useCallback(async (tenantId: string) => {
+    console.log('App: Carregando dados para tenant:', tenantId);
     try {
       setIsCloudConnected(navigator.onLine);
       
       // Se estiver online, aproveita para atualizar o status da assinatura
-      if (navigator.onLine && session?.type !== 'super') {
+      if (navigator.onLine && session && session.type !== 'super') {
+        console.log('App: Online, verificando assinatura...');
         const tenant = await OnlineDB.getTenantById(tenantId);
         if (tenant) {
           const expiresAt = tenant.subscription_expires_at;
@@ -503,18 +505,17 @@ const App: React.FC = () => {
     await OfflineSync.deleteTransaction(session.tenantId, id);
   };
 
-  const saveCustomers = async (newCustomers: Customer[]) => {
+  const handleSetCustomers = async (newCustomers: Customer[]) => {
     setCustomers(newCustomers);
-    if (session?.tenantId) {
-      for (const customer of newCustomers) {
-        await OfflineSync.saveCustomer(session.tenantId, customer);
-      }
+    const lastCustomer = newCustomers.find(c => !customers.some(oc => oc.id === c.id));
+    if (lastCustomer && session?.tenantId) {
+      await OfflineSync.saveCustomer(session.tenantId, lastCustomer);
     }
   };
 
-  const removeCustomer = async (id: string) => {
+  const handleDeleteCustomer = async (id: string) => {
     if (!session?.tenantId) return;
-    const updated = customers.filter(c => c.id !== id);
+    const updated = customers.map(c => c.id === id ? { ...c, isDeleted: true } : c);
     setCustomers(updated);
     await OfflineSync.deleteCustomer(session.tenantId, id);
   };
@@ -709,13 +710,13 @@ const App: React.FC = () => {
     );
   }
 
-  const currentUser = session.user || settings.users[0];
+  const currentUser = session?.user || settings?.users?.[0] || { id: 'guest', name: 'Usuário', role: 'colaborador' as const, photo: null };
   const navItems = [
     { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
     { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
-    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin', 'colaborador'], feature: 'customersTab' },
+    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin'], feature: 'customersTab' },
     { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
   ];
   
@@ -727,6 +728,13 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans flex flex-col md:flex-row">
+      {!isOnline && (
+        <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white text-[9px] font-black uppercase py-1.5 text-center z-[200] shadow-lg flex items-center justify-center gap-2">
+          <div className="w-2 h-2 bg-white rounded-full animate-ping"></div>
+          Modo Offline - Dados sendo salvos localmente
+          <button onClick={() => window.location.reload()} className="ml-4 bg-white/20 px-2 py-0.5 rounded hover:bg-white/30 transition-colors">Recarregar</button>
+        </div>
+      )}
       <aside className={`hidden md:flex flex-col ${isSidebarCollapsed ? 'w-24' : 'w-72'} bg-slate-900 text-white p-6 h-screen sticky top-0 overflow-y-auto transition-all duration-300 ease-in-out`}>
         <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} mb-12`}>
           {!isSidebarCollapsed && (
@@ -783,7 +791,7 @@ const App: React.FC = () => {
         {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
         {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-        {activeTab === 'clientes' && <CustomersTab customers={customers} setCustomers={saveCustomers} onDeleteCustomer={removeCustomer} settings={settings} />}
+        {activeTab === 'clientes' && <CustomersTab customers={customers.filter(c => !c.isDeleted)} setCustomers={handleSetCustomers} onDeleteCustomer={handleDeleteCustomer} settings={settings} />}
         {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
       </main>
 

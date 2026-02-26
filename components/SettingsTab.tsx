@@ -783,12 +783,12 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
           <div className="w-full space-y-3 pt-4">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><Layout size={12}/> Itens por Página</label>
             <div className="grid grid-cols-4 gap-2">
-              {[4, 8, 16, 999].map(num => (
+              {[8, 16, 24, 32].map(num => (
                 <button 
                   key={num}
                   onClick={() => updateSetting('itemsPerPage', num)}
                   className={`py-4 rounded-2xl text-xs font-black uppercase transition-all ${settings.itemsPerPage === num ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-500'}`}>
-                  {num === 999 ? 'Todos' : num}
+                  {num}
                 </button>
               ))}
             </div>

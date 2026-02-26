@@ -1,8 +1,6 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import './src/index.css';
 import { registerSW } from 'virtual:pwa-register';
 import { registerLocale, setDefaultLocale } from 'react-datepicker';
 import { ptBR } from 'date-fns/locale/pt-BR';

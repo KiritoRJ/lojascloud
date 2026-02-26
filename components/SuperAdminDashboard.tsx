@@ -21,7 +21,7 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [formData, setFormData] = useState({ storeName: '', username: '', password: '', logoUrl: null as string | null, phoneNumber: '' });
   const [tenantToDelete, setTenantToDelete] = useState<{ id: string, name: string } | null>(null);
-  const [tenantToEditSub, setTenantToEditSub] = useState<{ id: string, name: string, expiresAt: string, status: string, planType?: string } | null>(null);
+  const [tenantToEditSub, setTenantToEditSub] = useState<{ id: string, name: string, expiresAt: string, status: string, createdAt: string, planType?: string } | null>(null);
   const [tenantToEditPrices, setTenantToEditPrices] = useState<{ id: string, name: string, monthly?: number, quarterly?: number, yearly?: number } | null>(null);
   const [tenantToEditFeatures, setTenantToEditFeatures] = useState<{ id: string; name: string; features: any; maxUsers: number; maxOS: number; maxProducts: number; printerSize: 58 | 80; retentionMonths: number; } | null>(null);
 const [globalPlans, setGlobalPlans] = useState<any>({});
@@ -50,12 +50,29 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
-      // Usando Intl para garantir o formato DD/MM/YYYY independente do ambiente
       return new Intl.DateTimeFormat('pt-BR', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
-        timeZone: 'UTC' // Força UTC para evitar problemas de fuso com datas puras
+        timeZone: 'UTC'
+      }).format(date);
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  const formatDateTimeBR = (dateStr: string | null | undefined) => {
+    if (!dateStr) return 'N/A';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      return new Intl.DateTimeFormat('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
       }).format(date);
     } catch (e) {
       return dateStr;
@@ -381,6 +398,11 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                        </div>
                        <span className="opacity-30">•</span>
                        <div className="flex items-center gap-1">
+                         <Calendar size={10} className="text-blue-500" />
+                         <span>CRIADA EM: {formatDateBR(t.created_at)}</span>
+                       </div>
+                       <span className="opacity-30">•</span>
+                       <div className="flex items-center gap-1">
                          <Clock size={10} className={t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date() ? "text-red-500" : "text-emerald-500"} />
                          <span>EXPIRA: {formatDateBR(t.subscription_expires_at)}</span>
                        </div>
@@ -425,6 +447,7 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                           name: t.store_name, 
                           expiresAt: t.subscription_expires_at || new Date().toISOString(),
                           status: t.subscription_status || 'trial',
+                          createdAt: t.created_at || new Date().toISOString(),
                           planType: t.last_plan_type
                         });
                         setNewSubDate(t.subscription_expires_at ? new Date(t.subscription_expires_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
@@ -643,6 +666,15 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
               </div>
               
               <div className="space-y-4 text-left">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Data de Criação</label>
+                    <input 
+                      type="text" 
+                      value={formatDateTimeBR(tenantToEditSub.createdAt)} 
+                      disabled 
+                      className="w-full bg-slate-100 border-slate-200 rounded-2xl p-4 font-black text-slate-500 text-sm cursor-not-allowed"
+                    />
+                  </div>
                   <div className="space-y-1">
                     <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-4">Expiração Atual</label>
                     <input 

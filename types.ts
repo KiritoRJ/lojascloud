@@ -133,7 +133,7 @@ export interface AppSettings {
   receiptLabelTotal?: string;
   receiptLabelEntryPhotos?: string;
   receiptLabelExitPhotos?: string;
-  itemsPerPage: 8 | 16 | 24 | 32 | 999;
+  itemsPerPage: 8 | 16 | 24 | 32;
 }
 
 export interface Customer {

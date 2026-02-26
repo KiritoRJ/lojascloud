@@ -5,15 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && vite build --ssr -c vite.config.ssr.ts",
+    "build": "vite build",
     "lint": "tsc --noEmit",
-    "preview": "vite preview",
-    "start": "node dist/server/index.mjs"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@mercadopago/sdk-react": "^1.0.7",
     "@supabase/supabase-js": "2.39.7",
-    "@tailwindcss/vite": "^4.2.1",
     "@types/react-datepicker": "^6.2.0",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
@@ -29,7 +27,6 @@
     "react-datepicker": "^9.1.0",
     "react-dom": "^19.2.4",
     "recharts": "^3.7.0",
-    "tailwindcss": "^4.2.1",
     "vite-plugin-pwa": "^1.2.0"
   },
   "devDependencies": {

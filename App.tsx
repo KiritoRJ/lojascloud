@@ -581,11 +581,17 @@ const App: React.FC = () => {
     );
   }
 
-  if (session.type === 'super') return <SuperAdminDashboard onLogout={handleLogout} onLoginAs={handleLoginAs} />;
+  if (session.type === 'super') {
+    return (
+      <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={40} /></div>}>
+        <SuperAdminDashboard onLogout={handleLogout} onLoginAs={handleLoginAs} />
+      </Suspense>
+    );
+  }
 
   if (session.subscriptionStatus === 'expired') {
     return (
-      <>
+      <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={40} /></div>}>
         <SubscriptionView 
           tenantId={session.tenantId!} 
           storeName={settings?.storeName || 'Sua Loja'} 
@@ -633,7 +639,7 @@ const App: React.FC = () => {
              </div>
           </div>
         )}
-      </>
+      </Suspense>
     );
   }
 

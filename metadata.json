@@ -1,6 +1,9 @@
 {
-  "name": "LOJAS CLOUD",
-  "description": "sua loja nas nuvens",
+  "name": "LOJAS CLOUD PWA",
+  "description": "Sua loja nas nuvens, agora com suporte offline!",
+  "display": "standalone",
+  "start_url": ".",
+  "short_name": "Lojas PWA",
   "requestFramePermissions": [
     "camera"
   ]

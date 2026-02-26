@@ -85,12 +85,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
+      const msg = event.message || '';
+      if (msg.includes('WebSocket') || msg.includes('vite')) return;
       console.error('App: Global Error:', event.error);
       setError(event.error || new Error(event.message));
     };
     const handleRejection = (event: PromiseRejectionEvent) => {
+      const reason = String(event.reason || '');
+      if (reason.includes('WebSocket') || reason.includes('vite')) return;
       console.error('App: Unhandled Rejection:', event.reason);
-      setError(event.reason instanceof Error ? event.reason : new Error(String(event.reason)));
+      setError(event.reason instanceof Error ? event.reason : new Error(reason));
     };
 
     window.addEventListener('error', handleError);

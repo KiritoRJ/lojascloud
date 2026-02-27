@@ -21,7 +21,15 @@
             --sidebar: #0f172a;
             --bg-app: #f8fafc;
         }
-        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; background-color: var(--bg-app); }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            -webkit-tap-highlight-color: transparent; 
+            background-color: var(--bg-app);
+            overscroll-behavior: none;
+        }
+        html {
+            overscroll-behavior: none;
+        }
         
         .bg-custom-primary { background-color: var(--primary) !important; }
         .text-custom-primary { color: var(--primary) !important; }

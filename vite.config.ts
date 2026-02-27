@@ -6,6 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
+      base: '/',
       server: {
         port: 3000,
         host: '0.0.0.0',
@@ -17,6 +18,8 @@ export default defineConfig(({ mode }) => {
           registerType: 'autoUpdate',
           injectRegister: null, // Disable auto injection, we handle it in index.tsx
           includeAssets: ['icon.svg'],
+          strategies: 'generateSW',
+          filename: 'sw.js',
           workbox: {
             globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
             cleanupOutdatedCaches: true,
@@ -59,7 +62,8 @@ export default defineConfig(({ mode }) => {
           },
           devOptions: {
             enabled: false,
-            type: 'module'
+            /* type: 'module', // Removed to use classic worker for compatibility */
+            navigateFallback: 'index.html',
           }
         })
       ],

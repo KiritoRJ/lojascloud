@@ -18,12 +18,25 @@ const updateSW = registerSW({
     console.log('PWA: Aplicativo pronto para uso offline.');
   },
   onRegistered(r) {
-    console.log('PWA: Service Worker registrado com sucesso:', r);
+    console.log('PWA: Service Worker registrado com sucesso (virtual):', r);
   },
   onRegisterError(error) {
-    console.error('PWA: Erro ao registrar Service Worker:', error);
+    console.error('PWA: Erro ao registrar Service Worker (virtual):', error);
   }
 });
+
+// Fallback manual registration
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then((registration) => {
+        console.log('PWA: Service Worker registrado manualmente com sucesso:', registration);
+      })
+      .catch((error) => {
+        console.error('PWA: Falha no registro manual do Service Worker:', error);
+      });
+  });
+}
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

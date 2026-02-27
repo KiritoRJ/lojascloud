@@ -398,6 +398,25 @@ app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
 async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
+    // Serve a basic service worker in dev to prevent MIME type errors if the plugin fails
+    app.get('/sw.js', (req, res) => {
+      res.setHeader('Content-Type', 'application/javascript');
+      res.setHeader('Service-Worker-Allowed', '/');
+      res.send(`
+        self.addEventListener('install', (event) => {
+          self.skipWaiting();
+          console.log('Dev SW installed');
+        });
+        self.addEventListener('activate', (event) => {
+          event.waitUntil(self.clients.claim());
+          console.log('Dev SW activated');
+        });
+        self.addEventListener('fetch', (event) => {
+          // Pass through requests in dev
+        });
+      `);
+    });
+
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
@@ -415,11 +434,14 @@ async function startServer() {
     // Serve service worker and manifest explicitly to ensure correct MIME types and no caching issues
     app.get('/sw.js', (req, res) => {
       console.log('Serving sw.js');
+      res.setHeader('Content-Type', 'application/javascript');
+      res.setHeader('Service-Worker-Allowed', '/');
       res.sendFile(new URL('./dist/sw.js', import.meta.url).pathname);
     });
 
     app.get('/manifest.webmanifest', (req, res) => {
       console.log('Serving manifest.webmanifest');
+      res.setHeader('Content-Type', 'application/manifest+json');
       res.sendFile(new URL('./dist/manifest.webmanifest', import.meta.url).pathname);
     });
 

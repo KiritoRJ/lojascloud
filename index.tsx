@@ -9,6 +9,7 @@ import { ptBR } from 'date-fns/locale/pt-BR';
 registerLocale('pt-BR', ptBR);
 setDefaultLocale('pt-BR');
 
+console.log('PWA: Tentando registrar Service Worker...');
 const updateSW = registerSW({
   onNeedRefresh() {
     console.log('PWA: Novo conteúdo disponível, por favor atualize.');

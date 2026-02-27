@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
         react(),
         VitePWA({
           registerType: 'autoUpdate',
-          injectRegister: 'auto',
+          injectRegister: null, // Disable auto injection, we handle it in index.tsx
           includeAssets: ['icon.svg'],
           workbox: {
             globPatterns: ['**/*.{js,css,html,png,svg,ico}'],

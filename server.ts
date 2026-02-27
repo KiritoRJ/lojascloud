@@ -412,6 +412,17 @@ async function startServer() {
     console.log('Production mode: Serving static files from', distPath);
     app.use(express.static(distPath));
 
+    // Serve service worker and manifest explicitly to ensure correct MIME types and no caching issues
+    app.get('/sw.js', (req, res) => {
+      console.log('Serving sw.js');
+      res.sendFile(new URL('./dist/sw.js', import.meta.url).pathname);
+    });
+
+    app.get('/manifest.webmanifest', (req, res) => {
+      console.log('Serving manifest.webmanifest');
+      res.sendFile(new URL('./dist/manifest.webmanifest', import.meta.url).pathname);
+    });
+
     // SPA fallback for production
     app.get('*', (req, res) => {
       if (req.path.startsWith('/api')) {

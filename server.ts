@@ -4,14 +4,9 @@ import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { OnlineDB, supabase } from './utils/api';
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
@@ -413,28 +408,16 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     // Production: Serve static files from dist
-    const distPath = path.resolve(__dirname, 'dist');
+    const distPath = new URL('./dist', import.meta.url).pathname;
     console.log('Production mode: Serving static files from', distPath);
     app.use(express.static(distPath));
-
-    // Explicitly serve PWA files to avoid fallback issues
-    app.get('/sw.js', (req, res) => {
-      res.sendFile(path.join(distPath, 'sw.js'));
-    });
-    app.get('/manifest.webmanifest', (req, res) => {
-      res.sendFile(path.join(distPath, 'manifest.webmanifest'));
-    });
-    app.get('/workbox-*.js', (req, res) => {
-      const file = req.path.split('/').pop();
-      if (file) res.sendFile(path.join(distPath, file));
-    });
 
     // SPA fallback for production
     app.get('*', (req, res) => {
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: 'API route not found' });
       }
-      res.sendFile(path.join(distPath, 'index.html'));
+      res.sendFile(new URL('./dist/index.html', import.meta.url).pathname);
     });
   }
 

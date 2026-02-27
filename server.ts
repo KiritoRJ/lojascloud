@@ -406,6 +406,19 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+  } else {
+    // Production: Serve static files from dist
+    const distPath = new URL('./dist', import.meta.url).pathname;
+    console.log('Production mode: Serving static files from', distPath);
+    app.use(express.static(distPath));
+
+    // SPA fallback for production
+    app.get('*', (req, res) => {
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'API route not found' });
+      }
+      res.sendFile(new URL('./dist/index.html', import.meta.url).pathname);
+    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {

@@ -32,6 +32,48 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      setPasswordError("Preencha todos os campos.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("As senhas não coincidem.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordError("A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    setPasswordError(null);
+
+    try {
+      const result = await OnlineDB.changeSuperPassword(oldPassword, newPassword);
+      if (result.success) {
+        setIsPasswordModalOpen(false);
+        setOldPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        alert("Senha do Super Admin alterada com sucesso!");
+      } else {
+        setPasswordError(result.message || "Erro ao alterar senha.");
+      }
+    } catch (err) {
+      setPasswordError("Erro de conexão.");
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   // Corrige o problema de fuso horário ao converter string YYYY-MM-DD para Date
   const parseDate = (dateString: string) => {
     if (!dateString) return new Date();
@@ -294,9 +336,17 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
             </p>
           </div>
         </div>
-        <button onClick={onLogout} className="px-6 py-4 bg-white/5 border border-white/10 rounded-2xl text-slate-400 hover:text-white hover:bg-white/10 transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest">
-          Sair <LogOut size={16} />
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsPasswordModalOpen(true)}
+            className="px-6 py-4 bg-white/5 border border-white/10 rounded-2xl text-slate-400 hover:text-white hover:bg-white/10 transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest"
+          >
+            <Key size={16} /> Alterar Senha
+          </button>
+          <button onClick={onLogout} className="px-6 py-4 bg-white/5 border border-white/10 rounded-2xl text-slate-400 hover:text-white hover:bg-white/10 transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest">
+            Sair <LogOut size={16} />
+          </button>
+        </div>
       </header>
 
       <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-10">
@@ -844,6 +894,80 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                   Cancelar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPasswordModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/90 z-[300] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
+          <div className="bg-white w-full max-w-xs rounded-[3rem] p-8 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-inner">
+              <Shield size={32} />
+            </div>
+            <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1 text-slate-800">Senha Super Admin</h3>
+            <p className="text-center text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-8 leading-tight">Altere a senha de acesso<br/>global do sistema</p>
+            
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Senha Atual</label>
+                <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 focus-within:border-blue-500 transition-all">
+                  <KeySquare size={18} className="text-slate-300" />
+                  <input 
+                    type="password" 
+                    value={oldPassword}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                    placeholder="SENHA ATUAL"
+                    className="bg-transparent w-full outline-none font-black text-xs uppercase placeholder:text-slate-200 text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Nova Senha</label>
+                <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 focus-within:border-blue-500 transition-all">
+                  <Shield size={18} className="text-slate-300" />
+                  <input 
+                    type="password" 
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="NOVA SENHA"
+                    className="bg-transparent w-full outline-none font-black text-xs uppercase placeholder:text-slate-200 text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Confirmar Nova Senha</label>
+                <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 focus-within:border-blue-500 transition-all">
+                  <Check size={18} className="text-slate-300" />
+                  <input 
+                    type="password" 
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="REPETIR SENHA"
+                    className="bg-transparent w-full outline-none font-black text-xs uppercase placeholder:text-slate-200 text-slate-800"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            {passwordError && <p className="text-center text-[9px] font-black text-red-500 uppercase mt-4 animate-bounce">{passwordError}</p>}
+
+            <div className="flex flex-col gap-2 mt-8">
+              <button 
+                onClick={handleChangePassword} 
+                disabled={isChangingPassword} 
+                className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50"
+              >
+                {isChangingPassword ? <Loader2 size={18} className="animate-spin" /> : 'Atualizar Senha Global'}
+              </button>
+              <button 
+                onClick={() => { setIsPasswordModalOpen(false); setOldPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordError(null); }} 
+                className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>

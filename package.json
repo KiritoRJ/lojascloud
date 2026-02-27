@@ -14,6 +14,7 @@
     "@mercadopago/sdk-react": "^1.0.7",
     "@supabase/supabase-js": "2.39.7",
     "@types/react-datepicker": "^6.2.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
     "dexie": "^4.3.0",
@@ -31,6 +32,7 @@
     "vite-plugin-pwa": "^1.2.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",

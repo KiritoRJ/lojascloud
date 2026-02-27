@@ -1,44 +1,12 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://lawcmqsjhwuhogsukhbf.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
+const SUPABASE_URL = (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) || (import.meta as any).env?.VITE_SUPABASE_URL || 'https://lawcmqsjhwuhogsukhbf.supabase.co';
+const SUPABASE_KEY = (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export class OnlineDB {
-  // Auxiliar para upload de imagens para o Supabase Storage
-  static async uploadImage(tenantId: string, base64Data: string, folder: string = 'general'): Promise<string> {
-    try {
-      // Se não for base64 (já for um link), retorna o próprio link
-      if (!base64Data.startsWith('data:image')) return base64Data;
-
-      const response = await fetch(base64Data);
-      const blob = await response.blob();
-      
-      const fileExt = 'webp';
-      const fileName = `${tenantId}/${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-      
-      const { data, error } = await supabase.storage
-        .from('images')
-        .upload(fileName, blob, {
-          contentType: 'image/webp',
-          upsert: true
-        });
-
-      if (error) throw error;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('images')
-        .getPublicUrl(fileName);
-
-      return publicUrl;
-    } catch (e) {
-      console.error("Erro no upload da imagem:", e);
-      return base64Data; // Fallback para base64 se falhar o upload
-    }
-  }
-
   // Busca configurações globais do sistema
   static async getGlobalSettings() {
     try {
@@ -149,80 +117,59 @@ export class OnlineDB {
     }
   }
 
-  // Realiza o login do usuário verificando no banco SQL
+  // Realiza o login do usuário via API do servidor (seguro)
   static async login(username: string, passwordPlain: string) {
-    const cleanUser = username.trim().toLowerCase();
-    const cleanPass = passwordPlain.trim();
-
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*, tenants(*, tenant_limits(*))')
-        .eq('username', cleanUser)
-        .eq('password', cleanPass)
-        .maybeSingle();
-
-      if (error) throw error;
-      if (!data) return { success: false, message: "Usuário ou senha incorretos." };
-
-      const tenant = data.tenants;
-      const limits = tenant?.tenant_limits;
-      const expiresAt = tenant?.subscription_expires_at;
-      const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
-
-      return { 
-        success: true, 
-        type: data.role || 'admin', 
-        tenant: data.tenant_id ? { 
-          id: data.tenant_id, 
-          username: data.username,
-          name: data.name || data.username,
-          role: data.role,
-          subscriptionStatus: isExpired ? 'expired' : (tenant?.subscription_status || 'trial'),
-          subscriptionExpiresAt: expiresAt,
-          customMonthlyPrice: tenant?.custom_monthly_price,
-          customQuarterlyPrice: tenant?.custom_quarterly_price,
-          customYearlyPrice: tenant?.custom_yearly_price,
-          lastPlanType: tenant?.last_plan_type,
-          enabledFeatures: tenant?.enabled_features || {
-            osTab: true,
-            stockTab: true,
-            salesTab: true,
-            financeTab: true,
-            profiles: true,
-            xmlExportImport: true,
-            hideFinancialReports: false
-          },
-          maxUsers: tenant?.max_users || 999,
-          maxOS: limits?.max_os || 999,
-          maxProducts: limits?.max_products || 999,
-          printerSize: tenant?.printer_size || 58,
-          retentionMonths: tenant?.retention_months || 6
-        } : null 
-      };
-    } catch (err: any) {
-      return { success: false, message: "Erro ao conectar com o banco de dados." };
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: passwordPlain })
+      });
+      return await response.json();
+    } catch (err) {
+      return { success: false, message: "Erro ao conectar com o servidor." };
     }
   }
 
-  // Verifica a senha do administrador para ações sensíveis
-  static async verifyAdminPassword(tenantId: string, passwordPlain: string) {
-    if (!tenantId) return { success: false, message: "ID da loja não encontrado." };
+  // Altera a senha do administrador via API do servidor (seguro)
+  static async changePassword(tenantId: string, oldPassword: string, newPassword: string) {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('role', 'admin')
-        .eq('password', passwordPlain.trim())
-        .maybeSingle();
-      
-      if (error) throw error;
-      if (!data) return { success: false, message: "Senha de administrador incorreta." };
-      
-      return { success: true };
-    } catch (err: any) {
-        return { success: false, message: "Erro de comunicação com o banco de dados." };
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId, oldPassword, newPassword })
+      });
+      return await response.json();
+    } catch (err) {
+      return { success: false, message: "Erro ao conectar com o servidor." };
+    }
+  }
+
+  // Altera a senha do Super Admin via API do servidor (seguro)
+  static async changeSuperPassword(oldPassword: string, newPassword: string) {
+    try {
+      const response = await fetch('/api/auth/change-super-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPassword, newPassword })
+      });
+      return await response.json();
+    } catch (err) {
+      return { success: false, message: "Erro ao conectar com o servidor." };
+    }
+  }
+
+  // Verifica a senha do administrador via API do servidor (seguro)
+  static async verifyAdminPassword(tenantId: string, passwordPlain: string) {
+    try {
+      const response = await fetch('/api/auth/verify-admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId, password: passwordPlain })
+      });
+      return await response.json();
+    } catch (err) {
+      return { success: false, message: "Erro ao conectar com o servidor." };
     }
   }
 
@@ -251,7 +198,7 @@ export class OnlineDB {
     }
   }
 
-  // Cria uma nova loja e seu usuário administrador
+  // Cria uma nova loja e seu usuário administrador via API do servidor (seguro)
   static async createTenant(tenantData: { 
     id: string; 
     storeName: string; 
@@ -261,65 +208,14 @@ export class OnlineDB {
     phoneNumber: string; 
   }) {
     try {
-      const trialDays = 7;
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + trialDays);
-
-      const globalSettings = await this.getGlobalSettings();
-      const trialLimits = globalSettings.trial || { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 };
-
-      // Processa logo: converte base64 para URL no Storage
-      const logoUrl = tenantData.logoUrl ? await this.uploadImage(tenantData.id, tenantData.logoUrl, 'settings') : null;
-
-      const { error: tError } = await supabase
-        .from('tenants')
-        .insert([{
-          id: tenantData.id,
-          store_name: tenantData.storeName,
-          logo_url: logoUrl,
-          created_at: new Date().toISOString(),
-          subscription_status: 'trial',
-          subscription_expires_at: expiresAt.toISOString(),
-          phone_number: tenantData.phoneNumber, // Adiciona o telefone
-          enabled_features: {
-            osTab: true,
-            stockTab: true,
-            salesTab: true,
-            financeTab: true,
-            profiles: true,
-            xmlExportImport: true,
-            hideFinancialReports: false
-          },
-          max_users: trialLimits.maxUsers
-        }]);
-      if (tError) throw tError;
-
-      const { error: limitsError } = await supabase
-        .from('tenant_limits')
-        .insert([{
-          tenant_id: tenantData.id,
-          max_os: trialLimits.maxOS,
-          max_products: trialLimits.maxProducts
-        }]);
-      if (limitsError) throw limitsError;
-
-      const { error: uError } = await supabase
-        .from('users')
-        .insert([{
-          id: 'USR_ADM_' + Math.random().toString(36).substr(2, 5).toUpperCase(),
-          username: tenantData.adminUsername.toLowerCase().trim(),
-          password: tenantData.adminPasswordPlain.trim(),
-          name: tenantData.storeName,
-          role: 'admin',
-          tenant_id: tenantData.id,
-          store_name: tenantData.storeName,
-          photo: logoUrl // Opcional: define logo da loja como foto do admin
-        }]);
-      if (uError) throw uError;
-
-      return { success: true };
-    } catch (e: any) {
-      return { success: false, message: e.message };
+      const response = await fetch('/api/auth/register-tenant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tenantData)
+      });
+      return await response.json();
+    } catch (e) {
+      return { success: false, message: "Erro ao conectar com o servidor." };
     }
   }
 
@@ -435,36 +331,17 @@ export class OnlineDB {
     }
   }
 
-  // Salva ou atualiza dados de um usuário
+  // Salva ou atualiza dados de um usuário via API do servidor (seguro)
   static async upsertUser(tenantId: string, storeName: string, user: any) {
-    if (!tenantId) return { success: false, message: "ID da Loja ausente." };
     try {
-      const baseName = user.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '_');
-      const username = (user.username || baseName + '_' + Math.random().toString(36).substr(2, 4)).trim().toLowerCase();
-      
-      // Processa foto: converte base64 para URL no Storage
-      const photo = user.photo ? await this.uploadImage(tenantId, user.photo, 'users') : null;
-
-      const payload: any = {
-        id: user.id,
-        username: username,
-        name: user.name,
-        role: user.role,
-        tenant_id: tenantId,
-        store_name: storeName,
-        photo: photo,
-        password: user.password || '123456',
-        specialty: user.specialty
-      };
-
-      const { error } = await supabase
-        .from('users')
-        .upsert(payload, { onConflict: 'id' });
-
-      if (error) throw error;
-      return { success: true, username };
-    } catch (e: any) {
-      return { success: false, message: e.message };
+      const response = await fetch('/api/auth/upsert-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId, storeName, user })
+      });
+      return await response.json();
+    } catch (e) {
+      return { success: false, message: "Erro ao conectar com o servidor." };
     }
   }
 
@@ -642,19 +519,7 @@ export class OnlineDB {
   static async upsertOrders(tenantId: string, orders: any[]) {
     if (!tenantId || !orders.length) return { success: true };
     try {
-      // Processa fotos: converte base64 para URLs no Storage
-      const processedOrders = await Promise.all(orders.map(async (os) => {
-        const photos = os.photos ? await Promise.all(os.photos.map((p: string) => this.uploadImage(tenantId, p, 'os_entry'))) : [];
-        const finishedPhotos = os.finishedPhotos ? await Promise.all(os.finishedPhotos.map((p: string) => this.uploadImage(tenantId, p, 'os_exit'))) : [];
-        
-        return {
-          ...os,
-          photos,
-          finishedPhotos
-        };
-      }));
-
-      const payload = processedOrders.map(os => ({
+      const payload = orders.map(os => ({
         id: os.id,
         tenant_id: tenantId,
         customer_name: os.customerName,
@@ -689,13 +554,7 @@ export class OnlineDB {
   static async upsertProducts(tenantId: string, products: any[]) {
     if (!tenantId || !products.length) return { success: true };
     try {
-      // Processa fotos: converte base64 para URLs no Storage
-      const processedProducts = await Promise.all(products.map(async (p) => {
-        const photo = p.photo ? await this.uploadImage(tenantId, p.photo, 'products') : null;
-        return { ...p, photo };
-      }));
-
-      const payload = processedProducts.map(p => ({
+      const payload = products.map(p => ({
         id: p.id,
         tenant_id: tenantId,
         name: p.name,
@@ -771,13 +630,9 @@ export class OnlineDB {
   static async syncPush(tenantId: string, storeKey: string, data: any) {
     if (!tenantId) return { success: false };
     try {
-      let finalData = { ...data };
+      let finalData = data;
       if (storeKey === 'settings') {
         const { users, ...cleanSettings } = data;
-        // Processa logo: converte base64 para URL no Storage
-        if (cleanSettings.logoUrl) {
-          cleanSettings.logoUrl = await this.uploadImage(tenantId, cleanSettings.logoUrl, 'settings');
-        }
         finalData = cleanSettings;
       }
 

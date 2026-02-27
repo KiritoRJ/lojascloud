@@ -3,12 +3,29 @@ import { createServer as createViteServer } from 'vite';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import { OnlineDB } from './utils/api';
+import bcrypt from 'bcryptjs';
+import { OnlineDB, supabase } from './utils/api';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// Helper to hash password
+const hashPassword = async (password: string) => {
+  const salt = await bcrypt.genSalt(10);
+  return await bcrypt.hash(password, salt);
+};
+
+// Helper to compare password
+const comparePassword = async (password: string, hash: string) => {
+  // If it's a bcrypt hash, it starts with $2a$ or $2b$
+  if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
+    return await bcrypt.compare(password, hash);
+  }
+  // Fallback for plain text passwords (legacy)
+  return password === hash;
+};
 
 const getMPClient = () => {
   const token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
@@ -21,6 +38,265 @@ const getMPClient = () => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
+
+// Auth Routes
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+  const cleanUser = username.trim().toLowerCase();
+
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*, tenants(*, tenant_limits(*))')
+      .eq('username', cleanUser)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(401).json({ success: false, message: "Usuário ou senha incorretos." });
+
+    const isMatch = await comparePassword(password.trim(), data.password);
+    if (!isMatch) return res.status(401).json({ success: false, message: "Usuário ou senha incorretos." });
+
+    const tenant = data.tenants;
+    const limits = tenant?.tenant_limits;
+    const expiresAt = tenant?.subscription_expires_at;
+    const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
+
+    res.json({ 
+      success: true, 
+      type: data.role || 'admin', 
+      tenant: data.tenant_id ? { 
+        id: data.tenant_id, 
+        username: data.username,
+        name: data.name || data.username,
+        role: data.role,
+        subscriptionStatus: isExpired ? 'expired' : (tenant?.subscription_status || 'trial'),
+        subscriptionExpiresAt: expiresAt,
+        customMonthlyPrice: tenant?.custom_monthly_price,
+        customQuarterlyPrice: tenant?.custom_quarterly_price,
+        customYearlyPrice: tenant?.custom_yearly_price,
+        lastPlanType: tenant?.last_plan_type,
+        enabledFeatures: tenant?.enabled_features || {
+          osTab: true,
+          stockTab: true,
+          salesTab: true,
+          financeTab: true,
+          profiles: true,
+          xmlExportImport: true,
+          hideFinancialReports: false
+        },
+        maxUsers: tenant?.max_users || 999,
+        maxOS: limits?.max_os || 999,
+        maxProducts: limits?.max_products || 999,
+        printerSize: tenant?.printer_size || 58,
+        retentionMonths: tenant?.retention_months || 6
+      } : null 
+    });
+  } catch (err: any) {
+    console.error('Login error:', err);
+    res.status(500).json({ success: false, message: "Erro ao realizar login." });
+  }
+});
+
+app.post('/api/auth/register-tenant', async (req, res) => {
+  const { id, storeName, adminUsername, adminPasswordPlain, logoUrl, phoneNumber } = req.body;
+  
+  try {
+    const hashedPassword = await hashPassword(adminPasswordPlain.trim());
+    
+    const trialDays = 7;
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + trialDays);
+
+    const globalSettings = await OnlineDB.getGlobalSettings();
+    const trialLimits = globalSettings.trial || { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 };
+
+    const { error: tError } = await supabase
+      .from('tenants')
+      .insert([{
+        id: id,
+        store_name: storeName,
+        logo_url: logoUrl,
+        created_at: new Date().toISOString(),
+        subscription_status: 'trial',
+        subscription_expires_at: expiresAt.toISOString(),
+        phone_number: phoneNumber,
+        enabled_features: {
+          osTab: true,
+          stockTab: true,
+          salesTab: true,
+          financeTab: true,
+          profiles: true,
+          xmlExportImport: true,
+          hideFinancialReports: false
+        },
+        max_users: trialLimits.maxUsers
+      }]);
+    if (tError) throw tError;
+
+    const { error: limitsError } = await supabase
+      .from('tenant_limits')
+      .insert([{
+        tenant_id: id,
+        max_os: trialLimits.maxOS,
+        max_products: trialLimits.maxProducts
+      }]);
+    if (limitsError) throw limitsError;
+
+    const { error: uError } = await supabase
+      .from('users')
+      .insert([{
+        id: 'USR_ADM_' + Math.random().toString(36).substr(2, 5).toUpperCase(),
+        username: adminUsername.toLowerCase().trim(),
+        password: hashedPassword,
+        name: storeName,
+        role: 'admin',
+        tenant_id: id,
+        store_name: storeName,
+        photo: logoUrl
+      }]);
+    if (uError) throw uError;
+
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error('Register tenant error:', e);
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+app.post('/api/auth/upsert-user', async (req, res) => {
+  const { tenantId, storeName, user } = req.body;
+  
+  try {
+    const baseName = user.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '_');
+    const username = (user.username || baseName + '_' + Math.random().toString(36).substr(2, 4)).trim().toLowerCase();
+    
+    let password = user.password || '123456';
+    // Only hash if it's not already hashed (though in upsert it's usually plain text from the form)
+    if (!password.startsWith('$2a$') && !password.startsWith('$2b$')) {
+      password = await hashPassword(password.trim());
+    }
+
+    const payload: any = {
+      id: user.id,
+      username: username,
+      name: user.name,
+      role: user.role,
+      tenant_id: tenantId,
+      store_name: storeName,
+      photo: user.photo,
+      password: password,
+      specialty: user.specialty
+    };
+
+    const { error } = await supabase
+      .from('users')
+      .upsert(payload, { onConflict: 'id' });
+
+    if (error) throw error;
+    res.json({ success: true, username });
+  } catch (e: any) {
+    console.error('Upsert user error:', e);
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+app.post('/api/auth/verify-admin', async (req, res) => {
+  const { tenantId, password } = req.body;
+  
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('password')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'admin')
+      .maybeSingle();
+    
+    if (error) throw error;
+    if (!data) return res.status(401).json({ success: false, message: "Senha de administrador incorreta." });
+    
+    const isMatch = await comparePassword(password.trim(), data.password);
+    if (!isMatch) return res.status(401).json({ success: false, message: "Senha de administrador incorreta." });
+    
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Verify admin error:', err);
+    res.status(500).json({ success: false, message: "Erro ao verificar senha." });
+  }
+});
+
+app.post('/api/auth/change-password', async (req, res) => {
+  const { tenantId, oldPassword, newPassword } = req.body;
+  
+  try {
+    // 1. Get the current admin user
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'admin')
+      .maybeSingle();
+    
+    if (error) throw error;
+    if (!data) return res.status(404).json({ success: false, message: "Usuário administrador não encontrado." });
+    
+    // 2. Verify old password
+    const isMatch = await comparePassword(oldPassword.trim(), data.password);
+    if (!isMatch) return res.status(401).json({ success: false, message: "Senha atual incorreta." });
+    
+    // 3. Hash new password
+    const hashedNewPassword = await hashPassword(newPassword.trim());
+    
+    // 4. Update password
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password: hashedNewPassword })
+      .eq('id', data.id);
+    
+    if (updateError) throw updateError;
+    
+    res.json({ success: true, message: "Senha alterada com sucesso!" });
+  } catch (err: any) {
+    console.error('Change password error:', err);
+    res.status(500).json({ success: false, message: "Erro ao alterar senha." });
+  }
+});
+
+app.post('/api/auth/change-super-password', async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  
+  try {
+    // 1. Get the super admin user (role = 'super')
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('role', 'super')
+      .maybeSingle();
+    
+    if (error) throw error;
+    if (!data) return res.status(404).json({ success: false, message: "Super Admin não encontrado." });
+    
+    // 2. Verify old password
+    const isMatch = await comparePassword(oldPassword.trim(), data.password);
+    if (!isMatch) return res.status(401).json({ success: false, message: "Senha atual incorreta." });
+    
+    // 3. Hash new password
+    const hashedNewPassword = await hashPassword(newPassword.trim());
+    
+    // 4. Update password
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password: hashedNewPassword })
+      .eq('id', data.id);
+    
+    if (updateError) throw updateError;
+    
+    res.json({ success: true, message: "Senha do Super Admin alterada com sucesso!" });
+  } catch (err: any) {
+    console.error('Change super password error:', err);
+    res.status(500).json({ success: false, message: "Erro ao alterar senha do Super Admin." });
+  }
+});
 
 app.post('/api/create-preference', async (req, res) => {
   try {

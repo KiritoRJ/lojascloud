@@ -56,6 +56,48 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
 
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      setPasswordError("Preencha todos os campos.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("As senhas não coincidem.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordError("A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    setPasswordError(null);
+
+    try {
+      const result = await OnlineDB.changePassword(tenantId!, oldPassword, newPassword);
+      if (result.success) {
+        setIsPasswordModalOpen(false);
+        setOldPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        triggerSaveFeedback("Senha Alterada!");
+      } else {
+        setPasswordError(result.message || "Erro ao alterar senha.");
+      }
+    } catch (err) {
+      setPasswordError("Erro de conexão.");
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   const compressImage = (base64Str: string, size: number = 800): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -455,7 +497,17 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
               
               <div className="flex items-center gap-3">
                 {user.id === currentUser.id ? (
-                  <span className="text-[9px] font-black text-white bg-blue-600 px-5 py-2 rounded-2xl uppercase tracking-widest shadow-lg shadow-blue-500/20">Logado</span>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className="text-[9px] font-black text-white bg-blue-600 px-5 py-2 rounded-2xl uppercase tracking-widest shadow-lg shadow-blue-500/20">Logado</span>
+                    {user.role === 'admin' && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setIsPasswordModalOpen(true); }}
+                        className="text-[8px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100 hover:bg-blue-600 hover:text-white transition-all"
+                      >
+                        Alterar Senha
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   isAdmin && (user.role === 'colaborador') && (
                     <button 
@@ -500,6 +552,80 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
                     Cancelar
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isPasswordModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/90 z-[300] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
+            <div className="bg-white w-full max-w-xs rounded-[3rem] p-8 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-inner">
+                <Lock size={32} />
+              </div>
+              <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">Nova Senha Admin</h3>
+              <p className="text-center text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-8 leading-tight">Altere a senha de acesso<br/>principal da sua loja</p>
+              
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Senha Atual</label>
+                  <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 focus-within:border-blue-500 transition-all">
+                    <KeyRound size={18} className="text-slate-300" />
+                    <input 
+                      type="password" 
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                      placeholder="SENHA ATUAL"
+                      className="bg-transparent w-full outline-none font-black text-xs uppercase placeholder:text-slate-200"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Nova Senha</label>
+                  <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 focus-within:border-blue-500 transition-all">
+                    <Lock size={18} className="text-slate-300" />
+                    <input 
+                      type="password" 
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="NOVA SENHA"
+                      className="bg-transparent w-full outline-none font-black text-xs uppercase placeholder:text-slate-200"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Confirmar Nova Senha</label>
+                  <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 focus-within:border-blue-500 transition-all">
+                    <Check size={18} className="text-slate-300" />
+                    <input 
+                      type="password" 
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="REPETIR SENHA"
+                      className="bg-transparent w-full outline-none font-black text-xs uppercase placeholder:text-slate-200"
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              {passwordError && <p className="text-center text-[9px] font-black text-red-500 uppercase mt-4 animate-bounce">{passwordError}</p>}
+
+              <div className="flex flex-col gap-2 mt-8">
+                <button 
+                  onClick={handleChangePassword} 
+                  disabled={isChangingPassword} 
+                  className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50"
+                >
+                  {isChangingPassword ? <Loader2 size={18} className="animate-spin" /> : 'Atualizar Senha'}
+                </button>
+                <button 
+                  onClick={() => { setIsPasswordModalOpen(false); setOldPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordError(null); }} 
+                  className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest"
+                >
+                  Cancelar
+                </button>
               </div>
             </div>
           </div>

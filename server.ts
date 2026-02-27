@@ -5,6 +5,11 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import { OnlineDB, supabase } from './utils/api';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -427,30 +432,42 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     // Production: Serve static files from dist
-    const distPath = new URL('./dist', import.meta.url).pathname;
+    const distPath = path.join(__dirname, 'dist');
     console.log('Production mode: Serving static files from', distPath);
-    app.use(express.static(distPath));
 
     // Serve service worker and manifest explicitly to ensure correct MIME types and no caching issues
+    // Defined BEFORE express.static to ensure headers are applied
     app.get('/sw.js', (req, res) => {
       console.log('Serving sw.js');
       res.setHeader('Content-Type', 'application/javascript');
       res.setHeader('Service-Worker-Allowed', '/');
-      res.sendFile(new URL('./dist/sw.js', import.meta.url).pathname);
+      res.sendFile(path.join(distPath, 'sw.js'), (err) => {
+        if (err) {
+          console.error('Error serving sw.js:', err);
+          res.status(404).end();
+        }
+      });
     });
 
     app.get('/manifest.webmanifest', (req, res) => {
       console.log('Serving manifest.webmanifest');
       res.setHeader('Content-Type', 'application/manifest+json');
-      res.sendFile(new URL('./dist/manifest.webmanifest', import.meta.url).pathname);
+      res.sendFile(path.join(distPath, 'manifest.webmanifest'), (err) => {
+        if (err) {
+          console.error('Error serving manifest.webmanifest:', err);
+          res.status(404).end();
+        }
+      });
     });
+
+    app.use(express.static(distPath));
 
     // SPA fallback for production
     app.get('*', (req, res) => {
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: 'API route not found' });
       }
-      res.sendFile(new URL('./dist/index.html', import.meta.url).pathname);
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 

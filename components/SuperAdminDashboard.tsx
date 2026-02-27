@@ -381,6 +381,11 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                        </div>
                        <span className="opacity-30">•</span>
                        <div className="flex items-center gap-1">
+                         <Calendar size={10} className="text-blue-400" />
+                         <span>CRIADA EM: {formatDateBR(t.created_at)}</span>
+                       </div>
+                       <span className="opacity-30">•</span>
+                       <div className="flex items-center gap-1">
                          <Clock size={10} className={t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date() ? "text-red-500" : "text-emerald-500"} />
                          <span>EXPIRA: {formatDateBR(t.subscription_expires_at)}</span>
                        </div>

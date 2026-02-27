@@ -395,9 +395,9 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     (p.name.toLowerCase().includes(productSearch.toLowerCase()) || (p.barcode && p.barcode.includes(productSearch)))
   );
 
-  const paginatedProducts = filteredProducts.slice(0, settings.itemsPerPage === 999 ? filteredProducts.length : settings.itemsPerPage * currentPage);
+  const paginatedProducts = filteredProducts.slice(0, settings.itemsPerPage * currentPage);
 
-  const paginatedSales = sales.slice(0, settings.itemsPerPage === 999 ? sales.length : settings.itemsPerPage * currentPage);
+  const paginatedSales = sales.slice(0, settings.itemsPerPage * currentPage);
 
   const loadMore = () => {
     setCurrentPage(prev => prev + 1);
@@ -445,7 +445,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             ))}
           </div>
 
-          {settings.itemsPerPage !== 999 && sales.length > paginatedSales.length && (
+          {sales.length > paginatedSales.length && (
             <button 
               onClick={loadMore}
               className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest mt-4 active:scale-95 transition-transform">
@@ -495,7 +495,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             ))}
           </div>
 
-          {settings.itemsPerPage !== 999 && filteredProducts.length > paginatedProducts.length && (
+          {filteredProducts.length > paginatedProducts.length && (
             <button 
               onClick={loadMore}
               className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest my-4 active:scale-95 transition-transform">

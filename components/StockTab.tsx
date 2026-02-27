@@ -50,7 +50,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6));
+        resolve(canvas.toDataURL('image/webp', 0.7));
       };
     });
   };
@@ -191,7 +191,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     (p.barcode && p.barcode.includes(searchTerm))
   );
 
-  const paginatedProducts = filtered.slice(0, settings.itemsPerPage === 999 ? filtered.length : settings.itemsPerPage * currentPage);
+  const paginatedProducts = filtered.slice(0, settings.itemsPerPage * currentPage);
 
   const loadMore = () => {
     setCurrentPage(prev => prev + 1);
@@ -275,7 +275,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
         )}
       </div>
 
-      {settings.itemsPerPage !== 999 && filtered.length > paginatedProducts.length && (
+      {filtered.length > paginatedProducts.length && (
         <button 
           onClick={loadMore}
           className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest mt-4 active:scale-95 transition-transform">

@@ -54,6 +54,29 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
 
   const [userToDelete, setUserToDelete] = useState<{ id: string, name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+
+  const compressImage = (base64Str: string, size: number = 800): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > size) { height *= size / width; width = size; }
+        } else {
+          if (height > size) { width *= size / height; height = size; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/webp', 0.7));
+      };
+    });
+  };
 
   const triggerSaveFeedback = (msg: string = "Sincronizado!") => {
     setIsSaving(true);
@@ -124,10 +147,18 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     input.onchange = (e: any) => {
       const file = e.target.files?.[0];
       if (file) {
+        setIsCompressing(true);
         const reader = new FileReader();
-        reader.onloadend = () => {
-          setNewUserPhoto(reader.result as string);
-          input.value = ''; 
+        reader.onloadend = async () => {
+          try {
+            const compressed = await compressImage(reader.result as string, 400);
+            setNewUserPhoto(compressed);
+          } catch (err) {
+            console.error("Erro ao processar imagem", err);
+          } finally {
+            setIsCompressing(false);
+            input.value = '';
+          }
         };
         reader.readAsDataURL(file);
       }
@@ -143,10 +174,18 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     input.onchange = (e: any) => {
       const file = e.target.files?.[0];
       if (file) {
+        setIsCompressing(true);
         const reader = new FileReader();
-        reader.onloadend = () => {
-          updateSetting('logoUrl', reader.result as string);
-          input.value = '';
+        reader.onloadend = async () => {
+          try {
+            const compressed = await compressImage(reader.result as string, 600);
+            updateSetting('logoUrl', compressed);
+          } catch (err) {
+            console.error("Erro ao processar imagem", err);
+          } finally {
+            setIsCompressing(false);
+            input.value = '';
+          }
         };
         reader.readAsDataURL(file);
       }
@@ -511,7 +550,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
                 <div className="flex flex-col items-center gap-3">
                   <button onClick={triggerUserPhotoUpload} className="relative group">
                     <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] border-4 border-dashed border-slate-200 flex items-center justify-center overflow-hidden active:scale-95 transition-transform">
-                      {newUserPhoto ? <img src={newUserPhoto} className="w-full h-full object-cover" /> : <Camera className="text-slate-200" size={32} />}
+                      {isCompressing ? <Loader2 className="animate-spin text-blue-500" /> : newUserPhoto ? <img src={newUserPhoto} className="w-full h-full object-cover" /> : <Camera className="text-slate-200" size={32} />}
                     </div>
                   </button>
                   <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Foto do Perfil</p>
@@ -754,7 +793,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
         <div className="flex flex-col items-center gap-6 mb-4">
           <div className="relative group active:scale-95 transition-transform">
             <div className="w-52 h-52 bg-white rounded-[3.5rem] border-[10px] border-white shadow-2xl flex items-center justify-center overflow-hidden ring-1 ring-slate-100">
-              {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <ImageIcon size={64} className="text-slate-100" />}
+              {isCompressing ? <Loader2 className="animate-spin text-blue-500" size={32} /> : settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <ImageIcon size={64} className="text-slate-100" />}
             </div>
             {isAdmin && (
               <button onClick={triggerUpload} className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white p-5 rounded-full border-4 border-white shadow-xl hover:scale-110 transition-all">
@@ -783,12 +822,12 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
           <div className="w-full space-y-3 pt-4">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><Layout size={12}/> Itens por Página</label>
             <div className="grid grid-cols-4 gap-2">
-              {[4, 8, 16, 999].map(num => (
+              {[8, 16, 32, 64].map(num => (
                 <button 
                   key={num}
-                  onClick={() => updateSetting('itemsPerPage', num)}
+                  onClick={() => updateSetting('itemsPerPage', num as any)}
                   className={`py-4 rounded-2xl text-xs font-black uppercase transition-all ${settings.itemsPerPage === num ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-500'}`}>
-                  {num === 999 ? 'Todos' : num}
+                  {num}
                 </button>
               ))}
             </div>

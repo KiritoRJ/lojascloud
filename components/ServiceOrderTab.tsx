@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar, KeyRound, Lock } from 'lucide-react';
+import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar, KeyRound, Lock, Download, Maximize2 } from 'lucide-react';
 import { ServiceOrder, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
 
@@ -27,6 +27,8 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
   const [verifyingPassword, setVerifyingPassword] = useState(false);
   const [authError, setAuthError] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedOrderForPhotos, setSelectedOrderForPhotos] = useState<ServiceOrder | null>(null);
+  const [fullScreenPhoto, setFullScreenPhoto] = useState<string | null>(null);
   const osCount = orders.length;
   const limitReached = maxOS !== undefined && osCount >= maxOS;
 
@@ -388,6 +390,19 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
     setAuthError(false);
   };
 
+  const downloadImage = (base64: string, name: string) => {
+    if ((window as any).AndroidBridge) {
+      (window as any).AndroidBridge.shareFile(base64.split(',')[1], name, 'image/webp');
+    } else {
+      const link = document.createElement('a');
+      link.href = base64;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
   const confirmDeletion = async () => {
     if (!orderToDelete || !passwordInput || !tenantId) return;
     setVerifyingPassword(true);
@@ -413,7 +428,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
 
   const filtered = orders.filter(o => o.customerName.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  const paginatedOrders = filtered.slice(0, settings.itemsPerPage === 999 ? filtered.length : settings.itemsPerPage * currentPage);
+  const paginatedOrders = filtered.slice(0, settings.itemsPerPage * currentPage);
 
   const loadMore = () => {
     setCurrentPage(prev => prev + 1);
@@ -461,10 +476,13 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={(e) => { e.stopPropagation(); generateReceiptImage(order); }} disabled={isGeneratingReceipt} className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md active:scale-90 disabled:opacity-50">
+              <button onClick={(e) => { e.stopPropagation(); generateReceiptImage(order); }} disabled={isGeneratingReceipt} className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md active:scale-90 disabled:opacity-50" title="Ver Recibo">
                 {isGeneratingReceipt ? <Loader2 className="animate-spin" size={18} /> : <Eye size={18} />}
               </button>
-              <button onClick={(e) => { e.stopPropagation(); initiateDelete(order.id); }} className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90">
+              <button onClick={(e) => { e.stopPropagation(); setSelectedOrderForPhotos(order); }} className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-md active:scale-90" title="Ver Fotos">
+                <ImageIcon size={18} />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); initiateDelete(order.id); }} className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90" title="Excluir">
                 <Trash2 size={18} />
               </button>
             </div>
@@ -476,7 +494,7 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
         )}
       </div>
 
-      {settings.itemsPerPage !== 999 && filtered.length > paginatedOrders.length && (
+      {filtered.length > paginatedOrders.length && (
         <button 
           onClick={loadMore}
           className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest mt-4 active:scale-95 transition-transform">
@@ -622,6 +640,92 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
                 {isSaving ? <Loader2 className="animate-spin" size={20} /> : 'Salvar'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE VISUALIZAÇÃO DE FOTOS */}
+      {selectedOrderForPhotos && (
+        <div className="fixed inset-0 bg-slate-950/90 z-[150] flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white w-full max-w-lg rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-white shrink-0">
+              <div>
+                <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight">Fotos da O.S. #{selectedOrderForPhotos.id}</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{selectedOrderForPhotos.customerName}</p>
+              </div>
+              <button onClick={() => setSelectedOrderForPhotos(null)} className="p-2 text-slate-400 bg-slate-50 rounded-full"><X size={20} /></button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-8">
+              {/* FOTOS DE ENTRADA */}
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <Camera size={14} /> Fotos de Entrada
+                </h4>
+                {selectedOrderForPhotos.photos && selectedOrderForPhotos.photos.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {selectedOrderForPhotos.photos.map((photo, idx) => (
+                      <div key={idx} className="relative group rounded-2xl overflow-hidden border border-slate-100 shadow-sm aspect-square bg-slate-50">
+                        <img src={photo} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <button onClick={() => setFullScreenPhoto(photo)} className="p-2 bg-white text-slate-900 rounded-full shadow-lg active:scale-90"><Maximize2 size={16} /></button>
+                          <button onClick={() => downloadImage(photo, `OS_${selectedOrderForPhotos.id}_entrada_${idx}.webp`)} className="p-2 bg-blue-600 text-white rounded-full shadow-lg active:scale-90"><Download size={16} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-300 font-bold uppercase text-center py-4">Nenhuma foto de entrada</p>
+                )}
+              </div>
+
+              {/* FOTOS DE SAÍDA */}
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-2">
+                  <CheckCircle size={14} /> Fotos de Saída
+                </h4>
+                {selectedOrderForPhotos.finishedPhotos && selectedOrderForPhotos.finishedPhotos.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {selectedOrderForPhotos.finishedPhotos.map((photo, idx) => (
+                      <div key={idx} className="relative group rounded-2xl overflow-hidden border border-emerald-50 shadow-sm aspect-square bg-emerald-50">
+                        <img src={photo} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <button onClick={() => setFullScreenPhoto(photo)} className="p-2 bg-white text-slate-900 rounded-full shadow-lg active:scale-90"><Maximize2 size={16} /></button>
+                          <button onClick={() => downloadImage(photo, `OS_${selectedOrderForPhotos.id}_saida_${idx}.webp`)} className="p-2 bg-emerald-600 text-white rounded-full shadow-lg active:scale-90"><Download size={16} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-300 font-bold uppercase text-center py-4">Nenhuma foto de saída</p>
+                )}
+              </div>
+            </div>
+            
+            <div className="p-6 border-t border-slate-50 bg-slate-50">
+              <button onClick={() => setSelectedOrderForPhotos(null)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95">Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL FOTO FULLSCREEN */}
+      {fullScreenPhoto && (
+        <div className="fixed inset-0 bg-black z-[200] flex flex-col animate-in fade-in" onClick={() => setFullScreenPhoto(null)}>
+          <div className="p-6 flex items-center justify-between bg-black/20 backdrop-blur-sm">
+            <h3 className="text-white font-black uppercase text-xs tracking-widest">Visualização em Tamanho Real</h3>
+            <button onClick={() => setFullScreenPhoto(null)} className="p-2 bg-white/10 text-white rounded-full"><X size={24} /></button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4">
+            <img src={fullScreenPhoto} className="max-w-full max-h-full object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+          </div>
+          <div className="p-8 flex justify-center bg-black/20 backdrop-blur-sm">
+             <button 
+               onClick={(e) => { e.stopPropagation(); downloadImage(fullScreenPhoto, 'foto_os_full.webp'); }} 
+               className="bg-white text-black px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center gap-3 shadow-2xl active:scale-95"
+             >
+               <Download size={20} /> Baixar Imagem
+             </button>
           </div>
         </div>
       )}

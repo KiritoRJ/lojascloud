@@ -7,6 +7,38 @@ const SUPABASE_KEY = 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export class OnlineDB {
+  // Auxiliar para upload de imagens para o Supabase Storage
+  static async uploadImage(tenantId: string, base64Data: string, folder: string = 'general'): Promise<string> {
+    try {
+      // Se não for base64 (já for um link), retorna o próprio link
+      if (!base64Data.startsWith('data:image')) return base64Data;
+
+      const response = await fetch(base64Data);
+      const blob = await response.blob();
+      
+      const fileExt = 'webp';
+      const fileName = `${tenantId}/${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+      
+      const { data, error } = await supabase.storage
+        .from('images')
+        .upload(fileName, blob, {
+          contentType: 'image/webp',
+          upsert: true
+        });
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('images')
+        .getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (e) {
+      console.error("Erro no upload da imagem:", e);
+      return base64Data; // Fallback para base64 se falhar o upload
+    }
+  }
+
   // Busca configurações globais do sistema
   static async getGlobalSettings() {
     try {
@@ -236,12 +268,15 @@ export class OnlineDB {
       const globalSettings = await this.getGlobalSettings();
       const trialLimits = globalSettings.trial || { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 };
 
+      // Processa logo: converte base64 para URL no Storage
+      const logoUrl = tenantData.logoUrl ? await this.uploadImage(tenantData.id, tenantData.logoUrl, 'settings') : null;
+
       const { error: tError } = await supabase
         .from('tenants')
         .insert([{
           id: tenantData.id,
           store_name: tenantData.storeName,
-          logo_url: tenantData.logoUrl,
+          logo_url: logoUrl,
           created_at: new Date().toISOString(),
           subscription_status: 'trial',
           subscription_expires_at: expiresAt.toISOString(),
@@ -278,7 +313,7 @@ export class OnlineDB {
           role: 'admin',
           tenant_id: tenantData.id,
           store_name: tenantData.storeName,
-          photo: tenantData.logoUrl // Opcional: define logo da loja como foto do admin
+          photo: logoUrl // Opcional: define logo da loja como foto do admin
         }]);
       if (uError) throw uError;
 
@@ -407,6 +442,9 @@ export class OnlineDB {
       const baseName = user.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '_');
       const username = (user.username || baseName + '_' + Math.random().toString(36).substr(2, 4)).trim().toLowerCase();
       
+      // Processa foto: converte base64 para URL no Storage
+      const photo = user.photo ? await this.uploadImage(tenantId, user.photo, 'users') : null;
+
       const payload: any = {
         id: user.id,
         username: username,
@@ -414,7 +452,7 @@ export class OnlineDB {
         role: user.role,
         tenant_id: tenantId,
         store_name: storeName,
-        photo: user.photo,
+        photo: photo,
         password: user.password || '123456',
         specialty: user.specialty
       };
@@ -604,7 +642,19 @@ export class OnlineDB {
   static async upsertOrders(tenantId: string, orders: any[]) {
     if (!tenantId || !orders.length) return { success: true };
     try {
-      const payload = orders.map(os => ({
+      // Processa fotos: converte base64 para URLs no Storage
+      const processedOrders = await Promise.all(orders.map(async (os) => {
+        const photos = os.photos ? await Promise.all(os.photos.map((p: string) => this.uploadImage(tenantId, p, 'os_entry'))) : [];
+        const finishedPhotos = os.finishedPhotos ? await Promise.all(os.finishedPhotos.map((p: string) => this.uploadImage(tenantId, p, 'os_exit'))) : [];
+        
+        return {
+          ...os,
+          photos,
+          finishedPhotos
+        };
+      }));
+
+      const payload = processedOrders.map(os => ({
         id: os.id,
         tenant_id: tenantId,
         customer_name: os.customerName,
@@ -639,7 +689,13 @@ export class OnlineDB {
   static async upsertProducts(tenantId: string, products: any[]) {
     if (!tenantId || !products.length) return { success: true };
     try {
-      const payload = products.map(p => ({
+      // Processa fotos: converte base64 para URLs no Storage
+      const processedProducts = await Promise.all(products.map(async (p) => {
+        const photo = p.photo ? await this.uploadImage(tenantId, p.photo, 'products') : null;
+        return { ...p, photo };
+      }));
+
+      const payload = processedProducts.map(p => ({
         id: p.id,
         tenant_id: tenantId,
         name: p.name,
@@ -715,9 +771,13 @@ export class OnlineDB {
   static async syncPush(tenantId: string, storeKey: string, data: any) {
     if (!tenantId) return { success: false };
     try {
-      let finalData = data;
+      let finalData = { ...data };
       if (storeKey === 'settings') {
         const { users, ...cleanSettings } = data;
+        // Processa logo: converte base64 para URL no Storage
+        if (cleanSettings.logoUrl) {
+          cleanSettings.logoUrl = await this.uploadImage(tenantId, cleanSettings.logoUrl, 'settings');
+        }
         finalData = cleanSettings;
       }
 

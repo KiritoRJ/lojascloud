@@ -33,7 +33,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   printerSize: 58,
   pdfTextColor: '#000000',
   pdfBgColor: '#FFFFFF',
-  itemsPerPage: 8
+  itemsPerPage: 32
 };
 
 const App: React.FC = () => {

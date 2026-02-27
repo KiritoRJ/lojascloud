@@ -132,5 +132,5 @@ export interface AppSettings {
   receiptLabelTotal?: string;
   receiptLabelEntryPhotos?: string;
   receiptLabelExitPhotos?: string;
-  itemsPerPage: 4 | 8 | 16 | 999;
+  itemsPerPage: 8 | 16 | 32 | 64;
 }

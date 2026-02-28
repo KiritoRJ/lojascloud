@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer } from 'lucide-react';
+import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer, LayoutGrid, Grid, List, Rows } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { Product, Sale, AppSettings, User } from '../types';
@@ -14,6 +14,7 @@ interface Props {
   sales: Sale[];
   setSales: (sales: Sale[]) => void;
   settings: AppSettings;
+  onUpdateSettings: (settings: AppSettings) => Promise<void>;
   currentUser: User | null;
   onDeleteSale: (sale: Sale) => Promise<void>;
   tenantId: string;
@@ -30,7 +31,7 @@ interface PaymentEntry {
   installments?: number;
 }
 
-const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, settings, currentUser, onDeleteSale, tenantId }) => {
+const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, settings, onUpdateSettings, currentUser, onDeleteSale, tenantId }) => {
   const [showHistory, setShowHistory] = useState(false);
   const [productSearch, setProductSearch] = useState('');
 
@@ -43,6 +44,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [lastChange, setLastChange] = useState(0);
   const [lastPaymentEntries, setLastPaymentEntries] = useState<PaymentEntry[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [layoutMode, setLayoutMode] = useState<'small' | 'medium' | 'list'>(settings.salesLayout || 'small');
 
   const [isCancelling, setIsCancelling] = useState<string | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -117,7 +119,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
-  const startScanner = async () => {
+  const startScanner = async (mode: 'search' = 'search') => {
     setIsScannerOpen(true);
     setTimeout(async () => {
       try {
@@ -403,6 +405,14 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     setCurrentPage(prev => prev + 1);
   };
 
+  const toggleLayout = () => {
+    const modes: ('small' | 'medium' | 'list')[] = ['small', 'medium', 'list'];
+    const nextIndex = (modes.indexOf(layoutMode) + 1) % modes.length;
+    const newMode = modes[nextIndex];
+    setLayoutMode(newMode);
+    onUpdateSettings({ ...settings, salesLayout: newMode });
+  };
+
   return (
     <div className="space-y-4 pb-32">
       {showHistory ? (
@@ -464,32 +474,64 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             </button>
           </div>
 
-          <div className="flex gap-2">
-            <div className="relative group flex-1">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-              <input type="text" placeholder="Nome ou código..." className="w-full pl-12 pr-4 py-4 bg-white border-none rounded-2xl text-xs font-bold shadow-sm outline-none" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
+              <input type="text" placeholder="Nome ou código..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-slate-900" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
             </div>
-            <button onClick={startScanner} className="p-4 bg-slate-900 text-white rounded-2xl shadow-xl active:scale-95 transition-all"><ScanBarcode size={24} /></button>
+            <button onClick={() => startScanner('search')} className="p-3.5 bg-white text-slate-600 rounded-2xl shadow-sm active:scale-95 shrink-0">
+              <ScanBarcode size={20} />
+            </button>
+            <button onClick={toggleLayout} className="p-3.5 bg-white text-slate-400 hover:text-slate-600 transition-colors rounded-2xl shadow-sm active:scale-95 shrink-0">
+               {layoutMode === 'small' && <Grid size={20} />}
+               {layoutMode === 'medium' && <LayoutGrid size={20} />}
+               {layoutMode === 'list' && <Rows size={20} />}
+            </button>
           </div>
 
-          {/* --- GRID DE VENDAS: MODIFICADO PARA PC (Muito Mais Colunas e Cards Menores) --- */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
+          {/* --- GRID DE VENDAS --- */}
+          <div className={`grid gap-3 ${
+            layoutMode === 'small' ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10' :
+            layoutMode === 'medium' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8' :
+            'grid-cols-1'
+          }`}>
             {paginatedProducts.map(product => (
-              <button key={product.id} onClick={() => addToCart(product)} className="bg-white border border-slate-50 rounded-[2rem] overflow-hidden shadow-sm text-left active:scale-95 transition-all flex flex-col group hover:border-b-emerald-500 border-b-4 border-transparent">
-                {/* Altura reduzida de h-28 para h-24/h-20 para ser mais compacto no PC */}
-                <div className="h-24 md:h-20 bg-slate-50 relative overflow-hidden">
+              <button key={product.id} onClick={() => addToCart(product)} className={`bg-white border border-slate-50 rounded-[2rem] overflow-hidden shadow-sm text-left active:scale-95 transition-all flex group hover:border-b-emerald-500 border-b-4 border-transparent ${layoutMode === 'list' ? 'flex-row items-center p-2 gap-3' : 'flex-col'}`}>
+                {/* Imagem */}
+                <div className={`bg-slate-50 relative overflow-hidden shrink-0 ${
+                  layoutMode === 'list' ? 'w-14 h-14 rounded-2xl' : 
+                  layoutMode === 'small' ? 'h-20' : 
+                  'h-24 md:h-20'
+                }`}>
                   {product.photo ? (
                     <img src={product.photo} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-200"><Package size={20} /></div>
+                    <div className="w-full h-full flex items-center justify-center text-slate-200"><Package size={layoutMode === 'small' || layoutMode === 'list' ? 16 : 20} /></div>
                   )}
-                  <span className="absolute top-2 right-2 bg-slate-950/80 text-white text-[7px] font-black px-1.5 py-0.5 rounded shadow-lg">
-                    {product.quantity}
-                  </span>
+                  {layoutMode !== 'list' && (
+                    <span className="absolute top-2 right-2 bg-slate-950/80 text-white text-[7px] font-black px-1.5 py-0.5 rounded shadow-lg">
+                      {product.quantity}
+                    </span>
+                  )}
                 </div>
-                <div className="p-2">
-                  <h3 className="font-bold text-slate-800 text-[8px] uppercase truncate mb-0.5">{product.name}</h3>
-                  <p className="text-emerald-600 font-black text-[10px]">{formatCurrency(product.salePrice)}</p>
+
+                {/* Conteúdo */}
+                <div className={`${layoutMode === 'list' ? 'flex-1 flex items-center justify-between pr-2 min-w-0' : 'p-2'}`}>
+                  <div className="min-w-0 flex-1 mr-2">
+                    <h3 className={`font-bold text-slate-800 uppercase truncate mb-0.5 ${layoutMode === 'small' ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'}`}>{product.name}</h3>
+                    <p className="text-emerald-600 font-black text-[10px] sm:text-xs">{formatCurrency(product.salePrice)}</p>
+                    {layoutMode === 'list' && (
+                       <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest ${product.quantity <= 2 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>Estoque: {product.quantity}</span>
+                       </div>
+                    )}
+                  </div>
+                  
+                  {layoutMode === 'list' && (
+                    <div className="flex items-center justify-center w-8 h-8 bg-emerald-50 text-emerald-600 rounded-full shrink-0">
+                      <Plus size={16} />
+                    </div>
+                  )}
                 </div>
               </button>
             ))}
@@ -504,8 +546,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           )}
 
           {/* BARRA DE CARRINHO (RODAPÉ) */}
-          <div className="fixed bottom-20 left-0 right-0 p-4 z-40 bg-gradient-to-t from-slate-50 via-slate-50/80 to-transparent">
-            <div className="max-w-xl mx-auto">
+          <div className="fixed bottom-20 left-0 right-0 p-4 z-40 pointer-events-none">
+            <div className="max-w-xl mx-auto pointer-events-auto">
               <div className="bg-slate-950 rounded-[2.5rem] shadow-2xl overflow-hidden">
                 <div className="p-4 flex items-center justify-between cursor-pointer" onClick={() => setShowCartDrawer(!showCartDrawer)}>
                   <div className="flex items-center gap-4">
@@ -529,7 +571,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                     disabled={cart.length === 0} 
                     className="bg-emerald-500 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase disabled:opacity-20 shadow-xl shadow-emerald-500/20"
                   >
-                    FECHAR
+                    COBRAR
                   </button>
                 </div>
                 {showCartDrawer && (

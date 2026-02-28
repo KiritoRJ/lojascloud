@@ -133,4 +133,6 @@ export interface AppSettings {
   receiptLabelEntryPhotos?: string;
   receiptLabelExitPhotos?: string;
   itemsPerPage: 8 | 16 | 32 | 64;
+  stockLayout?: 'small' | 'medium' | 'list';
+  salesLayout?: 'small' | 'medium' | 'list';
 }

@@ -47,6 +47,7 @@ const App: React.FC = () => {
     customMonthlyPrice?: number;
     customQuarterlyPrice?: number;
     customYearlyPrice?: number;
+    lastPlanType?: 'monthly' | 'quarterly' | 'yearly';
     enabledFeatures?: {
       osTab: boolean;
       stockTab: boolean;
@@ -179,6 +180,7 @@ const App: React.FC = () => {
               customMonthlyPrice: parsed.customMonthlyPrice,
               customQuarterlyPrice: parsed.customQuarterlyPrice,
               customYearlyPrice: parsed.customYearlyPrice,
+              lastPlanType: parsed.lastPlanType,
               enabledFeatures: parsed.enabledFeatures,
               maxUsers: parsed.maxUsers,
               maxOS: parsed.maxOS,
@@ -272,6 +274,7 @@ const App: React.FC = () => {
               customMonthlyPrice: result.tenant?.customMonthlyPrice,
               customQuarterlyPrice: result.tenant?.customQuarterlyPrice,
               customYearlyPrice: result.tenant?.customYearlyPrice,
+              lastPlanType: result.tenant?.lastPlanType,
               enabledFeatures: result.tenant?.enabledFeatures,
               maxUsers: result.tenant?.maxUsers,
               maxOS: result.tenant?.maxOS,
@@ -311,6 +314,7 @@ const App: React.FC = () => {
         customMonthlyPrice: tenant.custom_monthly_price,
         customQuarterlyPrice: tenant.custom_quarterly_price,
         customYearlyPrice: tenant.custom_yearly_price,
+        lastPlanType: tenant.last_plan_type,
         enabledFeatures: tenant.enabled_features,
         maxUsers: tenant.max_users,
         maxOS: tenant.tenant_limits?.max_os,
@@ -706,10 +710,10 @@ const App: React.FC = () => {
 
       <main className="flex-1 p-4 pt-24 pb-28 md:pt-10 md:pb-4 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
         {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
-        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} maxProducts={session.maxProducts} />}
-        {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
+        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} onUpdateSettings={saveSettings} maxProducts={session.maxProducts} />}
+        {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
         {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
+        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} lastPlanType={session.lastPlanType} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">
@@ -721,27 +725,50 @@ const App: React.FC = () => {
       </nav>
 
       {isSidebarOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 animate-in fade-in">
-          <div className="absolute right-0 top-0 bottom-0 w-72 bg-slate-900 p-8 flex flex-col animate-in slide-in-from-right">
-            <button onClick={() => setIsSidebarOpen(false)} className="self-end text-slate-400 mb-8"><X size={28} /></button>
-            <div className="space-y-4">
-              <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl mb-8">
-                {currentUser.photo ? <img src={currentUser.photo} className="w-12 h-12 rounded-xl object-cover" /> : <div className="w-12 h-12 bg-slate-800 rounded-xl" />}
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-white uppercase truncate max-w-[120px]">{currentUser.name}</p>
-                  <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest truncate">{currentUser.specialty || (currentUser.role === 'admin' ? 'Administrador' : 'Colaborador')}</p>
-                </div>
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 animate-in fade-in flex justify-end">
+          <div className="w-[85vw] max-w-[280px] h-full bg-slate-950 p-5 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300 border-l border-white/5 overflow-hidden">
+            <div className="flex justify-end mb-6 shrink-0">
+              <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-slate-400 hover:text-white transition-colors bg-white/5 rounded-full active:scale-90">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 p-3 bg-white/5 rounded-2xl mb-6 border border-white/5 shrink-0">
+              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0">
+                {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover rounded-xl" /> : <Smartphone size={20} />}
               </div>
-              <nav className="space-y-2 mb-10">
-                 {visibleNavItems.map(item => (
-                  <button key={item.id} onClick={() => { setActiveTab(item.id as Tab); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-xl' : 'text-slate-400'}`}>
-                    <item.icon size={18} />
-                    {item.label}
-                  </button>
-                ))}
-              </nav>
-              <button onClick={() => setIsLogoutModalOpen(true)} className="w-full flex items-center gap-4 px-6 py-4 text-red-400 font-black text-[10px] uppercase tracking-widest border border-red-400/20 rounded-xl bg-red-400/5">
-                <LogOut size={20} /> Sair do Sistema
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[10px] font-black text-white uppercase tracking-tight truncate">{settings.storeName}</h3>
+                <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest truncate">
+                  {currentUser.role === 'admin' ? 'Administrador' : 'Colaborador'}
+                </p>
+              </div>
+            </div>
+
+            <nav className="flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1">
+               {visibleNavItems.map(item => (
+                <button 
+                  key={item.id} 
+                  onClick={() => { setActiveTab(item.id as Tab); setIsSidebarOpen(false); }} 
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${
+                    activeTab === item.id 
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <item.icon size={18} className={activeTab === item.id ? 'animate-pulse' : ''} />
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+
+            <div className="mt-4 pt-4 border-t border-white/5 shrink-0">
+              <button 
+                onClick={() => setIsLogoutModalOpen(true)} 
+                className="w-full flex items-center justify-center gap-2 px-6 py-3.5 text-red-500 font-black text-[10px] uppercase tracking-widest border border-red-500/10 rounded-xl bg-red-500/5 hover:bg-red-500/10 transition-all active:scale-95"
+              >
+                <LogOut size={16} /> 
+                Sair
               </button>
             </div>
           </div>

@@ -17,6 +17,7 @@ interface Props {
   onInstallApp?: () => void;
   subscriptionStatus?: string;
   subscriptionExpiresAt?: string;
+  lastPlanType?: 'monthly' | 'quarterly' | 'yearly';
   enabledFeatures?: {
     osTab: boolean;
     stockTab: boolean;
@@ -31,9 +32,19 @@ interface Props {
   maxProducts?: number;
 }
 
-const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, enabledFeatures, maxUsers, maxOS, maxProducts }) => {
+const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, lastPlanType, enabledFeatures, maxUsers, maxOS, maxProducts }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
   
+  const getPlanName = () => {
+    if (subscriptionStatus === 'trial') return 'Período de Teste';
+    switch (lastPlanType) {
+      case 'monthly': return 'Plano Mensal';
+      case 'quarterly': return 'Plano Trimestral';
+      case 'yearly': return 'Plano Anual';
+      default: return 'Assinatura Ativa';
+    }
+  };
+
   const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup'>('main');
   const [showMenu, setShowMenu] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -820,7 +831,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     );
   }
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 relative">
+    <div className="space-y-6 animate-in fade-in duration-500 relative pb-24">
       {saveMessage && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4">
            <div className="bg-emerald-500 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/20">
@@ -830,43 +841,42 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">AJUSTES</h2>
+      <div className="flex items-center justify-between px-2">
+        <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">AJUSTES</h2>
         <div className="relative">
-          <button onClick={() => setShowMenu(!showMenu)} className="p-4 bg-slate-100 rounded-2xl text-slate-400 shadow-sm active:scale-90 transition-all">
-            <MoreVertical size={24} />
+          <button onClick={() => setShowMenu(!showMenu)} className="p-3 bg-slate-100 rounded-xl text-slate-400 shadow-sm active:scale-90 transition-all">
+            <MoreVertical size={20} />
           </button>
           {showMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
-              <div className="absolute right-0 mt-3 w-72 bg-white border border-slate-100 rounded-[2rem] shadow-2xl z-50 py-4 overflow-hidden animate-in zoom-in-95 origin-top-right">
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-100 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden animate-in zoom-in-95 origin-top-right">
                 {isAdmin && (
                   <>
-                    {/* Fix: Casting 'view' to any to avoid TypeScript narrowing errors caused by early returns above this line */}
-                    <button onClick={() => { setView('theme'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'theme' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                      <Palette size={18} /> Aparência Global
+                    <button onClick={() => { setView('theme'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'theme' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                      <Palette size={16} /> Aparência Global
                     </button>
-                    <button onClick={() => { setView('print'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'print' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                      <FileText size={18} /> Dados do Recibo
+                    <button onClick={() => { setView('print'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'print' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                      <FileText size={16} /> Dados do Recibo
                     </button>
                     {enabledFeatures?.xmlExportImport !== false && (
-                      <button onClick={() => { setView('backup'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'backup' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                        <Download size={18} /> Backup e Importação
+                      <button onClick={() => { setView('backup'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'backup' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                        <Download size={16} /> Backup e Importação
                       </button>
                     )}
                   </>
                 )}
                 {enabledFeatures?.profiles !== false && (
-                  <button onClick={() => { setView('users'); setShowMenu(false); }} className={`w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'users' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                    <Users size={18} /> {isAdmin ? 'Gestão de Equipe' : 'Trocar de Perfil'}
+                  <button onClick={() => { setView('users'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'users' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                    <Users size={16} /> {isAdmin ? 'Gestão de Equipe' : 'Trocar de Perfil'}
                   </button>
                 )}
                 {deferredPrompt && (
                   <button 
                     onClick={() => { onInstallApp?.(); setShowMenu(false); }} 
-                    className="w-full flex items-center gap-4 px-6 py-5 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent"
+                    className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent"
                   >
-                    <Smartphone size={18} /> Instalar Aplicativo
+                    <Smartphone size={16} /> Instalar Aplicativo
                   </button>
                 )}
               </div>
@@ -875,115 +885,120 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto space-y-6 py-10 relative">
+      <div className="max-w-xl mx-auto space-y-4">
+        {/* PLANO ATUAL */}
         {isAdmin && subscriptionStatus && (
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${subscriptionStatus === 'trial' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                <Shield size={24} />
+          <div className="bg-slate-50 rounded-[2rem] p-6 flex items-center justify-between relative overflow-hidden">
+            <div className="flex items-center gap-4 relative z-10">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${subscriptionStatus === 'trial' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                <Shield size={20} />
               </div>
               <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Plano Atual</p>
-                <h3 className="font-black text-slate-800 uppercase text-sm">
-                  {subscriptionStatus === 'trial' ? 'Período de Teste' : 'Assinatura Ativa'}
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Plano Atual</p>
+                <h3 className="font-black text-slate-800 uppercase text-xs">
+                  {getPlanName()}
                 </h3>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expira em</p>
-              <p className="font-black text-slate-800 text-sm">
+            <div className="text-right relative z-10">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Expira em</p>
+              <p className="font-black text-slate-800 text-xs">
                 {subscriptionExpiresAt ? new Date(subscriptionExpiresAt).toLocaleDateString('pt-BR') : 'N/A'}
               </p>
             </div>
+            {/* Decorative background element */}
+            <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/50 rounded-full blur-2xl pointer-events-none"></div>
           </div>
         )}
 
-<div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
-          <h3 className="font-black text-slate-800 uppercase text-sm text-center">Plano e Limites</h3>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Usuários</p>
-              <p className="font-black text-blue-600 text-2xl">{settings.users?.length || 0} / {maxUsers === 999 ? '∞' : maxUsers}</p>
+        {/* PLANO E LIMITES */}
+        <div className="bg-slate-50 rounded-[2rem] p-6 space-y-4">
+          <h3 className="font-black text-slate-800 uppercase text-[10px] text-center tracking-widest">Plano e Limites</h3>
+          <div className="grid grid-cols-3 gap-2 text-center divide-x divide-slate-200/50">
+            <div className="px-2">
+              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Usuários</p>
+              <p className="font-black text-blue-600 text-lg leading-none">{settings.users?.length || 0} <span className="text-slate-300 text-xs">/ {maxUsers === 999 ? '∞' : maxUsers}</span></p>
             </div>
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ordens de Serviço</p>
-              <p className="font-black text-blue-600 text-2xl">{maxOS === 999 ? '∞' : maxOS}</p>
+            <div className="px-2">
+              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ordens</p>
+              <p className="font-black text-blue-600 text-lg leading-none">{maxOS === 999 ? '∞' : maxOS}</p>
             </div>
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Produtos</p>
-              <p className="font-black text-blue-600 text-2xl">{maxProducts === 999 ? '∞' : maxProducts}</p>
+            <div className="px-2">
+              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Produtos</p>
+              <p className="font-black text-blue-600 text-lg leading-none">{maxProducts === 999 ? '∞' : maxProducts}</p>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-6 mb-4">
-          <div className="relative group active:scale-95 transition-transform">
-            <div className="w-52 h-52 bg-white rounded-[3.5rem] border-[10px] border-white shadow-2xl flex items-center justify-center overflow-hidden ring-1 ring-slate-100">
-              {isCompressing ? <Loader2 className="animate-spin text-blue-500" size={32} /> : settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <ImageIcon size={64} className="text-slate-100" />}
-            </div>
-            {isAdmin && (
-              <button onClick={triggerUpload} className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white p-5 rounded-full border-4 border-white shadow-xl hover:scale-110 transition-all">
-                <Camera size={24} />
-              </button>
-            )}
-          </div>
+        {/* DADOS DA LOJA (Compacto) */}
+        <div className="bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm space-y-5">
+           <div className="flex items-center gap-4 mb-2">
+              <div className="relative group shrink-0">
+                <div className="w-16 h-16 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center overflow-hidden">
+                  {isCompressing ? <Loader2 className="animate-spin text-blue-500" size={20} /> : settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <ImageIcon size={24} className="text-slate-300" />}
+                </div>
+                {isAdmin && (
+                  <button onClick={triggerUpload} className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-2 rounded-xl shadow-lg active:scale-90 transition-all">
+                    <Camera size={14} />
+                  </button>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Nome da Loja</label>
+                 <input readOnly={!isAdmin} type="text" value={settings.storeName} onChange={(e) => updateSetting('storeName', e.target.value)} className={`w-full bg-transparent border-none p-0 font-black text-lg text-slate-800 outline-none truncate ${isAdmin ? 'placeholder:text-slate-300' : ''}`} placeholder="Nome da Loja" />
+              </div>
+           </div>
+
+           <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-1">
+                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={10}/> Endereço</label>
+                 <input readOnly={!isAdmin} type="text" value={settings.storeAddress || ''} onChange={(e) => updateSetting('storeAddress', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="Endereço completo" />
+              </div>
+              <div className="space-y-1">
+                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Phone size={10}/> Telefone</label>
+                 <input readOnly={!isAdmin} type="text" value={settings.storePhone || ''} onChange={(e) => updateSetting('storePhone', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="(00) 00000-0000" />
+              </div>
+           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 pt-10">
-          <div className="w-full space-y-3">
-             <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] text-center w-full block">Nome da Empresa</label>
-             <input readOnly={!isAdmin} type="text" value={settings.storeName} onChange={(e) => updateSetting('storeName', e.target.value)} className={`w-full px-8 py-6 bg-white border-none rounded-[2.5rem] font-black text-2xl text-slate-800 text-center shadow-xl shadow-slate-200/20 outline-none transition-all ${isAdmin ? 'focus:ring-4 focus:ring-blue-50' : 'opacity-80'}`} />
-          </div>
+        {/* OUTRAS CONFIGURAÇÕES */}
+        <div className="grid grid-cols-2 gap-3">
+           <div className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Layout size={12}/> Paginação</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[8, 16, 32, 64].map(num => (
+                  <button 
+                    key={num}
+                    onClick={() => updateSetting('itemsPerPage', num as any)}
+                    className={`py-2 rounded-lg text-[10px] font-black uppercase transition-all ${settings.itemsPerPage === num ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-50 text-slate-500'}`}>
+                    {num}
+                  </button>
+                ))}
+              </div>
+           </div>
 
-          <div className="w-full space-y-2">
-             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><MapPin size={12}/> Endereço Comercial</label>
-             <input readOnly={!isAdmin} type="text" value={settings.storeAddress || ''} onChange={(e) => updateSetting('storeAddress', e.target.value)} className={`w-full px-8 py-5 bg-white border-none rounded-[2rem] font-bold text-sm text-slate-800 shadow-sm outline-none transition-all ${isAdmin ? 'focus:ring-4 focus:ring-blue-50' : 'opacity-80'}`} />
-          </div>
-
-          <div className="w-full space-y-2">
-             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><Phone size={12}/> Telefone de Contato</label>
-             <input readOnly={!isAdmin} type="text" value={settings.storePhone || ''} onChange={(e) => updateSetting('storePhone', e.target.value)} className={`w-full px-8 py-5 bg-white border-none rounded-[2rem] font-bold text-sm text-slate-800 shadow-sm outline-none transition-all ${isAdmin ? 'focus:ring-4 focus:ring-blue-50' : 'opacity-80'}`} />
-          </div>
-
-          <div className="w-full space-y-3 pt-4">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-1.5"><Layout size={12}/> Itens por Página</label>
-            <div className="grid grid-cols-4 gap-2">
-              {[8, 16, 32, 64].map(num => (
-                <button 
-                  key={num}
-                  onClick={() => updateSetting('itemsPerPage', num as any)}
-                  className={`py-4 rounded-2xl text-xs font-black uppercase transition-all ${settings.itemsPerPage === num ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-500'}`}>
-                  {num}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {deferredPrompt && (
-            <div className="w-full pt-6">
-              <button 
-                onClick={onInstallApp}
-                className="w-full py-6 bg-blue-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-widest shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3"
-              >
-                <Smartphone size={20} />
-                Instalar Aplicativo Pro
-              </button>
-              <p className="text-center text-[8px] text-slate-400 font-black uppercase tracking-widest mt-3">Instale para usar em tela cheia e offline</p>
-            </div>
-          )}
+           <div className={`p-4 rounded-[2rem] border flex flex-col items-center justify-center text-center gap-2 transition-all ${isCloudConnected ? 'bg-emerald-50/50 border-emerald-100' : 'bg-red-50/50 border-red-100'}`}>
+              <div className={`w-8 h-8 text-white rounded-full flex items-center justify-center shadow-sm ${isCloudConnected ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                {isCloudConnected ? <Check size={14} /> : <AlertCircle size={14} />}
+              </div>
+              <div>
+                <p className={`text-[10px] font-black uppercase tracking-tight ${isCloudConnected ? 'text-emerald-800' : 'text-red-800'}`}>
+                  {isCloudConnected ? 'Online' : 'Offline'}
+                </p>
+                <p className="text-[8px] text-slate-400 uppercase tracking-widest font-bold">Sincronizado</p>
+              </div>
+           </div>
         </div>
 
-        <div className={`p-8 rounded-[3rem] border flex items-center gap-5 transition-all ${isCloudConnected ? 'bg-emerald-50/50 border-emerald-100' : 'bg-red-50/50 border-red-100'} mt-12 shadow-sm`}>
-            <div className={`w-16 h-16 text-white rounded-[1.5rem] flex items-center justify-center shadow-lg shrink-0 ${isCloudConnected ? 'bg-emerald-500' : 'bg-red-500'}`}>
-              {isCloudConnected ? <Check size={32} /> : <AlertCircle size={32} />}
-            </div>
-            <div>
-              <p className={`text-sm font-black uppercase tracking-tight ${isCloudConnected ? 'text-emerald-800' : 'text-red-800'}`}>
-                {isCloudConnected ? 'Sincronização Ativa' : 'Banco de Dados Local'}
-              </p>
-              <p className="text-[9px] text-slate-400 uppercase tracking-widest mt-1 font-black leading-tight">Backup em tempo real no SQL Supabase</p>
-            </div>
-         </div>
+        {deferredPrompt && (
+          <button 
+            onClick={onInstallApp}
+            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+          >
+            <Smartphone size={16} />
+            Instalar App
+          </button>
+        )}
       </div>
     </div>
   );

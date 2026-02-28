@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle } from 'lucide-react';
+import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle, LayoutGrid, Grid, List, Maximize2, Rows } from 'lucide-react';
 import { Product, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString } from '../utils';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
@@ -10,10 +10,11 @@ interface Props {
   setProducts: (products: Product[]) => void;
   onDeleteProduct: (id: string) => void;
   settings: AppSettings;
+  onUpdateSettings: (settings: AppSettings) => Promise<void>;
   maxProducts?: number;
 }
 
-const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings, maxProducts }) => {
+const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings, onUpdateSettings, maxProducts }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -21,6 +22,8 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [layoutMode, setLayoutMode] = useState<'small' | 'medium' | 'list'>(settings.stockLayout || 'small');
+  
   const productCount = products.length;
   const limitReached = maxProducts !== undefined && productCount >= maxProducts;
   
@@ -70,7 +73,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     }
   };
 
-  const startScanner = async () => {
+  const startScanner = async (mode: 'form' | 'search' = 'form') => {
     setIsScannerOpen(true);
     setTimeout(async () => {
       try {
@@ -85,7 +88,11 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
             aspectRatio: 1.777778
           },
           (decodedText) => {
-            setFormData(prev => ({ ...prev, barcode: decodedText }));
+            if (mode === 'form') {
+              setFormData(prev => ({ ...prev, barcode: decodedText }));
+            } else {
+              setSearchTerm(decodedText);
+            }
             stopScanner();
           },
           () => {}
@@ -197,6 +204,14 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     setCurrentPage(prev => prev + 1);
   };
 
+  const toggleLayout = () => {
+    const modes: ('small' | 'medium' | 'list')[] = ['small', 'medium', 'list'];
+    const nextIndex = (modes.indexOf(layoutMode) + 1) % modes.length;
+    const newMode = modes[nextIndex];
+    setLayoutMode(newMode);
+    onUpdateSettings({ ...settings, stockLayout: newMode });
+  };
+
   const confirmDelete = () => {
     if (productToDelete) {
       onDeleteProduct(productToDelete);
@@ -231,41 +246,95 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
         </div>
       </div>
 
-      {/* BARRA DE PESQUISA */}
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-        <input type="text" placeholder="Buscar por nome ou código..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+      {/* BARRA DE PESQUISA E LAYOUT */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+          <input type="text" placeholder="Buscar..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        </div>
+        <button onClick={() => startScanner('search')} className="p-3.5 bg-white text-slate-600 rounded-2xl shadow-sm active:scale-95 shrink-0">
+          <ScanBarcode size={20} />
+        </button>
+        <button onClick={toggleLayout} className="p-3.5 bg-white text-slate-400 hover:text-slate-600 transition-colors rounded-2xl shadow-sm active:scale-95 shrink-0">
+           {layoutMode === 'small' && <Grid size={20} />}
+           {layoutMode === 'medium' && <LayoutGrid size={20} />}
+           {layoutMode === 'list' && <Rows size={20} />}
+        </button>
       </div>
 
-      {/* --- GRID DE PRODUTOS: MODIFICADO PARA PC (Miniaturas Menores e Mais Colunas) --- */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+      {/* --- GRID DE PRODUTOS --- */}
+      <div className={`grid gap-3 ${
+        layoutMode === 'small' ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10' :
+        layoutMode === 'medium' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8' :
+        'grid-cols-1'
+      }`}>
         {paginatedProducts.length > 0 ? paginatedProducts.map(product => (
-          <div key={product.id} className="bg-white border border-slate-50 rounded-[2rem] overflow-hidden shadow-sm flex flex-col group animate-in fade-in duration-300">
-            {/* Altura da imagem reduzida de h-32 para h-28/h-24 no PC para visual mais compacto */}
-            <div className="h-28 md:h-24 bg-slate-50 relative">
-              {product.photo ? <img src={product.photo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-200"><PackageOpen size={24} /></div>}
-              <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setFormData(product); setIsModalOpen(true); }} 
-                  className="p-1.5 bg-white/90 rounded-lg text-slate-600 shadow-sm active:scale-90 transition-all"
-                >
-                  <Edit3 size={12} />
-                </button>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setProductToDelete(product.id); }} 
-                  className="p-1.5 bg-white/90 rounded-lg text-red-500 shadow-sm active:scale-90 transition-all"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-              <div className={`absolute bottom-2 left-2 px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest ${product.quantity <= 2 ? 'bg-red-500 text-white' : 'bg-slate-900 text-white'}`}>Qtd: {product.quantity}</div>
+          <div key={product.id} className={`bg-white border border-slate-50 rounded-[2rem] overflow-hidden shadow-sm flex group animate-in fade-in duration-300 ${layoutMode === 'list' ? 'flex-row items-center p-2 gap-3' : 'flex-col'}`}>
+            {/* Imagem */}
+            <div className={`bg-slate-50 relative shrink-0 ${
+              layoutMode === 'list' ? 'w-14 h-14 rounded-2xl' : 
+              layoutMode === 'small' ? 'h-20' : 
+              'h-28 md:h-24'
+            }`}>
+              {product.photo ? <img src={product.photo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-200"><PackageOpen size={layoutMode === 'small' || layoutMode === 'list' ? 16 : 24} /></div>}
+              
+              {layoutMode !== 'list' && (
+                <>
+                  <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setFormData(product); setIsModalOpen(true); }} 
+                      className="p-1.5 bg-white/90 rounded-lg text-slate-600 shadow-sm active:scale-90 transition-all"
+                    >
+                      <Edit3 size={12} />
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setProductToDelete(product.id); }} 
+                      className="p-1.5 bg-white/90 rounded-lg text-red-500 shadow-sm active:scale-90 transition-all"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                  <div className={`absolute bottom-2 left-2 px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest ${product.quantity <= 2 ? 'bg-red-500 text-white' : 'bg-slate-900 text-white'}`}>Qtd: {product.quantity}</div>
+                </>
+              )}
             </div>
-            <div className="p-2">
-              <h3 className="font-bold text-slate-800 text-[9px] uppercase truncate mb-0.5">{product.name}</h3>
-              <div className="flex items-center justify-between">
-                <p className="font-black text-blue-600 text-[10px]">{formatCurrency(product.salePrice)}</p>
-                {product.barcode && <ScanBarcode size={10} className="text-slate-300" />}
+
+            {/* Conteúdo */}
+            <div className={`${layoutMode === 'list' ? 'flex-1 flex items-center justify-between pr-2 min-w-0' : 'p-2'}`}>
+              <div className="min-w-0 flex-1 mr-2">
+                <h3 className={`font-bold text-slate-800 uppercase truncate mb-0.5 ${layoutMode === 'small' ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'}`}>{product.name}</h3>
+                {layoutMode === 'list' && (
+                   <div className="flex items-center gap-2 mt-0.5">
+                      <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest ${product.quantity <= 2 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>Estoque: {product.quantity}</span>
+                   </div>
+                )}
+                {layoutMode !== 'list' && (
+                  <div className="flex items-center justify-between">
+                    <p className="font-black text-blue-600 text-[10px]">{formatCurrency(product.salePrice)}</p>
+                    {product.barcode && <ScanBarcode size={10} className="text-slate-300" />}
+                  </div>
+                )}
               </div>
+
+              {layoutMode === 'list' && (
+                <div className="flex items-center gap-3 shrink-0">
+                   <p className="font-black text-blue-600 text-xs sm:text-sm">{formatCurrency(product.salePrice)}</p>
+                   <div className="flex gap-1.5">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setFormData(product); setIsModalOpen(true); }} 
+                        className="p-2 bg-slate-100 rounded-xl text-slate-600 active:scale-90 transition-all hover:bg-slate-200"
+                      >
+                        <Edit3 size={14} />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setProductToDelete(product.id); }} 
+                        className="p-2 bg-red-50 rounded-xl text-red-500 active:scale-90 transition-all hover:bg-red-100"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                   </div>
+                </div>
+              )}
             </div>
           </div>
         )) : (
@@ -333,7 +402,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Código de Barras</label>
                    <div className="flex gap-2">
                      <input value={formData.barcode} onChange={(e)=>setFormData(f=>({...f,barcode:e.target.value}))} placeholder="Código" className="flex-1 p-4 bg-slate-50 rounded-2xl outline-none font-black text-xs text-blue-600" />
-                     <button onClick={startScanner} className="p-4 bg-blue-600 text-white rounded-2xl shadow-lg active:scale-90"><ScanBarcode size={20} /></button>
+                     <button onClick={() => startScanner('form')} className="p-4 bg-blue-600 text-white rounded-2xl shadow-lg active:scale-90"><ScanBarcode size={20} /></button>
                    </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

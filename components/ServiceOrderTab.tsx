@@ -458,32 +458,35 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
       {/* LISTA DE ORDENS */}
       <div className="grid gap-3">
         {paginatedOrders.length > 0 ? paginatedOrders.map(order => (
-          <div key={order.id} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-50 flex items-center justify-between group animate-in fade-in">
-            <div className="flex items-center gap-4 flex-1 min-w-0 cursor-pointer" onClick={() => { setEditingOrder(order); setFormData(order); setIsModalOpen(true); }}>
-              <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-custom-primary overflow-hidden border border-slate-100 shrink-0">
+          <div key={order.id} className="bg-white p-2.5 sm:p-4 rounded-2xl sm:rounded-3xl shadow-sm border border-slate-50 flex items-center justify-between gap-2 sm:gap-4 group animate-in fade-in">
+            <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 cursor-pointer" onClick={() => { setEditingOrder(order); setFormData(order); setIsModalOpen(true); }}>
+              <div className="w-10 h-10 sm:w-14 sm:h-14 bg-slate-50 rounded-xl sm:rounded-2xl flex items-center justify-center text-custom-primary overflow-hidden border border-slate-100 shrink-0">
                 {order.photos && order.photos.length > 0 ? (
                   <img src={order.photos[0]} className="w-full h-full object-cover" />
                 ) : (
-                  <Smartphone size={24} />
+                  <>
+                    <Smartphone size={16} className="sm:hidden" />
+                    <Smartphone size={24} className="hidden sm:block" />
+                  </>
                 )}
               </div>
               <div className="min-w-0">
-                <h3 className="font-bold text-slate-800 text-sm truncate uppercase">{order.customerName}</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{order.deviceBrand} {order.deviceModel}</p>
-                <div className="flex items-center gap-2 mt-1">
-                   <span className={`text-[8px] font-black px-2 py-0.5 rounded-full ${order.status === 'Entregue' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'} uppercase`}>{order.status}</span>
+                <h3 className="font-bold text-slate-800 text-[11px] sm:text-sm truncate uppercase leading-tight">{order.customerName}</h3>
+                <p className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase truncate leading-tight">{order.deviceBrand} {order.deviceModel}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                   <span className={`text-[7px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full ${order.status === 'Entregue' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'} uppercase`}>{order.status}</span>
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={(e) => { e.stopPropagation(); generateReceiptImage(order); }} disabled={isGeneratingReceipt} className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md active:scale-90 disabled:opacity-50" title="Ver Recibo">
-                {isGeneratingReceipt ? <Loader2 className="animate-spin" size={18} /> : <Eye size={18} />}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button onClick={(e) => { e.stopPropagation(); generateReceiptImage(order); }} disabled={isGeneratingReceipt} className="p-1.5 sm:p-2.5 bg-blue-600 text-white rounded-lg sm:rounded-xl shadow-md active:scale-90 disabled:opacity-50" title="Ver Recibo">
+                {isGeneratingReceipt ? <Loader2 className="animate-spin" size={14} /> : <Eye size={14} className="sm:w-[18px] sm:h-[18px]" />}
               </button>
-              <button onClick={(e) => { e.stopPropagation(); setSelectedOrderForPhotos(order); }} className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-md active:scale-90" title="Ver Fotos">
-                <ImageIcon size={18} />
+              <button onClick={(e) => { e.stopPropagation(); setSelectedOrderForPhotos(order); }} className="p-1.5 sm:p-2.5 bg-emerald-600 text-white rounded-lg sm:rounded-xl shadow-md active:scale-90" title="Ver Fotos">
+                <ImageIcon size={14} className="sm:w-[18px] sm:h-[18px]" />
               </button>
-              <button onClick={(e) => { e.stopPropagation(); initiateDelete(order.id); }} className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90" title="Excluir">
-                <Trash2 size={18} />
+              <button onClick={(e) => { e.stopPropagation(); initiateDelete(order.id); }} className="p-1.5 sm:p-2.5 bg-red-50 text-red-500 rounded-lg sm:rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90" title="Excluir">
+                <Trash2 size={14} className="sm:w-[18px] sm:h-[18px]" />
               </button>
             </div>
           </div>

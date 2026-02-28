@@ -5,7 +5,7 @@ import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, Chec
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { Product, Sale, AppSettings, User } from '../types';
-import { formatCurrency, parseCurrencyString, formatDate, formatDateTime } from '../utils';
+import { formatCurrency, parseCurrencyString, formatDate, formatDateTime, playBeepSound } from '../utils';
 import { Html5Qrcode } from 'html5-qrcode';
 
 interface Props {
@@ -139,6 +139,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             aspectRatio: 1.777778
           },
           (decodedText) => {
+            playBeepSound();
             const product = products.find(p => p.barcode === decodedText);
             if (product) {
               addToCart(product);

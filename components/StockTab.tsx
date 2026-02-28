@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle, LayoutGrid, Grid, List, Maximize2, Rows } from 'lucide-react';
 import { Product, AppSettings } from '../types';
-import { formatCurrency, parseCurrencyString } from '../utils';
+import { formatCurrency, parseCurrencyString, playBeepSound } from '../utils';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 
 interface Props {
@@ -88,6 +88,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
             aspectRatio: 1.777778
           },
           (decodedText) => {
+            playBeepSound();
             if (mode === 'form') {
               setFormData(prev => ({ ...prev, barcode: decodedText }));
             } else {

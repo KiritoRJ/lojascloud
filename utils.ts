@@ -18,3 +18,25 @@ export const formatDate = (dateString: string): string => {
 export const formatDateTime = (dateString: string): string => {
   return new Date(dateString).toLocaleString('pt-BR');
 };
+
+export const playBeepSound = () => {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(2000, audioCtx.currentTime);
+    
+    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + 0.1);
+  } catch (e) {
+    console.error("Audio playback failed", e);
+  }
+};

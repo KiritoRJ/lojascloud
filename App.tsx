@@ -82,6 +82,12 @@ const App: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
+    let deviceId = localStorage.getItem('device_id');
+    if (!deviceId) {
+      deviceId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('device_id', deviceId);
+    }
+    
     OfflineSync.init();
     const handleStatusChange = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', handleStatusChange);
@@ -251,6 +257,24 @@ const App: React.FC = () => {
     }
   }, [session?.isLoggedIn, session?.tenantId, loadData]);
 
+  useEffect(() => {
+    if (!session?.isLoggedIn || session.type === 'super' || !session.tenantId) return;
+
+    const deviceId = localStorage.getItem('device_id') || '';
+    const maxUsers = session.maxUsers || 1;
+
+    const interval = setInterval(async () => {
+      if (!navigator.onLine) return;
+      const res = await OnlineDB.heartbeatSession(session.tenantId!, deviceId, maxUsers);
+      if (res && res.kicked) {
+        handleLogout();
+        alert("Sua sessão foi encerrada porque o limite de acessos simultâneos da loja foi atingido por outro dispositivo.");
+      }
+    }, 3 * 60 * 1000); // Heartbeat a cada 3 minutos
+
+    return () => clearInterval(interval);
+  }, [session]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
@@ -266,7 +290,17 @@ const App: React.FC = () => {
           setSession(superSession as any);
         } else {
           const tenantId = result.tenant?.id;
-            const newSession = { 
+          const maxUsers = result.tenant?.maxUsers || 1;
+          const deviceId = localStorage.getItem('device_id') || '';
+          
+          const sessionRes = await OnlineDB.checkAndRegisterSession(tenantId, maxUsers, deviceId, loginForm.username);
+          if (!sessionRes.success) {
+            setLoginError(sessionRes.message);
+            setIsLoggingIn(false);
+            return;
+          }
+
+          const newSession = { 
               isLoggedIn: true, 
               type: result.type as any, 
               tenantId: tenantId,
@@ -334,7 +368,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (session?.tenantId) {
+      const deviceId = localStorage.getItem('device_id') || '';
+      await OnlineDB.removeSession(session.tenantId, deviceId);
+    }
     localStorage.removeItem('session_pro');
     localStorage.removeItem('currentUser_pro');
     setSession(null);

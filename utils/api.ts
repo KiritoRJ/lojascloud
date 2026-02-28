@@ -131,6 +131,105 @@ export class OnlineDB {
     }
   }
 
+  // Verifica limite de usuários e registra sessão
+  static async checkAndRegisterSession(tenantId: string, maxUsers: number, deviceId: string, userName: string) {
+    try {
+      // 1. Limpa sessões inativas (mais de 15 minutos sem heartbeat)
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId).lt('last_seen', fifteenMinsAgo);
+
+      // 2. Conta as sessões ativas para esta loja
+      const { count, error: countError } = await supabase
+        .from('active_sessions')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId);
+
+      if (countError) throw countError;
+
+      // 3. Verifica se este dispositivo já tem uma sessão
+      const { data: existing } = await supabase
+        .from('active_sessions')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('device_id', deviceId)
+        .maybeSingle();
+
+      // Se não tem sessão e o limite foi atingido, bloqueia o login
+      if (!existing && count !== null && count >= maxUsers) {
+        return { success: false, message: `Limite de telas atingido. O plano atual permite apenas ${maxUsers} acesso(s) simultâneo(s).` };
+      }
+
+      // 4. Registra ou atualiza a sessão
+      const { error: upsertError } = await supabase
+        .from('active_sessions')
+        .upsert({
+          tenant_id: tenantId,
+          device_id: deviceId,
+          user_name: userName,
+          last_seen: new Date().toISOString()
+        }, { onConflict: 'tenant_id, device_id' });
+
+      if (upsertError) throw upsertError;
+
+      return { success: true };
+    } catch (e: any) {
+      console.error("Erro ao registrar sessão:", e);
+      return { success: false, message: e.message };
+    }
+  }
+
+  // Atualiza o "sinal de vida" da sessão
+  static async heartbeatSession(tenantId: string, deviceId: string, maxUsers: number) {
+    try {
+      // Limpa sessões inativas primeiro
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId).lt('last_seen', fifteenMinsAgo);
+
+      // Verifica se a nossa sessão ainda existe
+      const { data: existing } = await supabase
+        .from('active_sessions')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('device_id', deviceId)
+        .maybeSingle();
+
+      if (!existing) {
+         // Perdemos a sessão (ficamos offline muito tempo). Verifica se ainda tem vaga.
+         const { count } = await supabase
+          .from('active_sessions')
+          .select('*', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId);
+
+         if (count !== null && count >= maxUsers) {
+           return { success: false, kicked: true }; // Força o logout
+         }
+      }
+
+      // Atualiza o last_seen
+      await supabase
+        .from('active_sessions')
+        .upsert({
+          tenant_id: tenantId,
+          device_id: deviceId,
+          last_seen: new Date().toISOString()
+        }, { onConflict: 'tenant_id, device_id' });
+
+      return { success: true };
+    } catch (e) {
+       // Ignora erros de rede durante o heartbeat para não deslogar à toa
+       return { success: true };
+    }
+  }
+
+  // Remove a sessão explicitamente (Logout)
+  static async removeSession(tenantId: string, deviceId: string) {
+    try {
+      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId).eq('device_id', deviceId);
+    } catch (e) {
+      console.error("Erro ao remover sessão:", e);
+    }
+  }
+
   // Altera a senha do administrador via API do servidor (seguro)
   static async changePassword(tenantId: string, oldPassword: string, newPassword: string) {
     try {

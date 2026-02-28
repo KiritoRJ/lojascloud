@@ -79,10 +79,12 @@ export interface Sale {
   quantity: number;
   originalPrice: number;
   discount: number;
+  surcharge?: number;
   finalPrice: number;
   costAtSale: number;
   paymentMethod?: string;
   paymentEntriesJson?: string;
+  change?: number;
   sellerName?: string;
   transactionId?: string;
   isDeleted?: boolean;
@@ -135,4 +137,5 @@ export interface AppSettings {
   itemsPerPage: 8 | 16 | 32 | 64;
   stockLayout?: 'small' | 'medium' | 'list';
   salesLayout?: 'small' | 'medium' | 'list';
+  osLayout?: 'small' | 'medium' | 'large';
 }

@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar, KeyRound, Lock, Download, Maximize2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, Search, Trash2, Camera, X, Eye, Loader2, Smartphone, AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar, KeyRound, Lock, Download, Maximize2, Layout } from 'lucide-react';
 import { ServiceOrder, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate } from '../utils';
 
@@ -8,12 +8,13 @@ interface Props {
   orders: ServiceOrder[];
   setOrders: (orders: ServiceOrder[]) => void;
   settings: AppSettings;
+  onUpdateSettings: (settings: AppSettings) => Promise<void>;
   onDeleteOrder: (id: string) => void;
   tenantId: string;
   maxOS?: number;
 }
 
-const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDeleteOrder, tenantId, maxOS }) => {
+const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onUpdateSettings, onDeleteOrder, tenantId, maxOS }) => {
   // --- ESTADOS DE CONTROLE DE INTERFACE ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -29,8 +30,17 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedOrderForPhotos, setSelectedOrderForPhotos] = useState<ServiceOrder | null>(null);
   const [fullScreenPhoto, setFullScreenPhoto] = useState<string | null>(null);
+  const [osLayout, setOsLayout] = useState<'small' | 'medium' | 'large'>(settings.osLayout || 'medium');
   const osCount = orders.length;
   const limitReached = maxOS !== undefined && osCount >= maxOS;
+
+  const handleLayoutChange = async () => {
+    const modes: ('small' | 'medium' | 'large')[] = ['small', 'medium', 'large'];
+    const currentIndex = modes.indexOf(osLayout);
+    const nextMode = modes[(currentIndex + 1) % modes.length];
+    setOsLayout(nextMode);
+    await onUpdateSettings({ ...settings, osLayout: nextMode });
+  };
 
   // --- ESTADO DO FORMULÁRIO (DADOS DA O.S.) ---
   const [formData, setFormData] = useState<Partial<ServiceOrder>>({
@@ -426,7 +436,22 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
     }
   };
 
-  const filtered = orders.filter(o => o.customerName.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filtered = useMemo(() => {
+    return orders
+      .filter(o => o.customerName.toLowerCase().includes(searchTerm.toLowerCase()))
+      .sort((a, b) => {
+        // 1. Status: Pendente sempre primeiro
+        if (a.status === 'Pendente' && b.status !== 'Pendente') return -1;
+        if (a.status !== 'Pendente' && b.status === 'Pendente') return 1;
+        
+        // 2. Nome: Ordem Alfabética (A-Z)
+        const nameCompare = a.customerName.localeCompare(b.customerName, 'pt-BR', { sensitivity: 'base' });
+        if (nameCompare !== 0) return nameCompare;
+        
+        // 3. Data: Mais recentes primeiro (caso nomes sejam iguais)
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+  }, [orders, searchTerm]);
 
   const paginatedOrders = filtered.slice(0, settings.itemsPerPage * currentPage);
 
@@ -449,44 +474,77 @@ const ServiceOrderTab: React.FC<Props> = ({ orders, setOrders, settings, onDelet
         </div>
       )}
 
-      {/* BUSCA */}
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-        <input type="text" placeholder="Pesquisar..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+      {/* BUSCA E FILTROS */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+          <input type="text" placeholder="Pesquisar..." className="w-full pl-11 pr-4 py-3.5 bg-white border-none rounded-2xl shadow-sm text-sm font-medium focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        </div>
+        <button 
+          onClick={handleLayoutChange}
+          className="bg-white p-3.5 rounded-2xl shadow-sm text-slate-400 hover:text-slate-900 transition-colors flex items-center justify-center active:scale-95"
+          title={`Alternar Layout (Atual: ${osLayout === 'small' ? 'Pequeno' : osLayout === 'medium' ? 'Médio' : 'Grande'})`}
+        >
+          <Layout size={18} />
+        </button>
       </div>
 
       {/* LISTA DE ORDENS */}
-      <div className="grid gap-3">
+      <div className={`grid gap-3 ${osLayout === 'large' ? 'sm:grid-cols-2' : ''}`}>
         {paginatedOrders.length > 0 ? paginatedOrders.map(order => (
-          <div key={order.id} className="bg-white p-2.5 sm:p-4 rounded-2xl sm:rounded-3xl shadow-sm border border-slate-50 flex items-center justify-between gap-2 sm:gap-4 group animate-in fade-in">
+          <div 
+            key={order.id} 
+            className={`bg-white rounded-2xl sm:rounded-3xl shadow-sm border border-slate-50 flex items-center justify-between gap-2 sm:gap-4 group animate-in fade-in
+              ${osLayout === 'small' ? 'p-2' : osLayout === 'medium' ? 'p-3 sm:p-4' : 'p-5 sm:p-6'}
+            `}
+          >
             <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 cursor-pointer" onClick={() => { setEditingOrder(order); setFormData(order); setIsModalOpen(true); }}>
-              <div className="w-10 h-10 sm:w-14 sm:h-14 bg-slate-50 rounded-xl sm:rounded-2xl flex items-center justify-center text-custom-primary overflow-hidden border border-slate-100 shrink-0">
+              <div className={`bg-slate-50 rounded-xl sm:rounded-2xl flex items-center justify-center text-custom-primary overflow-hidden border border-slate-100 shrink-0
+                ${osLayout === 'small' ? 'w-8 h-8 sm:w-10 sm:h-10' : osLayout === 'medium' ? 'w-10 h-10 sm:w-14 sm:h-14' : 'w-14 h-14 sm:w-20 sm:h-20'}
+              `}>
                 {order.photos && order.photos.length > 0 ? (
                   <img src={order.photos[0]} className="w-full h-full object-cover" />
                 ) : (
                   <>
-                    <Smartphone size={16} className="sm:hidden" />
-                    <Smartphone size={24} className="hidden sm:block" />
+                    <Smartphone size={osLayout === 'small' ? 12 : 16} className="sm:hidden" />
+                    <Smartphone size={osLayout === 'small' ? 16 : 24} className="hidden sm:block" />
                   </>
                 )}
               </div>
               <div className="min-w-0">
-                <h3 className="font-bold text-slate-800 text-[11px] sm:text-sm truncate uppercase leading-tight">{order.customerName}</h3>
-                <p className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase truncate leading-tight">{order.deviceBrand} {order.deviceModel}</p>
+                <h3 className={`font-bold text-slate-800 truncate uppercase leading-tight
+                  ${osLayout === 'small' ? (order.customerName.length > 15 ? 'text-[9px]' : 'text-[10px]') : 
+                    osLayout === 'medium' ? (order.customerName.length > 15 ? 'text-[10px]' : 'text-[11px]') : 
+                    (order.customerName.length > 15 ? 'text-[12px]' : 'text-sm')}
+                  sm:${osLayout === 'small' ? 'text-xs' : osLayout === 'medium' ? 'text-sm' : 'text-base'}
+                `}>
+                  {order.customerName.length > 15 ? order.customerName.substring(0, 15) + '...' : order.customerName}
+                </h3>
+                <p className={`text-slate-400 font-bold uppercase truncate leading-tight
+                  ${osLayout === 'small' ? 'text-[8px] sm:text-[9px]' : osLayout === 'medium' ? 'text-[9px] sm:text-[10px]' : 'text-[10px] sm:text-xs'}
+                `}>{order.deviceBrand} {order.deviceModel}</p>
                 <div className="flex items-center gap-2 mt-0.5">
-                   <span className={`text-[7px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full ${order.status === 'Entregue' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'} uppercase`}>{order.status}</span>
+                   <span className={`font-black px-1.5 py-0.5 rounded-full ${order.status === 'Entregue' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'} uppercase
+                     ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}
+                   `}>{order.status}</span>
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <button onClick={(e) => { e.stopPropagation(); generateReceiptImage(order); }} disabled={isGeneratingReceipt} className="p-1.5 sm:p-2.5 bg-blue-600 text-white rounded-lg sm:rounded-xl shadow-md active:scale-90 disabled:opacity-50" title="Ver Recibo">
-                {isGeneratingReceipt ? <Loader2 className="animate-spin" size={14} /> : <Eye size={14} className="sm:w-[18px] sm:h-[18px]" />}
+              <button onClick={(e) => { e.stopPropagation(); generateReceiptImage(order); }} disabled={isGeneratingReceipt} className={`bg-blue-600 text-white rounded-lg sm:rounded-xl shadow-md active:scale-90 disabled:opacity-50 flex items-center justify-center
+                ${osLayout === 'small' ? 'p-1 sm:p-1.5' : osLayout === 'medium' ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-3.5'}
+              `} title="Ver Recibo">
+                {isGeneratingReceipt ? <Loader2 className="animate-spin" size={14} /> : <Eye size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />}
               </button>
-              <button onClick={(e) => { e.stopPropagation(); setSelectedOrderForPhotos(order); }} className="p-1.5 sm:p-2.5 bg-emerald-600 text-white rounded-lg sm:rounded-xl shadow-md active:scale-90" title="Ver Fotos">
-                <ImageIcon size={14} className="sm:w-[18px] sm:h-[18px]" />
+              <button onClick={(e) => { e.stopPropagation(); setSelectedOrderForPhotos(order); }} className={`bg-emerald-600 text-white rounded-lg sm:rounded-xl shadow-md active:scale-90 flex items-center justify-center
+                ${osLayout === 'small' ? 'p-1 sm:p-1.5' : osLayout === 'medium' ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-3.5'}
+              `} title="Ver Fotos">
+                <ImageIcon size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />
               </button>
-              <button onClick={(e) => { e.stopPropagation(); initiateDelete(order.id); }} className="p-1.5 sm:p-2.5 bg-red-50 text-red-500 rounded-lg sm:rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90" title="Excluir">
-                <Trash2 size={14} className="sm:w-[18px] sm:h-[18px]" />
+              <button onClick={(e) => { e.stopPropagation(); initiateDelete(order.id); }} className={`bg-red-50 text-red-500 rounded-lg sm:rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90 flex items-center justify-center
+                ${osLayout === 'small' ? 'p-1 sm:p-1.5' : osLayout === 'medium' ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-3.5'}
+              `} title="Excluir">
+                <Trash2 size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />
               </button>
             </div>
           </div>

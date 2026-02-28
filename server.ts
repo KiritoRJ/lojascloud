@@ -463,7 +463,7 @@ async function startServer() {
     app.use(express.static(distPath));
 
     // SPA fallback for production
-    app.get('*', (req, res) => {
+    app.get(/(.*)/, (req, res) => {
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: 'API route not found' });
       }

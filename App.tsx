@@ -56,6 +56,7 @@ const App: React.FC = () => {
       profiles: boolean;
       xmlExportImport: boolean;
       hideFinancialReports?: boolean;
+      promoBanner?: boolean;
     };
     maxUsers?: number;
     maxOS?: number;
@@ -71,6 +72,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [logoutPassword, setLogoutPassword] = useState('');
   const [isVerifyingLogout, setIsVerifyingLogout] = useState(false);
   const [logoutError, setLogoutError] = useState(false);
@@ -543,7 +545,7 @@ const App: React.FC = () => {
 
   if (session.type === 'super') return <SuperAdminDashboard onLogout={handleLogout} onLoginAs={handleLoginAs} />;
 
-  if (session.subscriptionStatus === 'expired') {
+  if (session.subscriptionStatus === 'expired' || isSubscriptionModalOpen) {
     return (
       <>
         <SubscriptionView 
@@ -554,10 +556,12 @@ const App: React.FC = () => {
           customQuarterlyPrice={session.customQuarterlyPrice}
           customYearlyPrice={session.customYearlyPrice}
           onLogout={() => setIsLogoutModalOpen(true)}
+          onClose={session.subscriptionStatus !== 'expired' ? () => setIsSubscriptionModalOpen(false) : undefined}
           onSuccess={(newExpiresAt) => {
             const updatedSession = { ...session, subscriptionStatus: 'active', subscriptionExpiresAt: newExpiresAt };
             setSession(updatedSession);
             localStorage.setItem('session_pro', JSON.stringify(updatedSession));
+            setIsSubscriptionModalOpen(false);
           }}
         />
         {isLogoutModalOpen && (
@@ -698,22 +702,24 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      <header className="md:hidden fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md z-40 px-6 py-4 flex items-center justify-between border-b border-slate-100">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-            {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover rounded-xl" /> : <Smartphone size={20} />}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        {(session.subscriptionStatus === 'trial' || session.enabledFeatures?.promoBanner) && (
+          <div 
+            onClick={() => setIsSubscriptionModalOpen(true)}
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-3 text-center cursor-pointer hover:from-blue-700 hover:to-indigo-700 transition-all shrink-0 shadow-md z-10 flex items-center justify-center gap-2"
+          >
+            <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest">
+              {session.subscriptionStatus === 'trial' ? 'Você está no período de teste. Clique aqui para assinar e não perder o acesso!' : 'Aproveite nossas ofertas exclusivas! Clique aqui para ver os planos.'}
+            </span>
           </div>
-          <h1 className="font-black text-slate-800 text-sm tracking-tighter uppercase truncate max-w-[150px]">{settings.storeName}</h1>
+        )}
+        <div className="flex-1 overflow-y-auto p-4 pt-4 pb-28 md:pt-10 md:pb-4 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
+          {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onUpdateSettings={saveSettings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
+          {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} onUpdateSettings={saveSettings} maxProducts={session.maxProducts} />}
+          {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
+          {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
+          {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} lastPlanType={session.lastPlanType} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} onLogout={() => setIsLogoutModalOpen(true)} />}
         </div>
-        <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-400"><Menu size={24} /></button>
-      </header>
-
-      <main className="flex-1 p-4 pt-24 pb-28 md:pt-10 md:pb-4 max-w-7xl mx-auto w-full animate-in fade-in duration-700">
-        {activeTab === 'os' && <ServiceOrderTab orders={orders.filter(o => !o.isDeleted)} setOrders={saveOrders} settings={settings} onUpdateSettings={saveSettings} onDeleteOrder={removeOrder} tenantId={session.tenantId || ''} maxOS={session.maxOS} />}
-        {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} onUpdateSettings={saveSettings} maxProducts={session.maxProducts} />}
-        {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
-        {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-        {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} lastPlanType={session.lastPlanType} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} />}
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40">

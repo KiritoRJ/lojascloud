@@ -12,10 +12,11 @@ interface SubscriptionViewProps {
   customYearlyPrice?: number;
   onLogout: () => void;
   onSuccess: (newExpiresAt: string) => void;
+  onClose?: () => void;
 }
 
 const SubscriptionView: React.FC<SubscriptionViewProps> = ({ 
-  tenantId, storeName, expiresAt, onLogout, onSuccess,
+  tenantId, storeName, expiresAt, onLogout, onSuccess, onClose,
   customMonthlyPrice, customQuarterlyPrice, customYearlyPrice
 }) => {
   const [loading, setLoading] = useState<string | null>(null);
@@ -181,12 +182,20 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
           <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-600 rounded-3xl mb-6 shadow-2xl shadow-blue-500/20">
             <Smartphone size={40} />
           </div>
-          <h1 className="text-4xl font-black uppercase tracking-tighter mb-2">Assinatura Expirada</h1>
-          <p className="text-slate-400 font-medium">Sua loja <span className="text-white font-bold">{storeName}</span> precisa de uma assinatura ativa.</p>
-          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-full text-red-400 text-xs font-bold uppercase tracking-widest">
-            <Clock size={14} />
-            Expirou em: {formatDate(expiresAt)}
-          </div>
+          <h1 className="text-4xl font-black uppercase tracking-tighter mb-2">
+            {onClose ? 'Planos e Assinaturas' : 'Assinatura Expirada'}
+          </h1>
+          <p className="text-slate-400 font-medium">
+            {onClose ? 'Escolha o melhor plano para sua loja ' : 'Sua loja '}
+            <span className="text-white font-bold">{storeName}</span>
+            {!onClose && ' precisa de uma assinatura ativa.'}
+          </p>
+          {!onClose && (
+            <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-full text-red-400 text-xs font-bold uppercase tracking-widest">
+              <Clock size={14} />
+              Expirou em: {formatDate(expiresAt)}
+            </div>
+          )}
         </div>
 
         <div className="grid md:grid-cols-2 gap-6 mb-12">
@@ -251,13 +260,23 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
             <img src="https://logodownload.org/wp-content/uploads/2019/06/mercado-pago-logo.png" alt="Mercado Pago" className="h-6 object-contain" />
           </div>
 
-          <button 
-            onClick={onLogout}
-            className="flex items-center gap-2 text-slate-500 hover:text-white text-xs font-black uppercase tracking-[0.2em] transition-colors"
-          >
-            <LogOut size={16} />
-            Sair da Conta
-          </button>
+          <div className="flex items-center gap-4">
+            {onClose && (
+              <button 
+                onClick={onClose}
+                className="flex items-center gap-2 text-slate-500 hover:text-white text-xs font-black uppercase tracking-[0.2em] transition-colors"
+              >
+                Voltar
+              </button>
+            )}
+            <button 
+              onClick={onLogout}
+              className="flex items-center gap-2 text-slate-500 hover:text-white text-xs font-black uppercase tracking-[0.2em] transition-colors"
+            >
+              <LogOut size={16} />
+              Sair da Conta
+            </button>
+          </div>
         </div>
       </div>
     </div>

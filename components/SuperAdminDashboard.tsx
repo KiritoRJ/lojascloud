@@ -860,6 +860,7 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                     { id: 'hideFinancialReports', label: 'Ocultar Botão Relatórios' },
                     { id: 'profiles', label: 'Criar Perfis/Usuários' },
                     { id: 'xmlExportImport', label: 'Exportar/Importar XML' },
+                    { id: 'promoBanner', label: 'Exibir Banner Promocional' },
                   ].map(feature => (
                     <label key={feature.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl cursor-pointer hover:bg-slate-100 transition-colors">
                       <span className="text-xs font-black uppercase tracking-tight text-slate-700">{feature.label}</span>

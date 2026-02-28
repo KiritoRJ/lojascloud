@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload } from 'lucide-react';
+import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut } from 'lucide-react';
 import { AppSettings, User, ServiceOrder, Product, Sale, Transaction } from '../types';
 import { OnlineDB } from '../utils/api';
 import { OfflineSync } from '../utils/offlineSync';
@@ -30,9 +30,10 @@ interface Props {
   maxUsers?: number;
   maxOS?: number;
   maxProducts?: number;
+  onLogout?: () => void;
 }
 
-const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, lastPlanType, enabledFeatures, maxUsers, maxOS, maxProducts }) => {
+const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, lastPlanType, enabledFeatures, maxUsers, maxOS, maxProducts, onLogout }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
   
   const getPlanName = () => {
@@ -877,6 +878,14 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
                     className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent"
                   >
                     <Smartphone size={16} /> Instalar Aplicativo
+                  </button>
+                )}
+                {onLogout && (
+                  <button 
+                    onClick={() => { onLogout(); setShowMenu(false); }} 
+                    className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-red-600 hover:bg-red-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent"
+                  >
+                    <LogOut size={16} /> Sair
                   </button>
                 )}
               </div>

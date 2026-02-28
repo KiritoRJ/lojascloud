@@ -134,9 +134,9 @@ export class OnlineDB {
   // Verifica limite de usuários e registra sessão
   static async checkAndRegisterSession(tenantId: string, maxUsers: number, deviceId: string, userName: string) {
     try {
-      // 1. Limpa sessões inativas (mais de 15 minutos sem heartbeat)
-      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId).lt('last_seen', fifteenMinsAgo);
+      // 1. Limpa sessões inativas (mais de 5 minutos sem heartbeat)
+      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId).lt('last_seen', fiveMinsAgo);
 
       // 2. Conta as sessões ativas para esta loja
       const { count, error: countError } = await supabase
@@ -182,8 +182,8 @@ export class OnlineDB {
   static async heartbeatSession(tenantId: string, deviceId: string, maxUsers: number) {
     try {
       // Limpa sessões inativas primeiro
-      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId).lt('last_seen', fifteenMinsAgo);
+      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId).lt('last_seen', fiveMinsAgo);
 
       // Verifica se a nossa sessão ainda existe
       const { data: existing } = await supabase

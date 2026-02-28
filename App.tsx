@@ -270,7 +270,7 @@ const App: React.FC = () => {
         handleLogout();
         alert("Sua sessão foi encerrada porque o limite de acessos simultâneos da loja foi atingido por outro dispositivo.");
       }
-    }, 3 * 60 * 1000); // Heartbeat a cada 3 minutos
+    }, 2 * 60 * 1000); // Heartbeat a cada 2 minutos
 
     return () => clearInterval(interval);
   }, [session]);

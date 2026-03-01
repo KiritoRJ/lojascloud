@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, ShoppingBag, MessageCircle, ArrowLeft, Loader2, Image as ImageIcon, Tag, Share2, Star, ChevronDown, Home, FileText, User, PlayCircle, Heart, MoreVertical, Volume2, VolumeX } from 'lucide-react';
+import { Search, ShoppingBag, MessageCircle, ArrowLeft, Loader2, Image as ImageIcon, Tag, Share2, Star, ChevronDown, Home, FileText, User, PlayCircle, Heart, MoreVertical, Volume2, VolumeX, Plus } from 'lucide-react';
 import { Product, AppSettings } from '../types';
 import { OnlineDB } from '../utils/api';
 

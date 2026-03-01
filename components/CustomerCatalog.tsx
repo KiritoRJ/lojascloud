@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Package, Search, ShoppingBag, MessageCircle, ArrowLeft, Loader2, Image as ImageIcon, Tag } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, ShoppingBag, MessageCircle, ArrowLeft, Loader2, Image as ImageIcon, Tag, Share2, Star, ChevronDown, Home, FileText, User, PlayCircle, Heart, MoreVertical, Volume2, VolumeX } from 'lucide-react';
 import { Product, AppSettings } from '../types';
 import { OnlineDB } from '../utils/api';
 
@@ -12,9 +12,9 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
   const [products, setProducts] = useState<Product[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [activeProductIndex, setActiveProductIndex] = useState(0);
+  const [isMuted, setIsMuted] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadCatalog = async () => {
@@ -29,7 +29,7 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
           const data = await OnlineDB.getPublicCatalog(activeTenantId);
           if (data) {
             setSettings(data.settings);
-            setProducts(data.products.filter(p => p.quantity > 0)); // Only show in-stock items
+            setProducts(data.products.filter(p => p.quantity > 0));
           }
         }
       } catch (e) {
@@ -41,6 +41,15 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
     loadCatalog();
   }, [tenantId, catalogSlug]);
 
+  const handleScroll = () => {
+    if (containerRef.current) {
+      const index = Math.round(containerRef.current.scrollTop / window.innerHeight);
+      if (index !== activeProductIndex) {
+        setActiveProductIndex(index);
+      }
+    }
+  };
+
   const handleWhatsAppClick = (product: Product) => {
     if (!settings?.storePhone) {
       alert("O lojista não configurou um número de WhatsApp.");
@@ -48,178 +57,172 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
     }
     const phone = settings.storePhone.replace(/\D/g, '');
     const price = product.isPromotion && product.promotionalPrice ? product.promotionalPrice : product.salePrice;
-    const message = encodeURIComponent(`Olá! Tenho interesse no produto *${product.name}* (R$ ${price.toFixed(2).replace('.', ',')}). Ainda está disponível?`);
+    const message = encodeURIComponent(`Olá! Vi o produto *${product.name}* no seu catálogo e tenho interesse.`);
     window.open(`https://wa.me/55${phone}?text=${message}`, '_blank');
+  };
+
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: settings?.storeName || 'Catálogo Online',
+        text: 'Confira este produto incrível!',
+        url: window.location.href,
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert('Link copiado!');
+    }
+  };
+
+  const getEmbedUrl = (url: string) => {
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      const videoId = url.includes('v=') ? url.split('v=')[1].split('&')[0] : url.split('/').pop();
+      return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&loop=1&playlist=${videoId}`;
+    }
+    return url;
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
-        <Loader2 size={48} className="animate-spin text-blue-600 mb-4" />
-        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Carregando Catálogo...</p>
+      <div className="h-screen bg-black flex flex-col items-center justify-center">
+        <Loader2 size={48} className="animate-spin text-white mb-4" />
       </div>
     );
   }
 
-  if (!settings) {
+  if (!settings || products.length === 0) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-        <Package size={64} className="text-slate-300 mb-6" />
-        <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-2">Loja não encontrada</h1>
-        <p className="text-slate-500 font-medium">Verifique o link e tente novamente.</p>
-      </div>
-    );
-  }
-
-  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
-
-  if (selectedProduct) {
-    const allPhotos = [selectedProduct.photo, ...(selectedProduct.additionalPhotos || [])].filter(Boolean) as string[];
-    const currentPrice = selectedProduct.isPromotion && selectedProduct.promotionalPrice ? selectedProduct.promotionalPrice : selectedProduct.salePrice;
-
-    return (
-      <div className="min-h-screen bg-slate-50 font-sans pb-24">
-        <header className="bg-white sticky top-0 z-50 border-b border-slate-100 px-4 py-4 flex items-center gap-4 shadow-sm">
-          <button onClick={() => { setSelectedProduct(null); setActivePhotoIndex(0); }} className="p-2 bg-slate-50 rounded-full text-slate-600 active:scale-90 transition-all">
-            <ArrowLeft size={24} />
-          </button>
-          <h1 className="text-lg font-black text-slate-800 uppercase tracking-tight truncate flex-1">{selectedProduct.name}</h1>
-        </header>
-
-        <main className="max-w-2xl mx-auto p-4 space-y-6">
-          <div className="bg-white rounded-[2rem] overflow-hidden border border-slate-100 shadow-sm">
-            <div className="aspect-square bg-slate-50 relative flex items-center justify-center">
-              {allPhotos.length > 0 ? (
-                <img src={allPhotos[activePhotoIndex]} className="w-full h-full object-contain" />
-              ) : (
-                <ImageIcon size={64} className="text-slate-200" />
-              )}
-              {selectedProduct.isPromotion && (
-                <div className="absolute top-4 right-4 bg-red-500 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-1">
-                  <Tag size={12} /> Promoção
-                </div>
-              )}
-            </div>
-            {allPhotos.length > 1 && (
-              <div className="flex gap-2 p-4 overflow-x-auto snap-x">
-                {allPhotos.map((photo, idx) => (
-                  <button 
-                    key={idx} 
-                    onClick={() => setActivePhotoIndex(idx)}
-                    className={`w-16 h-16 shrink-0 rounded-xl border-2 overflow-hidden snap-center transition-all ${activePhotoIndex === idx ? 'border-blue-600 opacity-100' : 'border-transparent opacity-50 hover:opacity-100'}`}
-                  >
-                    <img src={photo} className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-[2rem] p-6 border border-slate-100 shadow-sm space-y-4">
-            <div>
-              <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">{selectedProduct.name}</h2>
-              <div className="flex items-baseline gap-3">
-                <span className="text-3xl font-black text-blue-600">R$ {currentPrice.toFixed(2).replace('.', ',')}</span>
-                {selectedProduct.isPromotion && selectedProduct.promotionalPrice && (
-                  <span className="text-sm font-bold text-slate-400 line-through">R$ {selectedProduct.salePrice.toFixed(2).replace('.', ',')}</span>
-                )}
-              </div>
-            </div>
-
-            {selectedProduct.description && (
-              <div className="pt-4 border-t border-slate-100">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Descrição</h3>
-                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{selectedProduct.description}</p>
-              </div>
-            )}
-          </div>
-        </main>
-
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-50">
-          <div className="max-w-2xl mx-auto">
-            <button 
-              onClick={() => handleWhatsAppClick(selectedProduct)}
-              className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-3"
-            >
-              <MessageCircle size={20} />
-              Comprar pelo WhatsApp
-            </button>
-          </div>
-        </div>
+      <div className="h-screen bg-black flex flex-col items-center justify-center p-6 text-center text-white">
+        <ShoppingBag size={64} className="text-zinc-700 mb-6" />
+        <h1 className="text-xl font-bold mb-2">Nenhum produto encontrado</h1>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-10">
-      <header className="bg-white sticky top-0 z-40 border-b border-slate-100 shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 py-4 sm:py-6 flex flex-col gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 sm:w-16 sm:h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shrink-0 overflow-hidden">
-              {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <ShoppingBag size={24} />}
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-slate-800 uppercase tracking-tighter leading-none mb-1">{settings.storeName}</h1>
-              <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">Catálogo Oficial</p>
-            </div>
-          </div>
-          <div className="relative">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Buscar produtos..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 sm:py-4 bg-slate-100 border-none rounded-2xl outline-none text-sm font-bold text-slate-700 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 transition-all"
-            />
-          </div>
+    <div className="h-screen w-full bg-black text-white overflow-hidden relative font-sans">
+      {/* Top Bar */}
+      <div className="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent">
+        <div className="flex items-center gap-2">
+           <div className="w-8 h-8 rounded-full border border-white/20 overflow-hidden">
+             {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-zinc-800" />}
+           </div>
+           <span className="font-bold text-sm shadow-black drop-shadow-md">{settings.storeName}</span>
         </div>
-      </header>
+        <button onClick={handleShare} className="p-2 bg-black/20 backdrop-blur-md rounded-full">
+          <Share2 size={20} />
+        </button>
+      </div>
 
-      <main className="max-w-5xl mx-auto p-4 sm:p-6">
-        {filteredProducts.length === 0 ? (
-          <div className="text-center py-20">
-            <Package size={48} className="mx-auto text-slate-300 mb-4" />
-            <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-2">Nenhum produto encontrado</h2>
-            <p className="text-slate-500 text-sm font-medium">Tente buscar por outro termo.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-6">
-            {filteredProducts.map(product => {
-              const currentPrice = product.isPromotion && product.promotionalPrice ? product.promotionalPrice : product.salePrice;
-              return (
-                <div 
-                  key={product.id} 
-                  onClick={() => setSelectedProduct(product)}
-                  className="bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col"
-                >
-                  <div className="aspect-square bg-slate-50 relative flex items-center justify-center overflow-hidden">
-                    {product.photo ? (
-                      <img src={product.photo} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    ) : (
-                      <ImageIcon size={32} className="text-slate-200" />
-                    )}
-                    {product.isPromotion && (
-                      <div className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest shadow-lg flex items-center gap-1">
-                        <Tag size={10} /> Promo
-                      </div>
-                    )}
+      {/* Feed Container */}
+      <div 
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="h-full w-full overflow-y-scroll snap-y snap-mandatory scroll-smooth hide-scrollbar"
+      >
+        {products.map((product, index) => {
+          const currentPrice = product.isPromotion && product.promotionalPrice ? product.promotionalPrice : product.salePrice;
+          const isActive = index === activeProductIndex;
+          const hasVideo = !!product.videoUrl;
+
+          return (
+            <div key={product.id} className="h-full w-full snap-start relative flex items-center justify-center bg-zinc-900">
+              {/* Media Layer */}
+              <div className="absolute inset-0 z-0">
+                {hasVideo && isActive ? (
+                  <iframe 
+                    src={getEmbedUrl(product.videoUrl!)} 
+                    className="w-full h-full object-cover pointer-events-none scale-[1.35]" // Scale to fill better
+                    allow="autoplay; encrypted-media"
+                  />
+                ) : product.photo ? (
+                  <img src={product.photo} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-zinc-800">
+                    <ImageIcon size={64} className="text-zinc-600" />
                   </div>
-                  <div className="p-3 sm:p-4 flex flex-col flex-1">
-                    <h3 className="font-black text-slate-800 text-xs sm:text-sm leading-tight mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">{product.name}</h3>
-                    <div className="mt-auto">
-                      {product.isPromotion && product.promotionalPrice && (
-                        <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 line-through mb-0.5">R$ {product.salePrice.toFixed(2).replace('.', ',')}</p>
-                      )}
-                      <p className="font-black text-blue-600 text-sm sm:text-base">R$ {currentPrice.toFixed(2).replace('.', ',')}</p>
-                    </div>
-                  </div>
+                )}
+                {/* Dark Gradient Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/90" />
+              </div>
+
+              {/* Right Sidebar Actions */}
+              <div className="absolute right-4 bottom-24 z-20 flex flex-col gap-6 items-center">
+                <div className="flex flex-col items-center gap-1">
+                  <button className="w-12 h-12 bg-zinc-800/50 backdrop-blur-md rounded-full flex items-center justify-center active:scale-90 transition-all">
+                    <Heart size={24} className="text-white" />
+                  </button>
+                  <span className="text-xs font-medium">Curtir</span>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
+                
+                <div className="flex flex-col items-center gap-1">
+                  <button className="w-12 h-12 bg-zinc-800/50 backdrop-blur-md rounded-full flex items-center justify-center active:scale-90 transition-all">
+                    <MessageCircle size={24} className="text-white" />
+                  </button>
+                  <span className="text-xs font-medium">Dúvidas</span>
+                </div>
+
+                <div className="flex flex-col items-center gap-1">
+                  <button onClick={() => setIsMuted(!isMuted)} className="w-12 h-12 bg-zinc-800/50 backdrop-blur-md rounded-full flex items-center justify-center active:scale-90 transition-all">
+                    {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
+                  </button>
+                  <span className="text-xs font-medium">{isMuted ? 'Som' : 'Mudo'}</span>
+                </div>
+              </div>
+
+              {/* Bottom Info Layer */}
+              <div className="absolute bottom-0 left-0 right-0 p-6 pb-24 z-20 flex flex-col gap-3">
+                <div className="flex items-start gap-3">
+                   <div className="flex-1">
+                      <h2 className="text-2xl font-bold leading-tight shadow-black drop-shadow-md mb-1">{product.name}</h2>
+                      <div className="flex items-center gap-3">
+                        <span className="text-3xl font-black text-emerald-400 drop-shadow-md">R$ {currentPrice.toFixed(2).replace('.', ',')}</span>
+                        {product.isPromotion && product.promotionalPrice && (
+                          <span className="text-sm text-white/60 line-through decoration-white/60">R$ {product.salePrice.toFixed(2).replace('.', ',')}</span>
+                        )}
+                      </div>
+                   </div>
+                </div>
+
+                <p className="text-sm text-white/80 line-clamp-2 leading-relaxed max-w-[80%]">
+                  {product.description || 'Toque para ver mais detalhes...'}
+                </p>
+
+                <button 
+                  onClick={() => handleWhatsAppClick(product)}
+                  className="mt-2 w-full py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black uppercase text-sm tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <ShoppingBag size={18} />
+                  Comprar Agora
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Bottom Navigation */}
+      <div className="absolute bottom-0 left-0 right-0 bg-black border-t border-zinc-800 py-3 px-6 flex justify-between items-center z-30">
+        <button className="flex flex-col items-center gap-1 text-white">
+          <Home size={24} />
+          <span className="text-[10px] font-medium">Início</span>
+        </button>
+        <button className="flex flex-col items-center gap-1 text-zinc-500">
+          <Search size={24} />
+          <span className="text-[10px] font-medium">Busca</span>
+        </button>
+        <div className="w-12 h-8 bg-gradient-to-r from-blue-500 to-red-500 rounded-lg flex items-center justify-center">
+           <Plus size={20} className="text-white" />
+        </div>
+        <button className="flex flex-col items-center gap-1 text-zinc-500">
+          <MessageCircle size={24} />
+          <span className="text-[10px] font-medium">Chat</span>
+        </button>
+        <button className="flex flex-col items-center gap-1 text-zinc-500">
+          <User size={24} />
+          <span className="text-[10px] font-medium">Perfil</span>
+        </button>
+      </div>
     </div>
   );
 };

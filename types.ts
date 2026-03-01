@@ -74,6 +74,7 @@ export interface Product {
   additionalPhotos?: string[];
   promotionalPrice?: number;
   isPromotion?: boolean;
+  videoUrl?: string;
 }
 
 export interface Sale {

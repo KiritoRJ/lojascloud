@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Plus, Image as ImageIcon, Trash2, Save, Loader2, ExternalLink, Tag, Package, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Plus, Image as ImageIcon, Trash2, Save, Loader2, ExternalLink, Tag, Package, Settings, ChevronDown, ChevronUp, Video } from 'lucide-react';
 import { Product, AppSettings } from '../types';
 import { OnlineDB } from '../utils/api';
 
@@ -151,6 +151,19 @@ const CatalogManager: React.FC<CatalogManagerProps> = ({ products, setProducts, 
               Destacar como Promoção no Catálogo
             </span>
           </label>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-2">
+              <Video size={12} /> Link do Vídeo (YouTube/TikTok)
+            </label>
+            <input 
+              type="text" 
+              value={editingProduct.videoUrl || ''} 
+              onChange={e => setEditingProduct({...editingProduct, videoUrl: e.target.value})}
+              className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-3xl outline-none text-sm font-medium text-slate-600 placeholder:text-slate-300"
+              placeholder="https://..."
+            />
+          </div>
 
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Descrição do Produto</label>

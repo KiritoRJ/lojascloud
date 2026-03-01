@@ -9,6 +9,7 @@ import FinanceTab from './components/FinanceTab';
 import SettingsTab from './components/SettingsTab';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import SubscriptionView from './components/SubscriptionView';
+import CustomerCatalog from './components/CustomerCatalog';
 import { OnlineDB } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { db } from './utils/localDb';
@@ -80,6 +81,16 @@ const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  const pathname = window.location.pathname;
+  let catalogTenantId = new URLSearchParams(window.location.search).get('catalog');
+  let catalogSlug = null;
+  
+  if (pathname.startsWith('/catalogo/')) {
+    catalogTenantId = pathname.split('/catalogo/')[1].replace(/\/$/, '');
+  } else if (pathname.length > 1 && !pathname.startsWith('/api/') && !pathname.startsWith('/auth/')) {
+    catalogSlug = pathname.substring(1).replace(/\/$/, '');
+  }
 
   useEffect(() => {
     let deviceId = localStorage.getItem('device_id');
@@ -502,6 +513,10 @@ const App: React.FC = () => {
     }
   };
 
+  if (catalogTenantId || catalogSlug) {
+    return <CustomerCatalog tenantId={catalogTenantId} catalogSlug={catalogSlug} />;
+  }
+
   if (isInitializing) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4">
@@ -756,7 +771,7 @@ const App: React.FC = () => {
           {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} onUpdateSettings={saveSettings} maxProducts={session.maxProducts} />}
           {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-          {activeTab === 'config' && <SettingsTab settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} lastPlanType={session.lastPlanType} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} onLogout={() => setIsLogoutModalOpen(true)} />}
+          {activeTab === 'config' && <SettingsTab products={products} setProducts={saveProducts} settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} lastPlanType={session.lastPlanType} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} onLogout={() => setIsLogoutModalOpen(true)} />}
         </div>
       </main>
 

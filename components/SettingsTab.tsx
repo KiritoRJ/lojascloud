@@ -5,8 +5,11 @@ import { AppSettings, User, ServiceOrder, Product, Sale, Transaction } from '../
 import { OnlineDB } from '../utils/api';
 import { OfflineSync } from '../utils/offlineSync';
 import { db } from '../utils/localDb';
+import CatalogManager from './CatalogManager';
 
 interface Props {
+  products: Product[];
+  setProducts: (products: Product[]) => void;
   settings: AppSettings;
   setSettings: (settings: AppSettings) => void;
   isCloudConnected?: boolean;
@@ -33,9 +36,8 @@ interface Props {
   onLogout?: () => void;
 }
 
-const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, lastPlanType, enabledFeatures, maxUsers, maxOS, maxProducts, onLogout }) => {
+const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, lastPlanType, enabledFeatures, maxUsers, maxOS, maxProducts, onLogout }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
-  
   const getPlanName = () => {
     if (subscriptionStatus === 'trial') return 'Período de Teste';
     switch (lastPlanType) {
@@ -46,7 +48,7 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
     }
   };
 
-  const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup'>('main');
+  const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup' | 'catalog'>('main');
   const [showMenu, setShowMenu] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -831,6 +833,19 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
       </div>
     );
   }
+  if (view === 'catalog' && isAdmin) {
+    return (
+      <CatalogManager 
+        products={products} 
+        setProducts={setProducts} 
+        settings={settings} 
+        setSettings={setSettings}
+        tenantId={tenantId || ''} 
+        onBack={() => setView('main')} 
+      />
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 relative pb-24">
       {saveMessage && (
@@ -859,6 +874,9 @@ const SettingsTab: React.FC<Props> = ({ settings, setSettings, isCloudConnected 
                     </button>
                     <button onClick={() => { setView('print'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'print' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
                       <FileText size={16} /> Dados do Recibo
+                    </button>
+                    <button onClick={() => { setView('catalog'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'catalog' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                      <Briefcase size={16} /> Catálogo Online
                     </button>
                     {enabledFeatures?.xmlExportImport !== false && (
                       <button onClick={() => { setView('backup'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'backup' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>

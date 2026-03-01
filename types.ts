@@ -70,6 +70,10 @@ export interface Product {
   costPrice: number;
   salePrice: number;
   quantity: number;
+  description?: string;
+  additionalPhotos?: string[];
+  promotionalPrice?: number;
+  isPromotion?: boolean;
 }
 
 export interface Sale {
@@ -139,4 +143,5 @@ export interface AppSettings {
   stockLayout?: 'small' | 'medium' | 'list';
   salesLayout?: 'small' | 'medium' | 'list';
   osLayout?: 'small' | 'medium' | 'large';
+  catalogSlug?: string;
 }

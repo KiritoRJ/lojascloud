@@ -526,6 +526,54 @@ export class OnlineDB {
     }
   }
 
+  // Busca catálogo público (apenas produtos em estoque e configurações da loja)
+  static async getTenantIdBySlug(slug: string) {
+    try {
+      const { data, error } = await supabase
+        .from('cloud_data')
+        .select('tenant_id')
+        .eq('store_key', 'settings')
+        .eq('data_json->>catalogSlug', slug)
+        .maybeSingle();
+        
+      if (error) throw error;
+      return data?.tenant_id || null;
+    } catch (e) {
+      console.error("Erro ao buscar loja pelo link:", e);
+      return null;
+    }
+  }
+
+  static async getPublicCatalog(tenantId: string) {
+    try {
+      const [productsData, settingsData] = await Promise.all([
+        supabase.from('products').select('*').eq('tenant_id', tenantId).gt('quantity', 0).order('id', { ascending: false }),
+        supabase.from('cloud_data').select('data_json').eq('tenant_id', tenantId).eq('store_key', 'settings').maybeSingle()
+      ]);
+
+      const products = (productsData.data || []).map(d => ({
+        id: d.id,
+        name: d.name,
+        barcode: d.barcode,
+        photo: d.photo,
+        costPrice: Number(d.cost_price || 0),
+        salePrice: Number(d.sale_price || 0),
+        quantity: Number(d.quantity || 0),
+        description: d.description,
+        additionalPhotos: d.additional_photos || [],
+        promotionalPrice: Number(d.promotional_price || 0),
+        isPromotion: d.is_promotion || false
+      }));
+
+      const settings = settingsData.data?.data_json || null;
+
+      return { products, settings };
+    } catch (e) {
+      console.error("Erro ao buscar catálogo público:", e);
+      return null;
+    }
+  }
+
   // Busca produtos em estoque
   static async fetchProducts(tenantId: string) {
     if (!tenantId) return [];
@@ -545,7 +593,11 @@ export class OnlineDB {
         photo: d.photo,
         costPrice: Number(d.cost_price || 0),
         salePrice: Number(d.sale_price || 0),
-        quantity: Number(d.quantity || 0)
+        quantity: Number(d.quantity || 0),
+        description: d.description,
+        additionalPhotos: d.additional_photos || [],
+        promotionalPrice: Number(d.promotional_price || 0),
+        isPromotion: d.is_promotion || false
       }));
     } catch (e) { 
       console.error("Erro ao buscar produtos do Supabase:", e);
@@ -661,7 +713,11 @@ export class OnlineDB {
         photo: p.photo,
         cost_price: p.costPrice,
         sale_price: p.salePrice,
-        quantity: p.quantity
+        quantity: p.quantity,
+        description: p.description,
+        additional_photos: p.additionalPhotos || [],
+        promotional_price: p.promotionalPrice || 0,
+        is_promotion: p.isPromotion || false
       }));
       const { error } = await supabase.from('products').upsert(payload, { onConflict: 'id' });
       if (error) throw error;

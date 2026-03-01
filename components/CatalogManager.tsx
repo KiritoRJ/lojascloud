@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Plus, Image as ImageIcon, Trash2, Save, Loader2, ExternalLink, Tag, Package } from 'lucide-react';
+import { ArrowLeft, Plus, Image as ImageIcon, Trash2, Save, Loader2, ExternalLink, Tag, Package, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { Product, AppSettings } from '../types';
 import { OnlineDB } from '../utils/api';
 
@@ -17,6 +17,7 @@ const CatalogManager: React.FC<CatalogManagerProps> = ({ products, setProducts, 
   const [isSaving, setIsSaving] = useState(false);
   const [slugInput, setSlugInput] = useState(settings.catalogSlug || '');
   const [isSavingSlug, setIsSavingSlug] = useState(false);
+  const [showSlugConfig, setShowSlugConfig] = useState(false);
 
   const handleSaveSlug = async () => {
     const formattedSlug = slugInput.toLowerCase().replace(/[^a-z0-9-]/g, '');
@@ -205,43 +206,60 @@ const CatalogManager: React.FC<CatalogManagerProps> = ({ products, setProducts, 
         </a>
       </div>
 
-      <div className="bg-blue-50 border border-blue-100 rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex-1 w-full">
-          <h3 className="font-black text-blue-800 uppercase text-sm mb-1">Link do seu Catálogo</h3>
-          <p className="text-blue-600/80 text-xs font-medium mb-4">Personalize o link para compartilhar com seus clientes.</p>
-          
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full">
-            <div className="flex-1 flex items-center bg-white border border-blue-200 rounded-xl overflow-hidden focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
-              <span className="pl-4 pr-1 py-3 text-xs font-mono text-slate-400 bg-slate-50 border-r border-blue-100 shrink-0 max-w-[120px] sm:max-w-[200px] truncate">
-                {window.location.host}/
-              </span>
-              <input 
-                type="text" 
-                value={slugInput}
-                onChange={(e) => setSlugInput(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                placeholder="nomedaloja"
-                className="w-full px-3 py-3 text-xs font-mono text-slate-700 outline-none min-w-0" 
-              />
-            </div>
-            <button 
-              onClick={handleSaveSlug} 
-              disabled={isSavingSlug || slugInput === settings.catalogSlug}
-              className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shrink-0 hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isSavingSlug ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              Salvar Link
-            </button>
-          </div>
-        </div>
-      </div>
+      <div className="bg-slate-50 rounded-3xl p-1 mb-6">
+        <button 
+          onClick={() => setShowSlugConfig(!showSlugConfig)}
+          className="w-full py-3 px-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between text-slate-600 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 transition-all"
+        >
+          <span className="flex items-center gap-2">
+            <Settings size={14} />
+            Configurar Link Personalizado
+          </span>
+          {showSlugConfig ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
 
-      <div className="bg-slate-50 border border-slate-100 rounded-3xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-2 w-full">
-          <input type="text" readOnly value={catalogUrl} className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-mono text-slate-600 w-full outline-none" />
-          <button onClick={() => { navigator.clipboard.writeText(catalogUrl); alert('Link copiado!'); }} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shrink-0 hover:bg-slate-900 transition-colors">
-            Copiar
-          </button>
-        </div>
+        {showSlugConfig && (
+          <div className="pt-4 px-2 pb-2 space-y-4 animate-in slide-in-from-top-2 fade-in duration-300">
+            <div className="bg-blue-50 border border-blue-100 rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex-1 w-full">
+                <h3 className="font-black text-blue-800 uppercase text-sm mb-1">Link do seu Catálogo</h3>
+                <p className="text-blue-600/80 text-xs font-medium mb-4">Personalize o link para compartilhar com seus clientes.</p>
+                
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full">
+                  <div className="flex-1 flex items-center bg-white border border-blue-200 rounded-xl overflow-hidden focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+                    <span className="pl-4 pr-1 py-3 text-xs font-mono text-slate-400 bg-slate-50 border-r border-blue-100 shrink-0 max-w-[120px] sm:max-w-[200px] truncate">
+                      {window.location.host}/
+                    </span>
+                    <input 
+                      type="text" 
+                      value={slugInput}
+                      onChange={(e) => setSlugInput(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                      placeholder="nomedaloja"
+                      className="w-full px-3 py-3 text-xs font-mono text-slate-700 outline-none min-w-0" 
+                    />
+                  </div>
+                  <button 
+                    onClick={handleSaveSlug} 
+                    disabled={isSavingSlug || slugInput === settings.catalogSlug}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shrink-0 hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isSavingSlug ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                    Salvar Link
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-3xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2 w-full">
+                <input type="text" readOnly value={catalogUrl} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-mono text-slate-600 w-full outline-none" />
+                <button onClick={() => { navigator.clipboard.writeText(catalogUrl); alert('Link copiado!'); }} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shrink-0 hover:bg-slate-900 transition-colors">
+                  Copiar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">

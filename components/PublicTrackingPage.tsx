@@ -285,16 +285,21 @@ const PublicTrackingPage: React.FC<Props> = ({ token }) => {
         }
       });
 
-    // Fallback de polling contínuo a cada 3.5 segundos enquanto a aba estiver visível
+    // Fallback de segurança apenas se o canal Realtime não estiver conectado (ou a cada 60s em segundo plano)
+    // O Supabase Realtime (WebSocket acima) já atualiza a tela na hora com consumo mínimo de dados.
     const pollInterval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchTracking(false, true);
       }
-    }, 3500);
+    }, 60000); // 60 segundos (ao invés de 3.5s)
 
-    // Atualiza imediatamente quando a janela/aba ganhar foco
+    // Atualiza apenas quando a janela/aba ganhar foco se tiver passado mais de 30s
+    let lastFocusFetch = Date.now();
     const handleFocus = () => {
-      fetchTracking(false, true);
+      if (Date.now() - lastFocusFetch > 30000) {
+        lastFocusFetch = Date.now();
+        fetchTracking(false, true);
+      }
     };
 
     window.addEventListener('focus', handleFocus);

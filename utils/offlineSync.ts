@@ -314,6 +314,95 @@ export class OfflineSync {
     });
   }
 
+  static async pullOrders(tenantId: string): Promise<ServiceOrder[] | null> {
+    if (!navigator.onLine || !tenantId) return null;
+    try {
+      const cloudOrders = await OnlineDB.fetchOrders(tenantId);
+      if (Array.isArray(cloudOrders)) {
+        await db.orders.where('tenantId').equals(tenantId).delete();
+        await db.orders.bulkPut(cloudOrders.map((o: any) => ({ ...o, tenantId })));
+        return cloudOrders;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static async pullProducts(tenantId: string): Promise<Product[] | null> {
+    if (!navigator.onLine || !tenantId) return null;
+    try {
+      const cloudProducts = await OnlineDB.fetchProducts(tenantId);
+      if (Array.isArray(cloudProducts)) {
+        await db.products.where('tenantId').equals(tenantId).delete();
+        await db.products.bulkPut(cloudProducts.map((p: any) => ({ ...p, tenantId })));
+        return cloudProducts;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static async pullSales(tenantId: string): Promise<Sale[] | null> {
+    if (!navigator.onLine || !tenantId) return null;
+    try {
+      const cloudSales = await OnlineDB.fetchSales(tenantId);
+      if (Array.isArray(cloudSales)) {
+        await db.sales.where('tenantId').equals(tenantId).delete();
+        await db.sales.bulkPut(cloudSales.map((s: any) => ({ ...s, tenantId })));
+        return cloudSales;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static async pullTransactions(tenantId: string): Promise<Transaction[] | null> {
+    if (!navigator.onLine || !tenantId) return null;
+    try {
+      const cloudTransactions = await OnlineDB.fetchTransactions(tenantId);
+      if (Array.isArray(cloudTransactions)) {
+        await db.transactions.where('tenantId').equals(tenantId).delete();
+        await db.transactions.bulkPut(cloudTransactions.map((t: any) => ({ ...t, tenantId })));
+        return cloudTransactions;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static async pullCustomers(tenantId: string): Promise<Customer[] | null> {
+    if (!navigator.onLine || !tenantId) return null;
+    try {
+      const cloudCustomers = await OnlineDB.fetchCustomers(tenantId);
+      if (Array.isArray(cloudCustomers)) {
+        await db.customers.where('tenantId').equals(tenantId).delete();
+        await db.customers.bulkPut(cloudCustomers.map((c: any) => ({ ...c, tenantId })));
+        return cloudCustomers;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static async pullSettings(tenantId: string): Promise<AppSettings | null> {
+    if (!navigator.onLine || !tenantId) return null;
+    try {
+      const cloudSettings = await OnlineDB.syncPull(tenantId, 'settings');
+      if (cloudSettings) {
+        await db.settings.put({ ...cloudSettings, tenantId });
+        return cloudSettings;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   static async pullAllData(tenantId: string) {
     if (!navigator.onLine) return null;
 

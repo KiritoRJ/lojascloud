@@ -63,13 +63,14 @@ export class ConnectionStatusManager {
     window.addEventListener('online', handleNetworkChange);
     window.addEventListener('offline', handleNetworkChange);
 
-    // Checagem periódica a cada 12 segundos quando a aba estiver visível
+    // Checagem periódica a cada 3 minutos quando a aba estiver visível (evita desperdício de requisições)
+    // O sistema já escuta os eventos nativos de online/offline do navegador e os erros reais das requisições
     if (!this.checkInterval) {
       this.checkInterval = setInterval(() => {
         if (document.visibilityState === 'visible' && navigator.onLine) {
           this.checkNow(true); // background silent check
         }
-      }, 12000);
+      }, 180000); // 3 minutos (ao invés de 12 segundos)
     }
 
     // Checagem inicial

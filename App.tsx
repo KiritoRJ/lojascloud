@@ -411,44 +411,69 @@ const App: React.FC = () => {
 
     const tenantId = session.tenantId;
     let timeout: any;
+    const tableDebounceTimers: Record<string, any> = {};
 
-    const debouncedLoad = (delay = 200) => {
+    const debouncedLoad = (delay = 300) => {
       clearTimeout(timeout);
       timeout = setTimeout(() => loadData(tenantId), delay);
     };
+
+    const debounceTableSync = (table: string, syncFn: () => Promise<void>, delay = 400) => {
+      if (tableDebounceTimers[table]) {
+        clearTimeout(tableDebounceTimers[table]);
+      }
+      tableDebounceTimers[table] = setTimeout(() => {
+        syncFn();
+      }, delay);
+    };
     
-    // 1. Supabase Postgres Real-time Channel
+    // 1. Supabase Postgres Real-time Channel (atualizações granulares por tabela - consumo mínimo de Egress)
     const channel = supabase
       .channel(`tenant-${tenantId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'service_orders', filter: `tenant_id=eq.${tenantId}` },
-        () => debouncedLoad(100)
+        () => debounceTableSync('orders', async () => {
+          const res = await OfflineSync.pullOrders(tenantId);
+          if (res) setOrders(res);
+        }, 300)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'customers', filter: `tenant_id=eq.${tenantId}` },
-        () => debouncedLoad(200)
+        () => debounceTableSync('customers', async () => {
+          const res = await OfflineSync.pullCustomers(tenantId);
+          if (res) setCustomers(res);
+        }, 400)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sales', filter: `tenant_id=eq.${tenantId}` },
-        () => debouncedLoad(200)
+        () => debounceTableSync('sales', async () => {
+          const res = await OfflineSync.pullSales(tenantId);
+          if (res) setSales(res);
+        }, 400)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'products', filter: `tenant_id=eq.${tenantId}` },
-        () => debouncedLoad(200)
+        () => debounceTableSync('products', async () => {
+          const res = await OfflineSync.pullProducts(tenantId);
+          if (res) setProducts(res);
+        }, 400)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'transactions', filter: `tenant_id=eq.${tenantId}` },
-        () => debouncedLoad(200)
+        () => debounceTableSync('transactions', async () => {
+          const res = await OfflineSync.pullTransactions(tenantId);
+          if (res) setTransactions(res);
+        }, 400)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tenants', filter: `id=eq.${tenantId}` },
-        () => debouncedLoad(200)
+        () => debouncedLoad(500)
       )
       .subscribe();
 
@@ -468,21 +493,42 @@ const App: React.FC = () => {
             }
             return o;
           }));
-          debouncedLoad(300);
+          debounceTableSync('orders', async () => {
+            const res = await OfflineSync.pullOrders(tenantId);
+            if (res) setOrders(res);
+          }, 300);
         }
       };
     }
 
-    // 3. Polling de segurança em tempo real a cada 8 segundos quando a aba estiver ativa
+    // 3. Sincronização de segurança em segundo plano:
+    // O Supabase Realtime (WebSocket acima) já entrega todas as alterações instantaneamente com quase zero Egress.
+    // Intervalo de segurança estendido para 10 minutos (ao invés de 8 segundos) para evitar estourar a cota de Egress.
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
         debouncedLoad(0);
       }
-    }, 8000);
+    }, 10 * 60 * 1000); // 10 minutos
+
+    // Sincroniza ao voltar para a aba apenas se tiver passado mais de 5 minutos desde a última sincronização
+    let lastActiveSync = Date.now();
+    const handleFocusSync = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        if (Date.now() - lastActiveSync > 5 * 60 * 1000) {
+          lastActiveSync = Date.now();
+          debouncedLoad(0);
+        }
+      }
+    };
+    window.addEventListener('focus', handleFocusSync);
+    document.addEventListener('visibilitychange', handleFocusSync);
 
     return () => {
       clearTimeout(timeout);
+      Object.values(tableDebounceTimers).forEach(t => clearTimeout(t));
       clearInterval(interval);
+      window.removeEventListener('focus', handleFocusSync);
+      document.removeEventListener('visibilitychange', handleFocusSync);
       if (bc) bc.close();
       supabase.removeChannel(channel);
     };

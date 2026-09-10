@@ -90,8 +90,9 @@ export const DiagnosticReportModal: React.FC<DiagnosticReportModalProps> = ({
     };
     window.addEventListener('storage', handleStorage);
 
-    // 3. Polling em tempo real contra o servidor a cada 2 segundos (para aparelhos externos)
+    // 3. Polling em tempo real contra o servidor a cada 5 segundos (para aparelhos externos)
     const fetchLiveDiagnostics = async () => {
+      if (document.visibilityState !== 'visible') return;
       try {
         setIsLiveSyncing(true);
         const resp = await fetch(`/api/device-test/${encodeURIComponent(targetToken)}`);
@@ -106,7 +107,7 @@ export const DiagnosticReportModal: React.FC<DiagnosticReportModalProps> = ({
       }
     };
 
-    const interval = setInterval(fetchLiveDiagnostics, 2000);
+    const interval = setInterval(fetchLiveDiagnostics, 5000);
 
     return () => {
       if (bc) bc.close();

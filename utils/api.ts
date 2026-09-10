@@ -542,6 +542,141 @@ export class OnlineDB {
     } catch (e) { return { success: false }; }
   }
 
+  // --- MAPEADORES DE LINHAS SQL PARA ENTIDADES DO APP (ZERO EGRESS SYNC) ---
+  static mapOrderFromRow(d: any) {
+    if (!d) return null;
+    let diagnosticTests: any = undefined;
+    let cleanChecklist: string[] = [];
+    if (Array.isArray(d.checklist)) {
+      for (const item of d.checklist) {
+        if (typeof item === 'string' && item.startsWith('__DIAG_JSON__:')) {
+          try {
+            diagnosticTests = JSON.parse(item.substring(14));
+          } catch (e) {}
+        } else {
+          cleanChecklist.push(item);
+        }
+      }
+    }
+
+    return {
+      id: d.id,
+      customerName: d.customer_name,
+      phoneNumber: d.phone_number,
+      address: d.address,
+      deviceBrand: d.device_brand,
+      deviceModel: d.device_model,
+      defect: d.defect,
+      repairDetails: d.repair_details || '', 
+      partsCost: Number(d.parts_cost || 0),
+      serviceCost: Number(d.service_cost || 0),
+      total: Number(d.total || 0),
+      status: d.status,
+      photos: d.photos || [],
+      finishedPhotos: d.finished_photos || [], 
+      date: d.created_at,
+      entryDate: d.entry_date || '',
+      exitDate: d.exit_date || '',
+      isDeleted: d.is_deleted || false,
+      signature: d.signature || '',
+      checklist: cleanChecklist,
+      diagnosticTests: diagnosticTests,
+      partSupplierId: d.part_supplier_id || '',
+      partSupplierWarranty: d.part_supplier_warranty || '',
+      customerId: d.customer_id || '',
+      trackingToken: d.tracking_token || '',
+      publicNotes: d.public_notes || '',
+      isTrackingEnabled: d.is_tracking_enabled !== false
+    };
+  }
+
+  static mapProductFromRow(d: any) {
+    if (!d) return null;
+    let videoUrl = d.video_url || null;
+    let additionalPhotos = d.additional_photos || [];
+    
+    const videoEntryIndex = additionalPhotos.findIndex((p: string) => typeof p === 'string' && p.startsWith('VIDEO:'));
+    if (videoEntryIndex !== -1) {
+      videoUrl = additionalPhotos[videoEntryIndex].replace('VIDEO:', '');
+      additionalPhotos = additionalPhotos.filter((_: string, i: number) => i !== videoEntryIndex);
+    }
+
+    return {
+      id: d.id,
+      name: d.name,
+      category: d.description?.startsWith('[CAT:') ? d.description.split(']')[0].replace('[CAT:', '') : undefined,
+      barcode: d.barcode,
+      photo: d.photo,
+      costPrice: Number(d.cost_price || 0),
+      salePrice: Number(d.sale_price || 0),
+      quantity: Number(d.quantity || 0),
+      description: d.description?.startsWith('[CAT:') ? d.description.split(']').slice(1).join(']').trim() : d.description,
+      additionalPhotos: additionalPhotos,
+      promotionalPrice: Number(d.promotional_price || 0),
+      isPromotion: d.is_promotion || false,
+      videoUrl: videoUrl
+    };
+  }
+
+  static mapSaleFromRow(d: any) {
+    if (!d) return null;
+    return {
+      id: d.id,
+      productId: d.product_id,
+      productName: d.product_name?.startsWith('[CAT:') ? d.product_name.split(']').slice(1).join(']').trim() : d.product_name,
+      category: d.product_name?.startsWith('[CAT:') ? d.product_name.split(']')[0].replace('[CAT:', '') : undefined,
+      date: d.date,
+      quantity: d.quantity,
+      originalPrice: Number(d.original_price || 0),
+      discount: Number(d.discount || 0),
+      finalPrice: Number(d.final_price || 0),
+      costAtSale: Number(d.cost_at_sale || 0),
+      costPerUnitAtSale: Number(d.cost_per_unit_at_sale || (d.quantity > 0 ? (d.cost_at_sale || 0) / d.quantity : 0)),
+      salePricePerUnitAtSale: Number(d.sale_price_per_unit_at_sale || d.original_price || 0),
+      paymentMethod: d.payment_method,
+      sellerName: d.seller_name,
+      sellerId: d.seller_id,
+      transactionId: d.transaction_id,
+      isDeleted: d.is_deleted || false
+    };
+  }
+
+  static mapTransactionFromRow(d: any) {
+    if (!d) return null;
+    return {
+      id: d.id,
+      type: d.type,
+      description: d.description,
+      amount: Number(d.amount || 0),
+      date: d.date,
+      category: d.category,
+      paymentMethod: d.payment_method,
+      isDeleted: d.is_deleted || false,
+      status: d.status || 'paid',
+      dueDate: d.due_date,
+      installments: d.installments,
+      recurrence: d.recurrence
+    };
+  }
+
+  static mapCustomerFromRow(d: any) {
+    if (!d) return null;
+    return {
+      id: d.id,
+      tenantId: d.tenant_id,
+      name: d.name,
+      phoneNumber: d.phone_number || d.phone || '',
+      address: d.address || '',
+      document: d.document || d.cpf || '',
+      email: d.email || '',
+      notes: d.notes || '',
+      notesHistory: d.notes_history || [],
+      createdAt: d.created_at || new Date().toISOString(),
+      updatedAt: d.updated_at,
+      isDeleted: d.is_deleted || false
+    };
+  }
+
   // Busca as Ordens de Serviço e mapeia as novas colunas entry_date e exit_date
   static async fetchOrders(tenantId: string): Promise<any[] | null> {
     if (!tenantId) return [];
@@ -557,52 +692,7 @@ export class OnlineDB {
         return null;
       }
       
-      return (data || []).map(d => {
-        let diagnosticTests: any = undefined;
-        let cleanChecklist: string[] = [];
-        if (Array.isArray(d.checklist)) {
-          for (const item of d.checklist) {
-            if (typeof item === 'string' && item.startsWith('__DIAG_JSON__:')) {
-              try {
-                diagnosticTests = JSON.parse(item.substring(14));
-              } catch (e) {}
-            } else {
-              cleanChecklist.push(item);
-            }
-          }
-        }
-
-        return {
-          id: d.id,
-          customerName: d.customer_name,
-          phoneNumber: d.phone_number,
-          address: d.address,
-          deviceBrand: d.device_brand,
-          deviceModel: d.device_model,
-          defect: d.defect,
-          repairDetails: d.repair_details || '', 
-          partsCost: Number(d.parts_cost || 0),
-          serviceCost: Number(d.service_cost || 0),
-          total: Number(d.total || 0),
-          status: d.status,
-          photos: d.photos || [],
-          finishedPhotos: d.finished_photos || [], 
-          date: d.created_at,
-          // MAPEAMENTO DAS NOVAS DATAS DO SQL PARA O APP
-          entryDate: d.entry_date || '',
-          exitDate: d.exit_date || '',
-          isDeleted: d.is_deleted || false,
-          signature: d.signature || '',
-          checklist: cleanChecklist,
-          diagnosticTests: diagnosticTests,
-          partSupplierId: d.part_supplier_id || '',
-          partSupplierWarranty: d.part_supplier_warranty || '',
-          customerId: d.customer_id || '',
-          trackingToken: d.tracking_token || '',
-          publicNotes: d.public_notes || '',
-          isTrackingEnabled: d.is_tracking_enabled !== false
-        };
-      });
+      return (data || []).map(d => this.mapOrderFromRow(d)).filter(Boolean);
     } catch (e: any) { 
       logSupabaseNotice("Conexão ao buscar ordens", e);
       return null; 
@@ -688,32 +778,7 @@ export class OnlineDB {
         return null;
       }
       
-      return (data || []).map(d => {
-        let videoUrl = d.video_url || null;
-        let additionalPhotos = d.additional_photos || [];
-        
-        const videoEntryIndex = additionalPhotos.findIndex((p: string) => p.startsWith('VIDEO:'));
-        if (videoEntryIndex !== -1) {
-          videoUrl = additionalPhotos[videoEntryIndex].replace('VIDEO:', '');
-          additionalPhotos = additionalPhotos.filter((_: string, i: number) => i !== videoEntryIndex);
-        }
-
-        return {
-          id: d.id,
-          name: d.name,
-          category: d.description?.startsWith('[CAT:') ? d.description.split(']')[0].replace('[CAT:', '') : undefined,
-          barcode: d.barcode,
-          photo: d.photo,
-          costPrice: Number(d.cost_price || 0),
-          salePrice: Number(d.sale_price || 0),
-          quantity: Number(d.quantity || 0),
-          description: d.description?.startsWith('[CAT:') ? d.description.split(']').slice(1).join(']').trim() : d.description,
-          additionalPhotos: additionalPhotos,
-          promotionalPrice: Number(d.promotional_price || 0),
-          isPromotion: d.is_promotion || false,
-          videoUrl: videoUrl
-        };
-      });
+      return (data || []).map(d => this.mapProductFromRow(d)).filter(Boolean);
     } catch (e: any) { 
       logSupabaseNotice("Conexão ao buscar produtos", e);
       return null; 
@@ -735,25 +800,7 @@ export class OnlineDB {
         return null;
       }
       
-      return (data || []).map(d => ({
-        id: d.id,
-        productId: d.product_id,
-        productName: d.product_name?.startsWith('[CAT:') ? d.product_name.split(']').slice(1).join(']').trim() : d.product_name,
-        category: d.product_name?.startsWith('[CAT:') ? d.product_name.split(']')[0].replace('[CAT:', '') : undefined,
-        date: d.date,
-        quantity: d.quantity,
-        originalPrice: Number(d.original_price || 0),
-        discount: Number(d.discount || 0),
-        finalPrice: Number(d.final_price || 0),
-        costAtSale: Number(d.cost_at_sale || 0),
-        costPerUnitAtSale: Number(d.cost_per_unit_at_sale || (d.quantity > 0 ? (d.cost_at_sale || 0) / d.quantity : 0)),
-        salePricePerUnitAtSale: Number(d.sale_price_per_unit_at_sale || d.original_price || 0),
-        paymentMethod: d.payment_method,
-        sellerName: d.seller_name,
-        sellerId: d.seller_id,
-        transactionId: d.transaction_id,
-        isDeleted: d.is_deleted || false
-      }));
+      return (data || []).map(d => this.mapSaleFromRow(d)).filter(Boolean);
     } catch (e: any) {
       logSupabaseNotice("Conexão ao buscar vendas", e);
       return null;
@@ -775,20 +822,7 @@ export class OnlineDB {
         return null;
       }
       
-      return (data || []).map(d => ({
-        id: d.id,
-        type: d.type,
-        description: d.description,
-        amount: Number(d.amount || 0),
-        date: d.date,
-        category: d.category,
-        paymentMethod: d.payment_method,
-        isDeleted: d.is_deleted || false,
-        status: d.status || 'paid',
-        dueDate: d.due_date,
-        installments: d.installments,
-        recurrence: d.recurrence
-      }));
+      return (data || []).map(d => this.mapTransactionFromRow(d)).filter(Boolean);
     } catch (e: any) {
       logSupabaseNotice("Conexão ao buscar transações", e);
       return null;

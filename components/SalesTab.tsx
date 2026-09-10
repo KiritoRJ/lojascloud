@@ -312,7 +312,6 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     setAuthError(false);
 
     try {
-      const { OnlineDB } = await import('../utils/api');
       const authResult = await OnlineDB.verifyAdminPassword(tenantId, passwordInput);
       if (authResult.success) {
         if (authAction === 'cancel_sale' && selectedSaleToCancel) {

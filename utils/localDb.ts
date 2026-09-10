@@ -11,6 +11,18 @@ export interface SyncItem {
   timestamp: number;
 }
 
+export interface OfflineAuthCacheItem {
+  username: string;
+  passwordHash: string;
+  salt: string;
+  role: 'admin' | 'colaborador' | 'super';
+  tenantId: string;
+  tenantData: any;
+  user: User;
+  session: any;
+  lastLogin: number;
+}
+
 export class AssistenciaProDB extends Dexie {
   orders!: Table<ServiceOrder & { tenantId: string }, string>;
   products!: Table<Product & { tenantId: string }, string>;
@@ -20,6 +32,7 @@ export class AssistenciaProDB extends Dexie {
   users!: Table<User & { tenantId: string }, string>;
   customers!: Table<Customer & { tenantId: string }, string>;
   syncQueue!: Table<SyncItem, number>;
+  authCache!: Table<OfflineAuthCacheItem, string>;
 
   constructor() {
     super('AssistenciaPro_OfflineDB');
@@ -34,6 +47,9 @@ export class AssistenciaProDB extends Dexie {
     });
     this.version(2).stores({
       customers: 'id, tenantId, name, phoneNumber, isDeleted'
+    });
+    this.version(3).stores({
+      authCache: 'username, tenantId, role, lastLogin'
     });
   }
 }

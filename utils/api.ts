@@ -1,6 +1,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { Customer } from '../types';
+import { OfflineAuth } from './offlineAuth';
 
 const SUPABASE_URL = (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) || (import.meta as any).env?.VITE_SUPABASE_URL || 'https://lawcmqsjhwuhogsukhbf.supabase.co';
 const SUPABASE_KEY = (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
@@ -309,17 +310,27 @@ export class OnlineDB {
     }
   }
 
-  // Verifica a senha do administrador via API do servidor (seguro)
+  // Verifica a senha do administrador via API do servidor (seguro) com fallback offline automático
   static async verifyAdminPassword(tenantId: string, passwordPlain: string) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return await OfflineAuth.verifyOfflineAdminPassword(tenantId, passwordPlain);
+    }
     try {
       const response = await fetch('/api/auth/verify-admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenantId, password: passwordPlain })
       });
-      return await response.json();
+      const data = await response.json();
+      if (data && data.success) return data;
+      // Se o servidor respondeu explicitamente que a senha está errada, retorna
+      if (data && data.success === false && data.message !== "Erro ao conectar com o servidor.") {
+        return data;
+      }
+      // Se falhou por servidor/conexão, tenta offline
+      return await OfflineAuth.verifyOfflineAdminPassword(tenantId, passwordPlain);
     } catch (err) {
-      return { success: false, message: "Erro ao conectar com o servidor." };
+      return await OfflineAuth.verifyOfflineAdminPassword(tenantId, passwordPlain);
     }
   }
 

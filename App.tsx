@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, Wrench } from 'lucide-react';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, Wrench, WifiOff } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import CustomersTab from './components/CustomersTab';
@@ -17,6 +17,7 @@ import PublicTrackingPage from './components/PublicTrackingPage';
 import { DeviceHardwareTestPage } from './components/DeviceHardwareTestPage';
 import { OnlineDB, supabase } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
+import { OfflineAuth } from './utils/offlineAuth';
 import { db } from './utils/localDb';
 import { useAppNotifications } from './utils/useAppNotifications';
 import { ConnectionStatusManager } from './utils/connectionStatus';
@@ -255,6 +256,13 @@ const App: React.FC = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [availableOfflineUsers, setAvailableOfflineUsers] = useState<Array<{ username: string; name: string; role: string }>>([]);
+
+  useEffect(() => {
+    OfflineAuth.getAvailableOfflineUsers().then(users => {
+      setAvailableOfflineUsers(users);
+    }).catch(() => {});
+  }, [isOnline, session]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -334,68 +342,63 @@ const App: React.FC = () => {
 
   const loadData = useCallback(async (tenantId: string) => {
     try {
-      setIsCloudConnected(navigator.onLine);
-      
-      // Tenta puxar dados novos se estiver online
-      if (navigator.onLine) {
-        const [cloudData, tenantData] = await Promise.all([
-          OfflineSync.pullAllData(tenantId),
-          OnlineDB.getTenantById(tenantId)
-        ]);
+      // 1. CARREGAMENTO LOCAL INSTANTÂNEO (< 50ms) - interface pronta de imediato
+      const localData = await OfflineSync.getLocalData(tenantId);
+      if (localData) {
+        const initialSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
+        initialSettings.users = localData.users || [];
+        setSettings(initialSettings);
+        setOrders(localData.orders || []);
+        setCustomers(localData.customers || []);
+        setProducts(localData.products || []);
+        setSales(localData.sales || []);
+        setTransactions(localData.transactions || []);
+      }
 
-        if (cloudData) {
-          setIsCloudConnected(true);
-          ConnectionStatusManager.reportSuccess();
-          const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
-          
-          // Se o tenantData trouxer um printer_size atualizado, usamos ele
-          if (tenantData?.printer_size) {
-            finalSettings.printerSize = tenantData.printer_size;
-            // Atualiza a sessão também para garantir consistência
-            setSession(prev => prev ? { ...prev, printerSize: tenantData.printer_size } : null);
-          } else if (session?.printerSize) {
-            finalSettings.printerSize = session.printerSize;
+      setIsCloudConnected(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+      // 2. REVALIDAÇÃO / SINCRONIZAÇÃO EM SEGUNDO PLANO SE ESTIVER ONLINE
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        try {
+          const [cloudData, tenantData] = await Promise.all([
+            OfflineSync.pullAllData(tenantId),
+            OnlineDB.getTenantById(tenantId)
+          ]);
+
+          if (cloudData) {
+            setIsCloudConnected(true);
+            ConnectionStatusManager.reportSuccess();
+            const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
+            
+            // Se o tenantData trouxer um printer_size atualizado, usamos ele
+            if (tenantData?.printer_size) {
+              finalSettings.printerSize = tenantData.printer_size;
+              setSession(prev => prev ? { ...prev, printerSize: tenantData.printer_size } : null);
+            } else if (session?.printerSize) {
+              finalSettings.printerSize = session.printerSize;
+            }
+            
+            finalSettings.users = cloudData.users || [];
+            setSettings(finalSettings);
+            setOrders(cloudData.orders || []);
+            setCustomers(cloudData.customers || []);
+            setProducts(cloudData.products || []);
+            setSales(cloudData.sales || []);
+            setTransactions(cloudData.transactions || []);
+            return;
+          } else {
+            setIsCloudConnected(false);
           }
-          
-          finalSettings.users = cloudData.users || [];
-          setSettings(finalSettings);
-          setOrders(cloudData.orders || []);
-          setCustomers(cloudData.customers || []);
-          setProducts(cloudData.products || []);
-          setSales(cloudData.sales || []);
-          setTransactions(cloudData.transactions || []);
-          return;
-        } else {
+        } catch (cloudErr) {
           setIsCloudConnected(false);
-          ConnectionStatusManager.reportError(new Error('Falha ao conectar com banco de dados remoto'));
+          ConnectionStatusManager.reportError(cloudErr);
         }
       } else {
         setIsCloudConnected(false);
       }
-
-      // Se offline ou falha no pull, carrega local
-      const localData = await OfflineSync.getLocalData(tenantId);
-      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
-      finalSettings.users = localData.users || [];
-      setSettings(finalSettings);
-      setOrders(localData.orders || []);
-      setCustomers(localData.customers || []);
-      setProducts(localData.products || []);
-      setSales(localData.sales || []);
-      setTransactions(localData.transactions || []);
     } catch (e) {
-      console.error("Erro ao carregar dados:", e);
+      console.error("Erro ao carregar dados locais:", e);
       setIsCloudConnected(false);
-      ConnectionStatusManager.reportError(e);
-      const localData = await OfflineSync.getLocalData(tenantId);
-      const finalSettings = { ...DEFAULT_SETTINGS, ...(localData.settings || {}) };
-      finalSettings.users = localData.users || [];
-      setSettings(finalSettings);
-      setOrders(localData.orders || []);
-      setCustomers(localData.customers || []);
-      setProducts(localData.products || []);
-      setSales(localData.sales || []);
-      setTransactions(localData.transactions || []);
     }
   }, [session?.printerSize]);
 
@@ -693,6 +696,36 @@ const App: React.FC = () => {
     setIsLoggingIn(true);
     
     try {
+      const isDeviceOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+      // 1. SE O DISPOSITIVO ESTIVER OFFLINE, TENTA DIRETO A VALIDAÇÃO LOCAL
+      if (!isDeviceOnline) {
+        const offlineRes = await OfflineAuth.verifyOfflineLogin(loginForm.username, loginForm.password);
+        if (offlineRes.success && offlineRes.session) {
+          const offlineSession = {
+            ...offlineRes.session,
+            isLoggedIn: true,
+            isOfflineMode: true
+          };
+          const offlineUser = offlineRes.user || {
+            id: offlineRes.tenant?.id || 'temp',
+            name: offlineRes.tenant?.name || offlineRes.tenant?.username || 'Administrador',
+            role: offlineRes.type as any,
+            photo: null
+          };
+          localStorage.setItem('session_pro', JSON.stringify(offlineSession));
+          localStorage.setItem('currentUser_pro', JSON.stringify(offlineUser));
+          setSession({ ...offlineSession, user: offlineUser });
+          setIsLoggingIn(false);
+          return;
+        } else {
+          setLoginError(offlineRes.message || "Aparelho offline. Credenciais não encontradas no cache deste dispositivo.");
+          setIsLoggingIn(false);
+          return;
+        }
+      }
+
+      // 2. SE ESTIVER ONLINE, CONECTA NO SUPABASE
       const result = await OnlineDB.login(loginForm.username, loginForm.password);
       
       if (result.success) {
@@ -705,45 +738,109 @@ const App: React.FC = () => {
           const maxUsers = result.tenant?.maxUsers || 1;
           const deviceId = localStorage.getItem('device_id') || '';
           
-          const sessionRes = await OnlineDB.checkAndRegisterSession(tenantId, maxUsers, deviceId, loginForm.username);
-          if (!sessionRes.success) {
-            setLoginError(sessionRes.message);
-            setIsLoggingIn(false);
-            return;
+          try {
+            const sessionRes = await OnlineDB.checkAndRegisterSession(tenantId, maxUsers, deviceId, loginForm.username);
+            if (!sessionRes.success) {
+              setLoginError(sessionRes.message);
+              setIsLoggingIn(false);
+              return;
+            }
+          } catch (sessErr) {
+            console.warn("Aviso ao registrar sessão remota:", sessErr);
           }
 
           const newSession = { 
-              isLoggedIn: true, 
-              type: result.type as any, 
-              tenantId: tenantId,
-              isSuper: false,
-              subscriptionStatus: result.tenant?.subscriptionStatus,
-              subscriptionExpiresAt: result.tenant?.subscriptionExpiresAt,
-              customMonthlyPrice: result.tenant?.customMonthlyPrice,
-              customQuarterlyPrice: result.tenant?.customQuarterlyPrice,
-              customYearlyPrice: result.tenant?.customYearlyPrice,
-              lastPlanType: result.tenant?.lastPlanType,
-              enabledFeatures: result.tenant?.enabledFeatures,
-              maxUsers: result.tenant?.maxUsers,
-              maxOS: result.tenant?.maxOS,
-              maxProducts: result.tenant?.maxProducts,
-              printerSize: result.tenant?.printerSize
-            };
+            isLoggedIn: true, 
+            type: result.type as any, 
+            tenantId: tenantId,
+            isSuper: false,
+            subscriptionStatus: result.tenant?.subscriptionStatus,
+            subscriptionExpiresAt: result.tenant?.subscriptionExpiresAt,
+            customMonthlyPrice: result.tenant?.customMonthlyPrice,
+            customQuarterlyPrice: result.tenant?.customQuarterlyPrice,
+            customYearlyPrice: result.tenant?.customYearlyPrice,
+            lastPlanType: result.tenant?.lastPlanType,
+            enabledFeatures: result.tenant?.enabledFeatures,
+            maxUsers: result.tenant?.maxUsers,
+            maxOS: result.tenant?.maxOS,
+            maxProducts: result.tenant?.maxProducts,
+            printerSize: result.tenant?.printerSize
+          };
+
           const finalUser = { 
             id: result.tenant?.id || 'temp', 
             name: result.tenant?.name || result.tenant?.username || 'Administrador', 
             role: result.type as any, 
             photo: null 
           };
+
           localStorage.setItem('session_pro', JSON.stringify(newSession));
           localStorage.setItem('currentUser_pro', JSON.stringify(finalUser));
+
+          // SALVA CREDENCIAIS LOCALMENTE CRIPTOGRAFADAS PARA PERMITIR LOGIN OFFLINE FUTURO
+          try {
+            await OfflineAuth.saveOfflineAuth(
+              loginForm.username,
+              loginForm.password,
+              result.type as any,
+              tenantId,
+              result.tenant,
+              finalUser,
+              newSession
+            );
+          } catch (cacheErr) {
+            console.warn("Aviso ao salvar credenciais offline:", cacheErr);
+          }
+
           setSession({ ...newSession, user: finalUser });
         }
       } else {
-        setLoginError(result.message || "Acesso negado.");
+        // Se a chamada de login falhou por erro temporário ou conexão, tenta validação offline
+        const offlineRes = await OfflineAuth.verifyOfflineLogin(loginForm.username, loginForm.password);
+        if (offlineRes.success && offlineRes.session) {
+          const offlineSession = {
+            ...offlineRes.session,
+            isLoggedIn: true,
+            isOfflineMode: true
+          };
+          const offlineUser = offlineRes.user || {
+            id: offlineRes.tenant?.id || 'temp',
+            name: offlineRes.tenant?.name || offlineRes.tenant?.username || 'Administrador',
+            role: offlineRes.type as any,
+            photo: null
+          };
+          localStorage.setItem('session_pro', JSON.stringify(offlineSession));
+          localStorage.setItem('currentUser_pro', JSON.stringify(offlineUser));
+          setSession({ ...offlineSession, user: offlineUser });
+        } else {
+          setLoginError(result.message || "Acesso negado.");
+        }
       }
     } catch (err) {
-      setLoginError("Erro de rede. Verifique sua conexão.");
+      // Erro inesperado ou falta total de conexão
+      try {
+        const offlineRes = await OfflineAuth.verifyOfflineLogin(loginForm.username, loginForm.password);
+        if (offlineRes.success && offlineRes.session) {
+          const offlineSession = {
+            ...offlineRes.session,
+            isLoggedIn: true,
+            isOfflineMode: true
+          };
+          const offlineUser = offlineRes.user || {
+            id: offlineRes.tenant?.id || 'temp',
+            name: offlineRes.tenant?.name || offlineRes.tenant?.username || 'Administrador',
+            role: offlineRes.type as any,
+            photo: null
+          };
+          localStorage.setItem('session_pro', JSON.stringify(offlineSession));
+          localStorage.setItem('currentUser_pro', JSON.stringify(offlineUser));
+          setSession({ ...offlineSession, user: offlineUser });
+        } else {
+          setLoginError("Erro de conexão. Para entrar offline, use uma conta já acessada neste aparelho.");
+        }
+      } catch (fallbackErr) {
+        setLoginError("Erro de rede. Verifique sua conexão.");
+      }
     } finally {
       setIsLoggingIn(false);
     }
@@ -824,16 +921,16 @@ const App: React.FC = () => {
   };
 
   const saveOrders = async (newOrders: ServiceOrder[]) => {
+    const prevOrders = orders;
     setOrders(newOrders);
     if (session?.tenantId) {
-      // Identifica o que mudou para salvar individualmente no OfflineSync
-      // Para simplificar, vamos salvar a lista toda localmente e tentar sincronizar
-      // Mas o ideal é salvar apenas o item novo/editado.
-      // Como o app usa o padrão de passar a lista toda, vamos iterar ou salvar a lista.
-      // Ajuste: OfflineSync.saveOrder agora suporta salvar o estado atual.
-      for (const order of newOrders) {
-        await OfflineSync.saveOrder(session.tenantId, order);
-      }
+      const prevMap = new Map(prevOrders.map(o => [o.id, o]));
+      const changed = newOrders.filter(newO => {
+        const oldO = prevMap.get(newO.id);
+        if (!oldO) return true; // Nova OS criada!
+        return JSON.stringify(newO) !== JSON.stringify(oldO);
+      });
+      await OfflineSync.saveOrdersBatch(session.tenantId, newOrders, changed.length > 0 ? changed : undefined);
     }
   };
 
@@ -871,11 +968,16 @@ const App: React.FC = () => {
   };
 
   const saveProducts = async (newProducts: Product[]) => {
+    const prevProducts = products;
     setProducts(newProducts);
     if (session?.tenantId) {
-      for (const product of newProducts) {
-        await OfflineSync.saveProduct(session.tenantId, product);
-      }
+      const prevMap = new Map(prevProducts.map(p => [p.id, p]));
+      const changed = newProducts.filter(newP => {
+        const oldP = prevMap.get(newP.id);
+        if (!oldP) return true;
+        return JSON.stringify(newP) !== JSON.stringify(oldP);
+      });
+      await OfflineSync.saveProductsBatch(session.tenantId, newProducts, changed.length > 0 ? changed : undefined);
     }
   };
 
@@ -888,11 +990,16 @@ const App: React.FC = () => {
   };
 
   const saveSales = async (newSales: Sale[]) => {
+    const prevSales = sales;
     setSales(newSales);
     if (session?.tenantId) {
-      for (const sale of newSales) {
-        await OfflineSync.saveSale(session.tenantId, sale);
-      }
+      const prevMap = new Map(prevSales.map(s => [s.id, s]));
+      const changed = newSales.filter(newS => {
+        const oldS = prevMap.get(newS.id);
+        if (!oldS) return true;
+        return JSON.stringify(newS) !== JSON.stringify(oldS);
+      });
+      await OfflineSync.saveSalesBatch(session.tenantId, newSales, changed.length > 0 ? changed : undefined);
     }
   };
 
@@ -916,12 +1023,16 @@ const App: React.FC = () => {
   };
 
   const saveTransactions = async (newTransactions: Transaction[]) => {
+    const prevTransactions = transactions;
     setTransactions(newTransactions);
     if (session?.tenantId) {
-      // Sincroniza em background para não travar a UI
-      newTransactions.forEach(transaction => {
-        OfflineSync.saveTransaction(session.tenantId!, transaction).catch(console.error);
+      const prevMap = new Map(prevTransactions.map(t => [t.id, t]));
+      const changed = newTransactions.filter(newT => {
+        const oldT = prevMap.get(newT.id);
+        if (!oldT) return true;
+        return JSON.stringify(newT) !== JSON.stringify(oldT);
       });
+      await OfflineSync.saveTransactionsBatch(session.tenantId, newTransactions, changed.length > 0 ? changed : undefined);
     }
   };
 
@@ -1158,6 +1269,40 @@ const App: React.FC = () => {
               </form>
             ) : (
               <form onSubmit={handleLogin} className="space-y-3 lg:space-y-5">
+                {!isOnline && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 animate-in fade-in space-y-2">
+                    <div className="flex items-center gap-2">
+                      <WifiOff size={16} className="text-amber-600 shrink-0" />
+                      <div className="text-[10px] font-bold leading-tight">
+                        <p className="uppercase tracking-wider font-black text-amber-700">Modo Offline Ativo</p>
+                        <p className="text-amber-600 font-normal mt-0.5">Você pode entrar normalmente com uma conta já autenticada neste aparelho.</p>
+                      </div>
+                    </div>
+                    {availableOfflineUsers.length > 0 ? (
+                      <div className="pt-1 border-t border-amber-500/20">
+                        <p className="text-[9px] font-black uppercase text-amber-700 tracking-wider">Contas salvas neste dispositivo:</p>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {availableOfflineUsers.map(u => (
+                            <button
+                              key={u.username}
+                              type="button"
+                              onClick={() => setLoginForm(prev => ({ ...prev, username: u.username }))}
+                              className="px-2.5 py-1 bg-amber-100/80 hover:bg-amber-200 text-amber-900 rounded-lg text-[10px] font-bold border border-amber-300 transition-all flex items-center gap-1 active:scale-95"
+                              title="Clique para preencher o usuário"
+                            >
+                              <span>{u.name || u.username}</span>
+                              <span className="text-[8px] opacity-60 font-mono">({u.username})</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="pt-1 border-t border-amber-500/20 text-[9px] text-amber-700 leading-normal">
+                        Nenhuma conta foi autenticada previamente neste navegador. Conecte-se à internet uma vez para sincronizar as credenciais locais.
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-1">
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Usuário / Login</label>
                   <div className="relative group">

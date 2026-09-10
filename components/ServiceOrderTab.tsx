@@ -1320,7 +1320,6 @@ const ServiceOrderTab: React.FC<Props> = ({
     setAuthError(false);
 
     try {
-      const { OnlineDB } = await import('../utils/api');
       const authResult = await OnlineDB.verifyAdminPassword(tenantId, passwordInput);
       if (authResult.success) {
         onDeleteOrder(orderToDelete);

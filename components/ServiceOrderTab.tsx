@@ -542,8 +542,8 @@ const ServiceOrderTab: React.FC<Props> = ({
   };
 
   // --- PROCESSAMENTO DE IMAGENS ---
-  // Redimensiona e converte para WebP ultraleve para otimizar o banco de dados SQL e zerar Egress
-  const compressImage = (base64Str: string, size: number = 600): Promise<string> => {
+  // Redimensiona e converte para WebP para otimizar o banco de dados SQL
+  const compressImage = (base64Str: string, size: number = 800): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image();
       img.src = base64Str;
@@ -560,9 +560,8 @@ const ServiceOrderTab: React.FC<Props> = ({
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/webp', 0.65));
+        resolve(canvas.toDataURL('image/webp', 0.7));
       };
-      img.onerror = () => resolve(base64Str);
     });
   };
 

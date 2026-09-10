@@ -427,183 +427,48 @@ const App: React.FC = () => {
       }, delay);
     };
     
-    // 1. Supabase Postgres Real-time Channel (atualizações em tempo real com ZERO EGRESS via payload WebSocket)
+    // 1. Supabase Postgres Real-time Channel (atualizações granulares por tabela - consumo mínimo de Egress)
     const channel = supabase
       .channel(`tenant-${tenantId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'service_orders', filter: `tenant_id=eq.${tenantId}` },
-        (payload: any) => {
-          try {
-            if (payload?.eventType === 'INSERT' || payload?.eventType === 'UPDATE') {
-              const mapped = OnlineDB.mapOrderFromRow(payload.new);
-              if (mapped) {
-                db.orders.put({ ...mapped, tenantId });
-                setOrders(prev => {
-                  const idx = prev.findIndex(o => o.id === mapped.id);
-                  if (idx >= 0) {
-                    const copy = [...prev];
-                    copy[idx] = mapped;
-                    return copy;
-                  }
-                  return [mapped, ...prev];
-                });
-                return; // Zero egress: atualizou instantaneamente pelo WebSocket
-              }
-            } else if (payload?.eventType === 'DELETE') {
-              const delId = payload.old?.id;
-              if (delId) {
-                db.orders.delete(delId);
-                setOrders(prev => prev.filter(o => o.id !== delId));
-                return;
-              }
-            }
-          } catch (e) {}
-          debounceTableSync('orders', async () => {
-            const res = await OfflineSync.pullOrders(tenantId);
-            if (res) setOrders(res);
-          }, 300);
-        }
+        () => debounceTableSync('orders', async () => {
+          const res = await OfflineSync.pullOrders(tenantId);
+          if (res) setOrders(res);
+        }, 300)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'customers', filter: `tenant_id=eq.${tenantId}` },
-        (payload: any) => {
-          try {
-            if (payload?.eventType === 'INSERT' || payload?.eventType === 'UPDATE') {
-              const mapped = OnlineDB.mapCustomerFromRow(payload.new);
-              if (mapped) {
-                db.customers.put({ ...mapped, tenantId });
-                setCustomers(prev => {
-                  const idx = prev.findIndex(c => c.id === mapped.id);
-                  if (idx >= 0) {
-                    const copy = [...prev];
-                    copy[idx] = mapped;
-                    return copy;
-                  }
-                  return [...prev, mapped];
-                });
-                return;
-              }
-            } else if (payload?.eventType === 'DELETE') {
-              const delId = payload.old?.id;
-              if (delId) {
-                db.customers.delete(delId);
-                setCustomers(prev => prev.filter(c => c.id !== delId));
-                return;
-              }
-            }
-          } catch (e) {}
-          debounceTableSync('customers', async () => {
-            const res = await OfflineSync.pullCustomers(tenantId);
-            if (res) setCustomers(res);
-          }, 400);
-        }
+        () => debounceTableSync('customers', async () => {
+          const res = await OfflineSync.pullCustomers(tenantId);
+          if (res) setCustomers(res);
+        }, 400)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sales', filter: `tenant_id=eq.${tenantId}` },
-        (payload: any) => {
-          try {
-            if (payload?.eventType === 'INSERT' || payload?.eventType === 'UPDATE') {
-              const mapped = OnlineDB.mapSaleFromRow(payload.new);
-              if (mapped) {
-                db.sales.put({ ...mapped, tenantId });
-                setSales(prev => {
-                  const idx = prev.findIndex(s => s.id === mapped.id);
-                  if (idx >= 0) {
-                    const copy = [...prev];
-                    copy[idx] = mapped;
-                    return copy;
-                  }
-                  return [mapped, ...prev];
-                });
-                return;
-              }
-            } else if (payload?.eventType === 'DELETE') {
-              const delId = payload.old?.id;
-              if (delId) {
-                db.sales.delete(delId);
-                setSales(prev => prev.filter(s => s.id !== delId));
-                return;
-              }
-            }
-          } catch (e) {}
-          debounceTableSync('sales', async () => {
-            const res = await OfflineSync.pullSales(tenantId);
-            if (res) setSales(res);
-          }, 400);
-        }
+        () => debounceTableSync('sales', async () => {
+          const res = await OfflineSync.pullSales(tenantId);
+          if (res) setSales(res);
+        }, 400)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'products', filter: `tenant_id=eq.${tenantId}` },
-        (payload: any) => {
-          try {
-            if (payload?.eventType === 'INSERT' || payload?.eventType === 'UPDATE') {
-              const mapped = OnlineDB.mapProductFromRow(payload.new);
-              if (mapped) {
-                db.products.put({ ...mapped, tenantId });
-                setProducts(prev => {
-                  const idx = prev.findIndex(p => p.id === mapped.id);
-                  if (idx >= 0) {
-                    const copy = [...prev];
-                    copy[idx] = mapped;
-                    return copy;
-                  }
-                  return [mapped, ...prev];
-                });
-                return;
-              }
-            } else if (payload?.eventType === 'DELETE') {
-              const delId = payload.old?.id;
-              if (delId) {
-                db.products.delete(delId);
-                setProducts(prev => prev.filter(p => p.id !== delId));
-                return;
-              }
-            }
-          } catch (e) {}
-          debounceTableSync('products', async () => {
-            const res = await OfflineSync.pullProducts(tenantId);
-            if (res) setProducts(res);
-          }, 400);
-        }
+        () => debounceTableSync('products', async () => {
+          const res = await OfflineSync.pullProducts(tenantId);
+          if (res) setProducts(res);
+        }, 400)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'transactions', filter: `tenant_id=eq.${tenantId}` },
-        (payload: any) => {
-          try {
-            if (payload?.eventType === 'INSERT' || payload?.eventType === 'UPDATE') {
-              const mapped = OnlineDB.mapTransactionFromRow(payload.new);
-              if (mapped) {
-                db.transactions.put({ ...mapped, tenantId });
-                setTransactions(prev => {
-                  const idx = prev.findIndex(t => t.id === mapped.id);
-                  if (idx >= 0) {
-                    const copy = [...prev];
-                    copy[idx] = mapped;
-                    return copy;
-                  }
-                  return [mapped, ...prev];
-                });
-                return;
-              }
-            } else if (payload?.eventType === 'DELETE') {
-              const delId = payload.old?.id;
-              if (delId) {
-                db.transactions.delete(delId);
-                setTransactions(prev => prev.filter(t => t.id !== delId));
-                return;
-              }
-            }
-          } catch (e) {}
-          debounceTableSync('transactions', async () => {
-            const res = await OfflineSync.pullTransactions(tenantId);
-            if (res) setTransactions(res);
-          }, 400);
-        }
+        () => debounceTableSync('transactions', async () => {
+          const res = await OfflineSync.pullTransactions(tenantId);
+          if (res) setTransactions(res);
+        }, 400)
       )
       .on(
         'postgres_changes',

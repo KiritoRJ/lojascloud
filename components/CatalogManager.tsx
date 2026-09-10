@@ -56,29 +56,6 @@ const CatalogManager: React.FC<CatalogManagerProps> = ({ products, setProducts, 
     setEditingProduct(null);
   };
 
-  const compressImage = (base64Str: string, size = 600): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.src = base64Str;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        if (width > height) {
-          if (width > size) { height *= size / width; width = size; }
-        } else {
-          if (height > size) { width *= size / height; height = size; }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/webp', 0.7));
-      };
-      img.onerror = () => resolve(base64Str);
-    });
-  };
-
   const handleAddPhoto = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -87,18 +64,15 @@ const CatalogManager: React.FC<CatalogManagerProps> = ({ products, setProducts, 
       const file = e.target.files[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = async (event) => {
+        reader.onload = (event) => {
           const base64 = event.target?.result as string;
-          if (base64) {
-            const compressed = await compressImage(base64, 600);
-            setEditingProduct(prev => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                additionalPhotos: [...(prev.additionalPhotos || []), compressed]
-              };
-            });
-          }
+          setEditingProduct(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              additionalPhotos: [...(prev.additionalPhotos || []), base64]
+            };
+          });
         };
         reader.readAsDataURL(file);
       }

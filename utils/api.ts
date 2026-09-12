@@ -290,7 +290,29 @@ export class OnlineDB {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenantId, oldPassword, newPassword })
       });
-      return await response.json();
+      const data = await response.json();
+      if (data && data.success) {
+        try {
+          const storedUser = localStorage.getItem('currentUser_pro');
+          const storedSession = localStorage.getItem('session_pro');
+          if (storedUser && storedSession) {
+            const u = JSON.parse(storedUser);
+            const s = JSON.parse(storedSession);
+            await OfflineAuth.saveOfflineAuth(
+              u.username || 'admin',
+              newPassword,
+              'admin',
+              tenantId,
+              s,
+              u,
+              s
+            );
+          }
+        } catch (e) {
+          console.warn('[OfflineAuth] Falha ao atualizar credenciais offline após troca de senha:', e);
+        }
+      }
+      return data;
     } catch (err) {
       return { success: false, message: "Erro ao conectar com o servidor." };
     }
@@ -304,7 +326,29 @@ export class OnlineDB {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ oldPassword, newPassword })
       });
-      return await response.json();
+      const data = await response.json();
+      if (data && data.success) {
+        try {
+          const storedUser = localStorage.getItem('currentUser_pro');
+          const storedSession = localStorage.getItem('session_pro');
+          if (storedUser && storedSession) {
+            const u = JSON.parse(storedUser);
+            const s = JSON.parse(storedSession);
+            await OfflineAuth.saveOfflineAuth(
+              u.username || 'super',
+              newPassword,
+              'super',
+              'super_tenant',
+              s,
+              u,
+              s
+            );
+          }
+        } catch (e) {
+          console.warn('[OfflineAuth] Falha ao atualizar credenciais super offline após troca de senha:', e);
+        }
+      }
+      return data;
     } catch (err) {
       return { success: false, message: "Erro ao conectar com o servidor." };
     }

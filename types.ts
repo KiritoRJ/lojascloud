@@ -34,7 +34,7 @@ export interface User {
   id: string;
   name: string;
   username?: string;
-  role: 'admin' | 'colaborador';
+  role: 'admin' | 'colaborador' | 'super';
   password?: string;
   photo: string | null;
   specialty?: 'Vendedor' | 'Técnico' | 'Outros';

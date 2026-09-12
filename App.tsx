@@ -731,7 +731,22 @@ const App: React.FC = () => {
       if (result.success) {
         if (result.type === 'super') {
           const superSession = { isLoggedIn: true, type: 'super', isSuper: true };
+          const superUser = { id: 'super', name: 'Super Admin', role: 'super' as const, photo: null };
           localStorage.setItem('session_pro', JSON.stringify(superSession));
+          localStorage.setItem('currentUser_pro', JSON.stringify(superUser));
+          try {
+            await OfflineAuth.saveOfflineAuth(
+              loginForm.username,
+              loginForm.password,
+              'super',
+              'super_tenant',
+              { id: 'super_tenant', name: 'Super Admin' },
+              superUser,
+              superSession
+            );
+          } catch (cacheErr) {
+            console.warn("Aviso ao salvar credenciais super offline:", cacheErr);
+          }
           setSession(superSession as any);
         } else {
           const tenantId = result.tenant?.id;

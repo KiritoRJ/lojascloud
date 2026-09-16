@@ -1,9 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle, LayoutGrid, Grid, List, Maximize2, Rows } from 'lucide-react';
+import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle, LayoutGrid, Grid, List, Maximize2, Rows, Sparkles, ChevronDown, ChevronUp, CheckCircle2, Tag, FileText, Image as ImageIcon } from 'lucide-react';
 import { Product, AppSettings } from '../types';
 import { formatCurrency, parseCurrencyString, playBeepSound } from '../utils';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
+import { analyzeProductImage } from '../utils/productAi';
+import { OnlineDB } from '../utils/api';
+import { AICreditsModal } from './AICreditsModal';
 
 interface Props {
   products: Product[];
@@ -12,9 +15,10 @@ interface Props {
   settings: AppSettings;
   onUpdateSettings: (settings: AppSettings) => Promise<void>;
   maxProducts?: number;
+  tenantId?: string;
 }
 
-const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings, onUpdateSettings, maxProducts }) => {
+const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings, onUpdateSettings, maxProducts, tenantId }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -31,8 +35,36 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
   const [formData, setFormData] = useState<Partial<Product>>({
-    name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null, barcode: ''
+    name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null, barcode: '',
+    description: '', category: '', brand: '', model: '', ncm: '', cest: '', cfop: '',
+    promotionalPrice: 0, discount: 0, isPromotion: false
   });
+
+  const [isPhotoChoiceOpen, setIsPhotoChoiceOpen] = useState(false);
+  const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
+  const [aiProgressMessage, setAiProgressMessage] = useState('');
+  const [aiSuccessBadge, setAiSuccessBadge] = useState<string | null>(null);
+  const [aiErrorBadge, setAiErrorBadge] = useState<string | null>(null);
+  const [showFiscalFields, setShowFiscalFields] = useState(false);
+  const [showDiscountFields, setShowDiscountFields] = useState(false);
+
+  // Créditos de IA no Estoque
+  const [aiCredits, setAiCredits] = useState<number>(0);
+  const [isAICreditsModalOpen, setIsAICreditsModalOpen] = useState(false);
+
+  const fetchAICredits = async () => {
+    if (tenantId) {
+      const credits = await OnlineDB.getAICredits(tenantId);
+      setAiCredits(credits);
+    }
+  };
+
+  useEffect(() => {
+    fetchAICredits();
+  }, [tenantId]);
+
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // Limpa rascunho de produto
   const clearStockDraft = () => {
@@ -115,6 +147,103 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const runAIAnalysisOnBase64 = async (compressed: string) => {
+    setIsAnalyzingAI(true);
+    setAiProgressMessage('Identificando produto, embalagem e rótulo com IA...');
+    setAiErrorBadge(null);
+
+    const intervalMsg = setTimeout(() => {
+      setAiProgressMessage('Lendo códigos de barras, preços e especificações na caixa...');
+    }, 2400);
+
+    try {
+      const result = await analyzeProductImage(compressed, tenantId);
+      clearTimeout(intervalMsg);
+
+      if (typeof result.creditsRemaining === 'number') {
+        setAiCredits(result.creditsRemaining);
+      } else if (tenantId) {
+        fetchAICredits();
+      }
+
+      const hasDiscount = (result.discount && result.discount > 0) || (result.promotionalPrice && result.promotionalPrice > 0) || !!result.isPromotion;
+      if (hasDiscount) {
+        setShowDiscountFields(true);
+      }
+      if (result.ncm || result.cest || result.cfop) {
+        setShowFiscalFields(true);
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        name: result.name || prev.name || '',
+        brand: result.brand || prev.brand || '',
+        model: result.model || prev.model || '',
+        category: result.category || prev.category || '',
+        barcode: result.barcode || prev.barcode || '',
+        costPrice: (result.costPrice !== undefined && result.costPrice > 0) ? result.costPrice : (prev.costPrice || 0),
+        salePrice: (result.salePrice !== undefined && result.salePrice > 0) ? result.salePrice : (prev.salePrice || 0),
+        promotionalPrice: result.promotionalPrice || (prev.promotionalPrice || 0),
+        discount: result.discount || (prev.discount || 0),
+        isPromotion: !!hasDiscount,
+        description: result.description || prev.description || '',
+        ncm: result.ncm || prev.ncm || '',
+        cest: result.cest || prev.cest || '',
+        cfop: result.cfop || prev.cfop || '5102',
+        quantity: (result.quantity !== undefined && result.quantity > 0) ? result.quantity : (prev.quantity && prev.quantity > 0 ? prev.quantity : 1),
+        photo: compressed,
+      }));
+
+      setAiErrorBadge(null);
+      setAiSuccessBadge('✨ Informações extraídas da foto com sucesso! Você pode revisar ou complementar manualmente antes de salvar.');
+    } catch (err: any) {
+      clearTimeout(intervalMsg);
+      console.warn('Erro na análise da foto por IA:', err);
+      const userMessage = err?.message || 'Os servidores de IA estão temporariamente ocupados. A foto do produto foi salva com sucesso no formulário.';
+      setAiErrorBadge(userMessage);
+    } finally {
+      setIsAnalyzingAI(false);
+      setAiProgressMessage('');
+    }
+  };
+
+  const handlePhotoCaptureForAI = async (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert(`O arquivo selecionado não é uma imagem válida.`);
+      return;
+    }
+
+    setIsPhotoChoiceOpen(false);
+    setIsAnalyzingAI(true);
+    setAiProgressMessage('Otimizando imagem para leitura...');
+
+    try {
+      const reader = new FileReader();
+      const rawBase64 = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const compressed = await compressImage(rawBase64);
+      setFormData(prev => ({ ...prev, photo: compressed }));
+      setIsModalOpen(true);
+
+      await runAIAnalysisOnBase64(compressed);
+    } catch (err: any) {
+      console.error('Erro ao processar imagem:', err);
+      setAiErrorBadge('Não foi possível carregar a imagem. Tente novamente.');
+      setIsAnalyzingAI(false);
+      setAiProgressMessage('');
+    }
+  };
+
+  const handleRetryAIAnalysis = async () => {
+    if (!formData.photo) return;
+    await runAIAnalysisOnBase64(formData.photo);
   };
 
   const startScanner = async (mode: 'form' | 'search' = 'form') => {
@@ -236,7 +365,28 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const resetForm = () => {
     clearStockDraft();
     setEditingProduct(null);
-    setFormData({ name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null, barcode: '' });
+    setFormData({
+      name: '',
+      costPrice: 0,
+      salePrice: 0,
+      quantity: 0,
+      photo: null,
+      barcode: '',
+      description: '',
+      category: '',
+      brand: '',
+      model: '',
+      ncm: '',
+      cest: '',
+      cfop: '',
+      promotionalPrice: 0,
+      discount: 0,
+      isPromotion: false,
+    });
+    setAiSuccessBadge(null);
+    setAiErrorBadge(null);
+    setShowFiscalFields(false);
+    setShowDiscountFields(false);
   };
 
   const filtered = products.filter(p => 
@@ -269,8 +419,42 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     <div className="space-y-4 pb-4">
       {/* CABEÇALHO */}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Estoque Pro</h2>
-        <button onClick={() => { resetForm(); setIsModalOpen(true); }} disabled={limitReached} className="bg-slate-900 text-white p-2.5 rounded-2xl shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"><Plus size={20} /></button>
+        <div>
+          <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Estoque Pro</h2>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Gestão e Cadastro Inteligente</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {tenantId && (
+            <button
+              type="button"
+              onClick={() => setIsAICreditsModalOpen(true)}
+              className="px-2.5 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-2xl flex items-center gap-1.5 text-blue-700 hover:bg-blue-100/70 active:scale-95 transition-all"
+              title="Seus créditos de IA para reconhecimento prioritário de produtos por foto"
+            >
+              <Sparkles size={14} className="text-blue-600 animate-pulse" />
+              <span className="text-[11px] font-black">{aiCredits}</span>
+              <span className="text-[9px] font-bold text-blue-500 uppercase hidden sm:inline">créditos</span>
+            </button>
+          )}
+          <button 
+            onClick={() => { resetForm(); setIsPhotoChoiceOpen(true); }} 
+            disabled={limitReached} 
+            className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white px-3.5 py-2.5 rounded-2xl shadow-lg shadow-blue-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-black text-xs uppercase tracking-wider transition-all"
+            title="Cadastrar produto por foto com Inteligência Artificial"
+          >
+            <Sparkles size={16} className="text-amber-300 animate-pulse" />
+            <span className="hidden sm:inline">Cadastro por Foto</span>
+            <Camera size={16} className="sm:hidden" />
+          </button>
+          <button 
+            onClick={() => { resetForm(); setIsModalOpen(true); }} 
+            disabled={limitReached} 
+            className="bg-slate-900 text-white p-2.5 rounded-2xl shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition-colors"
+            title="Novo Item Manual"
+          >
+            <Plus size={20} />
+          </button>
+        </div>
       </div>
 
       {limitReached && (
@@ -419,64 +603,460 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
 
       {/* MODAL DE CADASTRO / EDIÇÃO */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 z-50 flex flex-col justify-end p-2 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md mx-auto rounded-[2.5rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10">
-            <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-white">
-              <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight">{editingProduct ? 'Editar Item' : 'Novo Item'}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 bg-slate-50 rounded-full"><X size={20} /></button>
+        <div className="fixed inset-0 bg-slate-950/80 z-50 flex flex-col justify-end p-2 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-lg mx-auto rounded-[2.5rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 flex flex-col max-h-[90vh]">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-800 text-base uppercase tracking-tight">{editingProduct ? 'Editar Item' : 'Novo Produto'}</h3>
+                {!editingProduct && (
+                  <span className="bg-blue-50 text-blue-600 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">Inteligente</span>
+                )}
+              </div>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors">
+                <X size={18} />
+              </button>
             </div>
             
-            <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
-              <div className="flex flex-col items-center gap-3">
-                <label className="relative active:scale-95 transition-all cursor-pointer">
-                  <div className="w-24 h-24 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden">
-                    {isCompressing ? <Loader2 className="animate-spin text-blue-500" /> : formData.photo ? <img src={formData.photo} className="w-full h-full object-cover" /> : <PackageOpen className="text-slate-200" size={32} />}
+            <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              {/* Opção Inteligente de Foto com IA */}
+              <button
+                type="button"
+                onClick={() => setIsPhotoChoiceOpen(true)}
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100/80 border border-blue-200/80 rounded-2xl flex items-center justify-between gap-3 text-blue-700 font-black text-xs uppercase tracking-wider shadow-sm active:scale-98 transition-all group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-blue-600 text-white rounded-xl shadow-sm group-hover:scale-105 transition-transform">
+                    <Sparkles size={14} className="animate-pulse" />
                   </div>
-                  <div className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-2 rounded-full border-4 border-white shadow-lg"><Camera size={14} /></div>
-                  <input type="file" accept="*/*" className="hidden" onChange={handleFileChange} />
+                  <div className="text-left">
+                    <p className="font-black text-slate-800 text-xs">Preencher por Foto com IA</p>
+                    <p className="text-[9px] text-blue-600 font-bold lowercase tracking-normal">extrai foto, nome, código, valores, descontos e fiscais</p>
+                  </div>
+                </div>
+                <Camera size={18} className="text-blue-600 shrink-0" />
+              </button>
+
+              {/* Alerta de Sucesso da IA */}
+              {aiSuccessBadge && (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3.5 rounded-2xl text-xs font-semibold flex items-start gap-2.5 animate-in fade-in">
+                  <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-bold text-xs">{aiSuccessBadge}</p>
+                  </div>
+                  <button onClick={() => setAiSuccessBadge(null)} className="text-emerald-500 hover:text-emerald-700">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+
+              {/* Alerta de Informação / Demanda da IA */}
+              {aiErrorBadge && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3.5 rounded-2xl text-xs flex flex-col gap-2.5 animate-in fade-in">
+                  <div className="flex items-start gap-2.5">
+                    <Sparkles size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-bold text-xs">{aiErrorBadge}</p>
+                    </div>
+                    <button onClick={() => setAiErrorBadge(null)} className="text-amber-500 hover:text-amber-700">
+                      <X size={14} />
+                    </button>
+                  </div>
+                  {formData.photo && (
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                      {tenantId && (
+                        <button
+                          type="button"
+                          onClick={() => setIsAICreditsModalOpen(true)}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm transition-all"
+                        >
+                          <Sparkles size={12} />
+                          <span>Adicionar Créditos Prioritários</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleRetryAIAnalysis}
+                        disabled={isAnalyzingAI}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm transition-all"
+                      >
+                        <Sparkles size={12} />
+                        <span>Tentar Reconhecimento Novamente</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Área de Foto do Produto */}
+              <div className="flex flex-col items-center gap-2">
+                <label className="relative active:scale-95 transition-all cursor-pointer group">
+                  <div className="w-24 h-24 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 group-hover:border-blue-400 flex items-center justify-center overflow-hidden transition-colors shadow-inner">
+                    {isCompressing ? (
+                      <Loader2 className="animate-spin text-blue-500" />
+                    ) : formData.photo ? (
+                      <img src={formData.photo} className="w-full h-full object-cover" alt="Produto" />
+                    ) : (
+                      <PackageOpen className="text-slate-200" size={32} />
+                    )}
+                  </div>
+                  <div className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-2 rounded-full border-4 border-white shadow-lg group-hover:bg-blue-700 transition-colors">
+                    <Camera size={14} />
+                  </div>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
                 </label>
-                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Toque para foto</p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Foto do produto</span>
+                  {formData.photo && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleRetryAIAnalysis}
+                        disabled={isAnalyzingAI}
+                        className="text-[9px] text-blue-600 font-bold uppercase hover:underline flex items-center gap-1"
+                      >
+                        <Sparkles size={11} />
+                        Reanalisar com IA
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(f => ({ ...f, photo: null }))}
+                        className="text-[9px] text-red-500 font-bold uppercase hover:underline"
+                      >
+                        Remover foto
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
+              {/* Campos do Formulário */}
               <div className="space-y-4">
+                {/* Nome do Produto */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descrição do Produto</label>
-                  <input value={formData.name} onChange={(e)=>setFormData(f=>({...f,name:e.target.value}))} placeholder="Nome do item" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm" />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                    Nome do Produto <span className="text-red-500">*</span>
+                  </label>
+                  <input 
+                    value={formData.name || ''} 
+                    onChange={(e)=>setFormData(f=>({...f,name:e.target.value}))} 
+                    placeholder="Ex: Fone de Ouvido Bluetooth JBL Tune 510BT" 
+                    className="w-full p-3.5 bg-slate-50 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-blue-600 border border-slate-100" 
+                  />
                 </div>
-                {/* Outros campos de formulário permanecem iguais */}
-                <div className="space-y-1">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Código de Barras</label>
-                   <div className="flex gap-2">
-                     <input value={formData.barcode} onChange={(e)=>setFormData(f=>({...f,barcode:e.target.value}))} placeholder="Código" className="flex-1 p-4 bg-slate-50 rounded-2xl outline-none font-black text-xs text-blue-600" />
-                     <button onClick={() => startScanner('form')} className="p-4 bg-blue-600 text-white rounded-2xl shadow-lg active:scale-90"><ScanBarcode size={20} /></button>
-                   </div>
-                </div>
+
+                {/* Marca e Modelo */}
                 <div className="grid grid-cols-2 gap-3">
-                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Custo Unitário</p>
-                      <input value={formatCurrency(formData.costPrice||0).replace('R$','').trim()} onChange={(e)=>setFormData(f=>({...f,costPrice:parseCurrencyString(e.target.value)}))} className="w-full bg-transparent font-black text-slate-800 outline-none text-xs" />
-                   </div>
-                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Venda Unitária</p>
-                      <input value={formatCurrency(formData.salePrice||0).replace('R$','').trim()} onChange={(e)=>setFormData(f=>({...f,salePrice:parseCurrencyString(e.target.value)}))} className="w-full bg-transparent font-black text-blue-600 outline-none text-xs" />
-                   </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Marca</label>
+                    <input 
+                      value={formData.brand || ''} 
+                      onChange={(e)=>setFormData(f=>({...f,brand:e.target.value}))} 
+                      placeholder="Ex: JBL, Apple, Samsung" 
+                      className="w-full p-3 bg-slate-50 rounded-2xl outline-none font-bold text-xs focus:ring-2 focus:ring-blue-600 border border-slate-100" 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Modelo / Versão</label>
+                    <input 
+                      value={formData.model || ''} 
+                      onChange={(e)=>setFormData(f=>({...f,model:e.target.value}))} 
+                      placeholder="Ex: Tune 510BT / 128GB" 
+                      className="w-full p-3 bg-slate-50 rounded-2xl outline-none font-bold text-xs focus:ring-2 focus:ring-blue-600 border border-slate-100" 
+                    />
+                  </div>
                 </div>
+
+                {/* Categoria */}
                 <div className="space-y-1">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quantidade</label>
-                   <input type="number" value={formData.quantity} onChange={(e)=>setFormData(f=>({...f,quantity:parseInt(e.target.value)||0}))} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-sm" />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Categoria</label>
+                  <input 
+                    value={formData.category || ''} 
+                    onChange={(e)=>setFormData(f=>({...f,category:e.target.value}))} 
+                    placeholder="Ex: Áudio, Acessórios, Cabos, Capinhas" 
+                    className="w-full p-3 bg-slate-50 rounded-2xl outline-none font-bold text-xs focus:ring-2 focus:ring-blue-600 border border-slate-100" 
+                  />
+                </div>
+
+                {/* Código de Barras */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Código de Barras (EAN / UPC)</label>
+                  <div className="flex gap-2">
+                    <input 
+                      value={formData.barcode || ''} 
+                      onChange={(e)=>setFormData(f=>({...f,barcode:e.target.value}))} 
+                      placeholder="Código de barras da embalagem" 
+                      className="flex-1 p-3.5 bg-slate-50 rounded-2xl outline-none font-black text-xs text-blue-600 focus:ring-2 focus:ring-blue-600 border border-slate-100" 
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => startScanner('form')} 
+                      className="p-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl shadow-md active:scale-90 transition-all shrink-0"
+                      title="Escanear com leitor"
+                    >
+                      <ScanBarcode size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Valores: Custo e Venda */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Custo Unitário</p>
+                    <input 
+                      value={formatCurrency(formData.costPrice||0).replace('R$','').trim()} 
+                      onChange={(e)=>setFormData(f=>({...f,costPrice:parseCurrencyString(e.target.value)}))} 
+                      className="w-full bg-transparent font-black text-slate-800 outline-none text-xs" 
+                    />
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Venda Unitária</p>
+                    <input 
+                      value={formatCurrency(formData.salePrice||0).replace('R$','').trim()} 
+                      onChange={(e)=>setFormData(f=>({...f,salePrice:parseCurrencyString(e.target.value)}))} 
+                      className="w-full bg-transparent font-black text-blue-600 outline-none text-xs" 
+                    />
+                  </div>
+                </div>
+
+                {/* Seção de Desconto / Promoção */}
+                <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setShowDiscountFields(!showDiscountFields)}
+                      className="flex items-center gap-1.5 text-[9px] font-black text-slate-600 uppercase tracking-wider"
+                    >
+                      <Tag size={13} className="text-amber-500" />
+                      <span>Desconto e Promoção na Caixa</span>
+                      {showDiscountFields ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    {(formData.promotionalPrice || (formData.discount || 0) > 0) && (
+                      <span className="text-[8px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md">Ativo</span>
+                    )}
+                  </div>
+
+                  {showDiscountFields && (
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                      <div>
+                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Preço Promocional (R$)</p>
+                        <input 
+                          value={formatCurrency(formData.promotionalPrice||0).replace('R$','').trim()} 
+                          onChange={(e)=>{
+                            const val = parseCurrencyString(e.target.value);
+                            setFormData(f=>({ ...f, promotionalPrice: val, isPromotion: val > 0 }));
+                          }} 
+                          placeholder="0,00"
+                          className="w-full p-2.5 bg-white rounded-xl font-black text-amber-600 outline-none text-xs border border-slate-200" 
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Desconto (%)</p>
+                        <input 
+                          type="number"
+                          value={formData.discount || ''} 
+                          onChange={(e)=>setFormData(f=>({...f,discount:parseFloat(e.target.value)||0}))} 
+                          placeholder="Ex: 15"
+                          className="w-full p-2.5 bg-white rounded-xl font-black text-slate-700 outline-none text-xs border border-slate-200" 
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quantidade em Estoque */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quantidade em Estoque</label>
+                  <input 
+                    type="number" 
+                    value={formData.quantity ?? 1} 
+                    onChange={(e)=>setFormData(f=>({...f,quantity:parseInt(e.target.value)||0}))} 
+                    className="w-full p-3.5 bg-slate-50 rounded-2xl outline-none font-black text-sm border border-slate-100" 
+                  />
+                </div>
+
+                {/* Descrição do Produto */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descrição e Especificações</label>
+                  <textarea 
+                    rows={3}
+                    value={formData.description || ''} 
+                    onChange={(e)=>setFormData(f=>({...f,description:e.target.value}))} 
+                    placeholder="Características contidas na caixa ou especificações manuais..." 
+                    className="w-full p-3.5 bg-slate-50 rounded-2xl outline-none font-medium text-xs text-slate-700 focus:ring-2 focus:ring-blue-600 border border-slate-100 resize-none" 
+                  />
+                </div>
+
+                {/* Acordeão de Informações Fiscais */}
+                <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowFiscalFields(!showFiscalFields)}
+                    className="w-full flex items-center justify-between text-[9px] font-black text-slate-600 uppercase tracking-wider"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <FileText size={13} className="text-blue-500" />
+                      <span>Informações Fiscais (NCM, CEST, CFOP)</span>
+                    </div>
+                    {showFiscalFields ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+
+                  {showFiscalFields && (
+                    <div className="grid grid-cols-3 gap-2 pt-2">
+                      <div>
+                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">NCM (8 dígitos)</p>
+                        <input 
+                          value={formData.ncm || ''} 
+                          onChange={(e)=>setFormData(f=>({...f,ncm:e.target.value}))} 
+                          placeholder="Ex: 85183000"
+                          className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CEST</p>
+                        <input 
+                          value={formData.cest || ''} 
+                          onChange={(e)=>setFormData(f=>({...f,cest:e.target.value}))} 
+                          placeholder="Código CEST"
+                          className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CFOP</p>
+                        <input 
+                          value={formData.cfop || '5102'} 
+                          onChange={(e)=>setFormData(f=>({...f,cfop:e.target.value}))} 
+                          placeholder="5102"
+                          className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
-              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[10px] tracking-widest">Sair</button>
-              <button onClick={handleSave} disabled={isSaving || isCompressing} className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95">
-                {isSaving ? <Loader2 className="animate-spin" /> : 'Confirmar no SQL'}
+            <div className="p-5 bg-slate-50 border-t border-slate-100 flex gap-3 shrink-0">
+              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-3.5 font-black text-slate-400 hover:text-slate-600 uppercase text-[10px] tracking-widest transition-colors">
+                Sair
+              </button>
+              <button onClick={handleSave} disabled={isSaving || isCompressing} className="flex-[2] py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all">
+                {isSaving ? <Loader2 className="animate-spin mx-auto" size={16} /> : 'Confirmar no SQL'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* MODAL DE ESCOLHA: CÂMERA OU GALERIA PARA CADASTRO POR FOTO */}
+      {isPhotoChoiceOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95 p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 text-sm uppercase">Cadastro por Foto</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Inteligência Artificial</p>
+                </div>
+              </div>
+              <button onClick={() => setIsPhotoChoiceOpen(false)} className="p-2 text-slate-400 bg-slate-50 hover:bg-slate-100 rounded-full">
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              Tire uma foto nítida da embalagem, rótulo ou caixa do produto. A IA preencherá automaticamente foto, nome, código de barras, valores, descontos, descrição e dados fiscais. O que não estiver na caixa pode ser escrito manualmente!
+            </p>
+
+            <div className="grid grid-cols-1 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  cameraInputRef.current?.click();
+                }}
+                className="w-full py-4 px-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-blue-500/25 active:scale-95 transition-all"
+              >
+                <Camera size={18} />
+                <span>Tirar Foto com a Câmera</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  galleryInputRef.current?.click();
+                }}
+                className="w-full py-3.5 px-5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all"
+              >
+                <ImageIcon size={18} />
+                <span>Escolher da Galeria / Arquivos</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OVERLAY DE ANÁLISE COM IA */}
+      {isAnalyzingAI && (
+        <div className="fixed inset-0 bg-slate-950/90 z-[150] flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 text-center space-y-5 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+            <div className="relative w-24 h-24 mx-auto">
+              <div className="w-full h-full bg-blue-50 rounded-3xl flex items-center justify-center border-2 border-dashed border-blue-300 overflow-hidden shadow-inner">
+                {formData.photo ? (
+                  <img src={formData.photo} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <Camera size={36} className="text-blue-500 animate-pulse" />
+                )}
+              </div>
+              <div className="absolute -inset-1 rounded-3xl border-2 border-blue-500 animate-ping opacity-25 pointer-events-none" />
+              <div className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-2 rounded-full shadow-lg">
+                <Sparkles size={16} className="animate-spin" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-black text-slate-800 text-base uppercase tracking-tight">Analisando Produto</h3>
+              <p className="text-xs text-blue-600 font-bold min-h-[2.5rem] flex items-center justify-center">
+                {aiProgressMessage || 'Identificando informações da caixa...'}
+              </p>
+            </div>
+
+            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+              <div className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full w-2/3 animate-pulse" />
+            </div>
+
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              Identificando foto, nome, código de barras, valores e dados fiscais
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* INPUTS INVISÍVEIS PARA CÂMERA E GALERIA */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handlePhotoCaptureForAI(file);
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handlePhotoCaptureForAI(file);
+          e.target.value = '';
+        }}
+      />
 
       {/* MODAL SCANNER */}
       {isScannerOpen && (
@@ -524,6 +1104,16 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
           </div>
         </div>
       )}
+
+      {/* MODAL DE COMPRA DE CRÉDITOS DE IA */}
+      <AICreditsModal
+        isOpen={isAICreditsModalOpen}
+        onClose={() => setIsAICreditsModalOpen(false)}
+        tenantId={tenantId || ''}
+        storeName={settings?.storeName || 'Minha Loja'}
+        currentCredits={aiCredits}
+        onCreditsUpdated={(newCredits) => setAiCredits(newCredits)}
+      />
     </div>
   );
 };

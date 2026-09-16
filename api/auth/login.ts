@@ -66,8 +66,12 @@ export default async function handler(req: any, res: any) {
         customQuarterlyPrice: tenant?.custom_quarterly_price,
         customYearlyPrice: tenant?.custom_yearly_price,
         lastPlanType: tenant?.last_plan_type,
-        enabledFeatures: tenant?.enabled_features || {
+        enabledFeatures: tenant?.enabled_features ? {
+          customersTab: tenant.enabled_features.customersTab !== false,
+          ...tenant.enabled_features
+        } : {
           osTab: true,
+          customersTab: true,
           stockTab: true,
           salesTab: true,
           financeTab: true,

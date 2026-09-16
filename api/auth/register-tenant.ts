@@ -43,6 +43,7 @@ export default async function handler(req: any, res: any) {
         phone_number: phoneNumber,
         enabled_features: {
           osTab: true,
+          customersTab: true,
           stockTab: true,
           salesTab: true,
           financeTab: true,

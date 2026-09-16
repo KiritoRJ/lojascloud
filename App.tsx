@@ -66,6 +66,7 @@ const App: React.FC = () => {
     lastPlanType?: 'monthly' | 'quarterly' | 'yearly';
     enabledFeatures?: {
       osTab: boolean;
+      customersTab?: boolean;
       stockTab: boolean;
       salesTab: boolean;
       financeTab: boolean;
@@ -144,6 +145,33 @@ const App: React.FC = () => {
     return session?.user || settings.users[0] || null;
   }, [session?.user, session?.type, settings?.users]);
   useAppNotifications(transactions, products, orders, sales, settings, currentUser);
+
+  const navItems = useMemo(() => [
+    { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
+    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin', 'colaborador'], feature: 'customersTab' },
+    { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
+    { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
+    { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
+    { id: 'team', label: 'Equipe', icon: ShieldCheck, roles: ['admin'], feature: 'financeTab' },
+    { id: 'ferramentas', label: 'Ferramentas', icon: Wrench, roles: ['admin', 'colaborador'], feature: 'toolsTab' },
+    { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
+  ], []);
+
+  const visibleNavItems = useMemo(() => {
+    if (!currentUser) return [];
+    return navItems.filter(item => {
+      const roleAllowed = item.roles.includes(currentUser.role);
+      const featureAllowed = !item.feature || (session?.enabledFeatures as any)?.[item.feature] !== false;
+      return roleAllowed && featureAllowed;
+    });
+  }, [currentUser, session?.enabledFeatures, navItems]);
+
+  // Se a aba ativa atual não estiver permitida para esta loja/perfil, redireciona para a primeira aba visível
+  useEffect(() => {
+    if (session?.isLoggedIn && visibleNavItems.length > 0 && !visibleNavItems.some(item => item.id === activeTab)) {
+      setActiveTab(visibleNavItems[0].id as Tab);
+    }
+  }, [session?.isLoggedIn, visibleNavItems, activeTab]);
 
   const pathname = window.location.pathname;
   const searchParams = new URLSearchParams(window.location.search);
@@ -1492,24 +1520,6 @@ const App: React.FC = () => {
     );
   }
 
-  const navItems = [
-    { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
-    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin', 'colaborador'] },
-    { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
-    { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
-    { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
-    { id: 'team', label: 'Equipe', icon: ShieldCheck, roles: ['admin'], feature: 'financeTab' },
-    { id: 'ferramentas', label: 'Ferramentas', icon: Wrench, roles: ['admin', 'colaborador'], feature: 'toolsTab' },
-    { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
-  ];
-  
-  const visibleNavItems = navItems.filter(item => {
-    if (!currentUser) return false;
-    const roleAllowed = item.roles.includes(currentUser.role);
-    const featureAllowed = !item.feature || (session?.enabledFeatures as any)?.[item.feature] !== false;
-    return roleAllowed && featureAllowed;
-  });
-
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0];
     // Permitir início do gesto até 180px da borda esquerda para contornar o gesto nativo de 'voltar' da borda infinita
@@ -1685,7 +1695,7 @@ const App: React.FC = () => {
               onClearPrefilledCustomer={() => setPrefilledCustomerForOS(null)}
             />
           )}
-          {activeTab === 'clientes' && (
+          {activeTab === 'clientes' && (session?.enabledFeatures?.customersTab !== false) && (
             <CustomersTab 
               customers={customers}
               orders={orders}
@@ -1705,7 +1715,7 @@ const App: React.FC = () => {
               }}
             />
           )}
-          {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} onUpdateSettings={saveSettings} maxProducts={session.maxProducts} />}
+          {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} onUpdateSettings={saveSettings} maxProducts={session.maxProducts} tenantId={session.tenantId || ''} />}
           {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} setOrders={saveOrders} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
           {activeTab === 'team' && <EmployeeManagementTab tenantId={session.tenantId || ''} />}

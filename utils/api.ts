@@ -443,6 +443,7 @@ export class OnlineDB {
           updateData.max_users = planLimits.maxUsers;
           updateData.enabled_features = {
             osTab: true,
+            customersTab: true,
             stockTab: true,
             salesTab: true,
             financeTab: true,
@@ -493,6 +494,7 @@ export class OnlineDB {
         updateData.max_users = planLimits.maxUsers;
         updateData.enabled_features = {
           osTab: true,
+          customersTab: true,
           stockTab: true,
           salesTab: true,
           financeTab: true,
@@ -1910,4 +1912,79 @@ export class OnlineDB {
       return { success: false };
     }
   }
+
+  // --- CRÉDITOS DE IA POR LOJA (LOJAS CLOUD AI) ---
+  static async getAICredits(tenantId: string): Promise<number> {
+    if (!tenantId) return 0;
+    try {
+      const { data, error } = await supabase
+        .from('cloud_data')
+        .select('data_json')
+        .eq('tenant_id', tenantId)
+        .eq('store_key', 'ai_credits')
+        .maybeSingle();
+      
+      if (error) throw error;
+      if (data?.data_json && typeof data.data_json.credits === 'number') {
+        return Math.max(0, data.data_json.credits);
+      }
+      return 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  static async addAICredits(tenantId: string, amount: number): Promise<{ success: boolean; credits: number }> {
+    if (!tenantId || amount <= 0) return { success: false, credits: 0 };
+    try {
+      const current = await this.getAICredits(tenantId);
+      const updatedCredits = current + amount;
+      const { error } = await supabase
+        .from('cloud_data')
+        .upsert({
+          tenant_id: tenantId,
+          store_key: 'ai_credits',
+          data_json: {
+            credits: updatedCredits,
+            last_recharge_amount: amount,
+            last_recharged_at: new Date().toISOString()
+          },
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'tenant_id,store_key' });
+
+      if (error) throw error;
+      return { success: true, credits: updatedCredits };
+    } catch (e) {
+      console.error('Erro ao adicionar créditos de IA:', e);
+      return { success: false, credits: 0 };
+    }
+  }
+
+  static async consumeAICredit(tenantId: string): Promise<{ success: boolean; remainingCredits: number }> {
+    if (!tenantId) return { success: false, remainingCredits: 0 };
+    try {
+      const current = await this.getAICredits(tenantId);
+      if (current <= 0) {
+        return { success: false, remainingCredits: 0 };
+      }
+      const updatedCredits = Math.max(0, current - 1);
+      await supabase
+        .from('cloud_data')
+        .upsert({
+          tenant_id: tenantId,
+          store_key: 'ai_credits',
+          data_json: {
+            credits: updatedCredits,
+            last_used_at: new Date().toISOString()
+          },
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'tenant_id,store_key' });
+
+      return { success: true, remainingCredits: updatedCredits };
+    } catch (e) {
+      console.error('Erro ao consumir crédito de IA:', e);
+      return { success: false, remainingCredits: 0 };
+    }
+  }
 }
+

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe } from 'lucide-react';
+import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap } from 'lucide-react';
 import { AppSettings, User, ServiceOrder, Product, Sale, Transaction, Employee } from '../types';
 import { OnlineDB } from '../utils/api';
 import { OfflineSync } from '../utils/offlineSync';
@@ -8,6 +8,7 @@ import { db } from '../utils/localDb';
 import CatalogManager from './CatalogManager';
 import AdbVirusCleaner from './AdbVirusCleaner';
 import { ConnectionStatusTag, ConnectionStatusDetailModal } from './DatabaseOfflineAlert';
+import { AICreditsModal } from './AICreditsModal';
 
 interface Props {
   products: Product[];
@@ -106,6 +107,16 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
     loadSupportPhone();
   }, []);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  // Estados de Créditos de IA
+  const [isAICreditsModalOpen, setIsAICreditsModalOpen] = useState(false);
+  const [aiCredits, setAiCredits] = useState<number>(0);
+
+  useEffect(() => {
+    if (tenantId) {
+      OnlineDB.getAICredits(tenantId).then(credits => setAiCredits(credits));
+    }
+  }, [tenantId, view]);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authPassword, setAuthPassword] = useState('');
@@ -1490,12 +1501,51 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
                   </p>
                 </div>
               </div>
+
+              {/* CRÉDITOS DE IA */}
+              <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border border-blue-100 p-6 rounded-[2rem] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-md shadow-blue-500/20">
+                    <Sparkles size={24} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                      <Zap size={12} className="text-amber-500" /> Inteligência Artificial
+                    </p>
+                    <p className="text-xs font-bold text-slate-700 uppercase">Créditos Prioritários de IA</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Leituras por foto sem limites ou filas</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                  <div className="text-left sm:text-right">
+                    <p className="font-black text-blue-700 text-2xl leading-none">
+                      {aiCredits}
+                      <span className="text-slate-400 text-xs ml-1 font-bold">créditos</span>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAICreditsModalOpen(true)}
+                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-[10px] font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    <Plus size={14} />
+                    <span>Adicionar</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="pt-4">
+            <div className="pt-4 flex flex-col sm:flex-row gap-3">
+              <button 
+                onClick={() => setIsAICreditsModalOpen(true)}
+                className="flex-1 py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Sparkles size={16} />
+                Comprar Créditos de IA
+              </button>
               <button 
                 onClick={() => window.open(`https://wa.me/${supportPhone}?text=Olá, gostaria de falar sobre meu plano na ${settings.storeName}`, '_blank')}
-                className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
+                className="flex-1 py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
               >
                 Falar com Suporte / Upgrade
               </button>
@@ -1748,6 +1798,9 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
               <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-100 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden animate-in zoom-in-95 origin-top-right">
                 {isAdmin && (
                   <>
+                    <button onClick={() => { setIsAICreditsModalOpen(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent">
+                      <Sparkles size={16} className="text-blue-600 animate-pulse" /> Créditos de IA ({aiCredits})
+                    </button>
                     <button onClick={() => { setView('subscription'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'subscription' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
                       <Shield size={16} /> Plano e Limites
                     </button>
@@ -1935,6 +1988,16 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
            </button>
         </div>
       </div>
+
+      {/* MODAL DE CRÉDITOS DE IA */}
+      <AICreditsModal
+        isOpen={isAICreditsModalOpen}
+        onClose={() => setIsAICreditsModalOpen(false)}
+        tenantId={tenantId || ''}
+        storeName={settings.storeName || 'Minha Loja'}
+        currentCredits={aiCredits}
+        onCreditsUpdated={(newCredits) => setAiCredits(newCredits)}
+      />
     </div>
   );
 };

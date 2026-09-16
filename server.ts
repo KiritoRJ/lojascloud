@@ -4,6 +4,7 @@ import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
+import { GoogleGenAI, Type } from '@google/genai';
 import { OnlineDB, supabase } from './utils/api';
 import path from 'path';
 import fs from 'fs';
@@ -41,9 +42,199 @@ const getMPClient = () => {
   return new MercadoPagoConfig({ accessToken: token });
 };
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+let genAIClient: GoogleGenAI | null = null;
+const getGenAI = () => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('Chave de API Gemini (GEMINI_API_KEY) não configurada nas variáveis de ambiente.');
+  }
+  if (!genAIClient) {
+    genAIClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+  return genAIClient;
+};
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors());
+
+// AI Intelligent Product Scanner endpoint
+app.post('/api/ai/analyze-product-image', async (req, res) => {
+  try {
+    const { imageBase64, mimeType, tenantId } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Nenhuma imagem foi enviada para análise.' });
+    }
+
+    // Se o lojista tiver créditos de IA ativos no sistema, consome 1 crédito prioritário
+    let creditsRemaining: number | null = null;
+    if (tenantId) {
+      try {
+        const currentCredits = await OnlineDB.getAICredits(tenantId);
+        if (currentCredits > 0) {
+          const consumeResult = await OnlineDB.consumeAICredit(tenantId);
+          if (consumeResult.success) {
+            creditsRemaining = consumeResult.remainingCredits;
+          }
+        }
+      } catch (e) {
+        console.warn('Aviso ao checar créditos do lojista:', e);
+      }
+    }
+
+    let cleanBase64 = imageBase64;
+    let detectedMime = mimeType || 'image/jpeg';
+    if (cleanBase64.includes(';base64,')) {
+      const parts = cleanBase64.split(';base64,');
+      cleanBase64 = parts[1];
+      const match = parts[0].match(/data:(.*?)$/);
+      if (match) detectedMime = match[1];
+    }
+
+    const ai = getGenAI();
+
+    const prompt = `Você é um assistente de inteligência artificial de elite especializado em catalogação e automação de cadastro de produtos para varejo, comércio e assistência técnica.
+Analise detalhadamente a foto do produto/embalagem/caixa/rótulo fornecida e identifique o máximo de informações disponíveis:
+
+1. Nome comercial do produto (name): Nome claro, objetivo e completo (ex: "Fone de Ouvido Bluetooth JBL Tune 510BT Preto" ou "Película de Vidro 3D iPhone 14 Pro").
+2. Marca (brand): Marca do produto se legível ou identificável na caixa (ex: Apple, JBL, Samsung, Xiaomi, Baseus, etc.).
+3. Modelo (model): Código ou nome do modelo especificado.
+4. Categoria (category): Categoria apropriada (ex: "Acessórios", "Áudio", "Cabos e Carregadores", "Capas e Películas", "Periféricos", "Peças e Componentes", "Eletrônicos", "Baterias", etc.).
+5. Código de barras (barcode): Extraia com precisão os números do código de barras EAN-13, GTIN ou UPC impresso na caixa ou etiqueta. Retorne SOMENTE dígitos numéricos. Se não houver código de barras visível, retorne string vazia.
+6. Preço de venda (salePrice): Se houver etiqueta de preço colada ou impressa na caixa (ex: "R$ 39,90" ou etiqueta de loja), extraia o valor numérico em reais (ex: 39.9). Se não houver, retorne 0.
+7. Preço de custo (costPrice): Se houver menção de preço de custo ou atacado, extraia o valor numérico. Caso contrário, retorne 0.
+8. Descontos e Promoções: Se houver indicação de desconto (ex: "De R$ 100 por R$ 79", "30% OFF", "Leve mais por menos"), extraia ou calcule o valor/percentual do desconto (discount), o preço promocional (promotionalPrice) e defina isPromotion como true.
+9. Informações Fiscais no Brasil:
+   - NCM (Nomenclatura Comum do Mercosul): Se constar na etiqueta fiscal ou caixa, ou sugira o NCM padrão de 8 dígitos para esse tipo de item (ex: 85183000 para fones, 85444200 para cabos, 85044010 para carregadores/fontes, 39269090 para capas plásticas).
+   - CEST: Código CEST se aplicável ou se constar na caixa.
+   - CFOP: CFOP padrão sugerido (ex: "5102").
+10. Descrição completa (description): Elabore uma descrição profissional e detalhada com as principais características e especificações técnicas impressas na embalagem (dimensões, conectividade, voltagem, compatibilidade, cor, material, conteúdo da embalagem).
+11. Quantidade (quantity): Se a embalagem for um kit ou pacote com múltiplas unidades (ex: "Kit com 5 peças"), retorne esse número. Caso seja item individual, retorne 1.
+
+Retorne estritamente um objeto JSON com as chaves:
+{
+  "name": string,
+  "brand": string,
+  "model": string,
+  "category": string,
+  "barcode": string,
+  "salePrice": number,
+  "costPrice": number,
+  "promotionalPrice": number,
+  "discount": number,
+  "isPromotion": boolean,
+  "description": string,
+  "ncm": string,
+  "cest": string,
+  "cfop": string,
+  "quantity": number
+}`;
+
+    // Lista de modelos suportados para fallback caso algum enfrente pico momentâneo de demanda (HTTP 503)
+    const candidateModels = [
+      'gemini-3.6-flash',
+      'gemini-3.8-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-flash-latest',
+    ];
+
+    let lastError: any = null;
+    let responseText: string | null = null;
+
+    for (const model of candidateModels) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: detectedMime,
+                    data: cleanBase64,
+                  },
+                },
+                {
+                  text: prompt,
+                },
+              ],
+            },
+            config: {
+              responseMimeType: 'application/json',
+              temperature: 0.1,
+            },
+          });
+
+          if (response?.text) {
+            responseText = response.text;
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = String(err?.message || err || '');
+          const isOverloaded = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE') || errMsg.includes('429');
+          console.warn(`Tentativa ${attempt} com modelo ${model} falhou: ${errMsg.slice(0, 150)}`);
+          if (isOverloaded && attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (responseText) {
+        break;
+      }
+    }
+
+    if (!responseText) {
+      const parsedErr = typeof lastError?.message === 'string' ? lastError.message : '';
+      let userFriendlyMsg = 'O serviço de reconhecimento por IA está enfrentando alta demanda temporária nos servidores do Google. A foto foi salva e você pode tentar novamente em instantes ou preencher os dados manualmente.';
+      
+      try {
+        const jsonErr = JSON.parse(parsedErr);
+        if (jsonErr?.error?.message) {
+          userFriendlyMsg = `Servidores de IA temporariamente ocupados (${jsonErr.error.status || 503}). A foto foi anexada ao formulário. Tente o reconhecimento novamente em instantes ou preencha manualmente.`;
+        }
+      } catch (_) {}
+
+      return res.status(503).json({
+        success: false,
+        error: userFriendlyMsg,
+        code: 503,
+        canRetry: true,
+      });
+    }
+
+    // Limpar possíveis delimitadores de markdown json caso o modelo os adicione
+    let cleanedJsonText = responseText.trim();
+    if (cleanedJsonText.startsWith('```json')) {
+      cleanedJsonText = cleanedJsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (cleanedJsonText.startsWith('```')) {
+      cleanedJsonText = cleanedJsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
+    const data = JSON.parse(cleanedJsonText);
+    return res.json({ 
+      success: true, 
+      data,
+      creditsRemaining: creditsRemaining !== null ? creditsRemaining : undefined
+    });
+  } catch (error: any) {
+    console.error('Erro na análise de produto por IA:', error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Falha ao analisar a foto do produto com Inteligência Artificial.',
+    });
+  }
+});
 
 // Explicit route for legacy iPad 1 Safari 5.1 / iOS 5.1.1
 app.get('/ipad', (req, res) => {
@@ -113,8 +304,12 @@ app.post('/api/auth/login', async (req, res) => {
         customQuarterlyPrice: tenant?.custom_quarterly_price,
         customYearlyPrice: tenant?.custom_yearly_price,
         lastPlanType: tenant?.last_plan_type,
-        enabledFeatures: tenant?.enabled_features || {
+        enabledFeatures: tenant?.enabled_features ? {
+          customersTab: tenant.enabled_features.customersTab !== false,
+          ...tenant.enabled_features
+        } : {
           osTab: true,
+          customersTab: true,
           stockTab: true,
           salesTab: true,
           financeTab: true,
@@ -160,6 +355,7 @@ app.post('/api/auth/register-tenant', async (req, res) => {
         phone_number: phoneNumber,
         enabled_features: {
           osTab: true,
+          customersTab: true,
           stockTab: true,
           salesTab: true,
           financeTab: true,
@@ -821,24 +1017,34 @@ app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
 
         if (externalReference && status === 'approved') {
           const [tenantId, planType] = externalReference.split('|');
-          const plans = {
-            monthly: 1,
-            quarterly: 3,
-            yearly: 12
-          }
+          
+          // Verifica se é pacote de créditos de IA (ex: ai_credits_50, ai_credits_150, etc.)
+          if (planType && planType.startsWith('ai_credits_')) {
+            const amount = parseInt(planType.replace('ai_credits_', ''), 10);
+            if (!isNaN(amount) && amount > 0) {
+              await OnlineDB.addAICredits(tenantId, amount);
+              console.log(`IA Credits updated successfully for tenant ${tenantId}: +${amount} credits`);
+            }
+          } else {
+            const plans = {
+              monthly: 1,
+              quarterly: 3,
+              yearly: 12
+            };
 
-          const months = plans[planType as keyof typeof plans];
+            const months = plans[planType as keyof typeof plans];
 
-          if (months) {
-            const expiresAt = new Date();
-            expiresAt.setMonth(expiresAt.getMonth() + months);
+            if (months) {
+              const expiresAt = new Date();
+              expiresAt.setMonth(expiresAt.getMonth() + months);
 
-            // Update tenant subscription in your database
-            await OnlineDB.updateSubscription(tenantId, months, planType as any);
-            console.log(`Subscription updated successfully for tenant ${tenantId}`);
+              // Update tenant subscription in your database
+              await OnlineDB.updateSubscription(tenantId, months, planType as any);
+              console.log(`Subscription updated successfully for tenant ${tenantId}`);
+            }
           }
         } else {
-          console.log(`Payment ${paymentId} status is ${status}, not updating subscription.`);
+          console.log(`Payment ${paymentId} status is ${status}, not updating subscription/credits.`);
         }
       }
     }

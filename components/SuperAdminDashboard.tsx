@@ -473,6 +473,7 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                         name: t.store_name, 
                         features: {
                           toolsTab: t.enabled_features?.toolsTab !== false,
+                          customersTab: t.enabled_features?.customersTab !== false,
                           ...t.enabled_features
                         },
                         maxUsers: t.max_users || 999,
@@ -874,6 +875,7 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
               <div className="space-y-3 text-left pt-2">
                   {[
                     { id: 'osTab', label: 'Aba Ordem de Serviço' },
+                    { id: 'customersTab', label: 'Aba Clientes' },
                     { id: 'stockTab', label: 'Aba Estoque' },
                     { id: 'salesTab', label: 'Aba Vendas' },
                     { id: 'financeTab', label: 'Aba Financeira' },
@@ -887,7 +889,13 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                       <span className="text-xs font-black uppercase tracking-tight text-slate-700">{feature.label}</span>
                       <input 
                         type="checkbox" 
-                        checked={feature.id === 'toolsTab' ? tenantToEditFeatures.features.toolsTab !== false : !!tenantToEditFeatures.features[feature.id]} 
+                        checked={
+                          feature.id === 'toolsTab' 
+                            ? tenantToEditFeatures.features.toolsTab !== false 
+                            : feature.id === 'customersTab'
+                            ? tenantToEditFeatures.features.customersTab !== false
+                            : !!tenantToEditFeatures.features[feature.id]
+                        } 
                         onChange={e => setTenantToEditFeatures({
                           ...tenantToEditFeatures,
                           features: { ...tenantToEditFeatures.features, [feature.id]: e.target.checked }

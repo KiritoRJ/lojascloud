@@ -12,8 +12,10 @@ export interface Tenant {
   customQuarterlyPrice?: number;
   customYearlyPrice?: number;
   lastPlanType?: 'monthly' | 'quarterly' | 'yearly';
+  aiCredits?: number;
   enabledFeatures?: {
     osTab: boolean;
+    customersTab?: boolean;
     stockTab: boolean;
     salesTab: boolean;
     financeTab: boolean;
@@ -149,6 +151,12 @@ export interface Product {
   promotionalPrice?: number;
   isPromotion?: boolean;
   videoUrl?: string;
+  brand?: string;
+  model?: string;
+  ncm?: string;
+  cest?: string;
+  cfop?: string;
+  discount?: number;
 }
 
 export interface Sale {

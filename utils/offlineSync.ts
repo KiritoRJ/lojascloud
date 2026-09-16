@@ -2,6 +2,7 @@ import { db, SyncItem } from './localDb';
 import { OnlineDB } from './api';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from '../types';
 import { ConnectionStatusManager } from './connectionStatus';
+import { areServiceOrdersEqual } from './orderUtils';
 
 export class OfflineSync {
   private static isSyncing = false;
@@ -283,7 +284,14 @@ export class OfflineSync {
 
   // Salvar Ordem de Serviço
   static async saveOrder(tenantId: string, order: ServiceOrder) {
+    const existing = await db.orders.get(order.id);
     await db.orders.put({ ...order, tenantId });
+
+    // Se a ordem de serviço já existia no banco e não sofreu nenhuma alteração, não envia ao Supabase
+    if (existing && areServiceOrdersEqual(existing as any, order)) {
+      return;
+    }
+
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       try {
         const res = await OnlineDB.upsertOrders(tenantId, [order]);
@@ -300,12 +308,12 @@ export class OfflineSync {
   }
 
   // Salvar lote de Ordens de Serviço (evita repetições e enfileira apenas alterações reais)
-  static async saveOrdersBatch(tenantId: string, allOrders: ServiceOrder[], changedOrders: ServiceOrder[]) {
+  static async saveOrdersBatch(tenantId: string, allOrders: ServiceOrder[], changedOrders?: ServiceOrder[]) {
     // 1. Salva todas localmente no IndexedDB em alta performance
     await db.orders.bulkPut(allOrders.map(o => ({ ...o, tenantId })));
 
     // 2. Sincroniza apenas as ordens que realmente mudaram ou foram criadas
-    if (changedOrders.length === 0) return;
+    if (!changedOrders || changedOrders.length === 0) return;
 
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       try {

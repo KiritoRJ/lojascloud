@@ -11,6 +11,7 @@ import {
 import { ServiceOrder, AppSettings, User, Customer, DeviceDiagnosticResults } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate, formatDateTime, generateRandomNumericCode, getTrackingUrl, getHardwareTestUrl } from '../utils';
 import { OnlineDB } from '../utils/api';
+import { areServiceOrdersEqual } from '../utils/orderUtils';
 import { SavedOrderShareModal } from './SavedOrderShareModal';
 import { DiagnosticReportModal } from './DiagnosticReportModal';
 import { CustomerBroadcastModal } from './CustomerBroadcastModal';
@@ -698,6 +699,15 @@ const ServiceOrderTab: React.FC<Props> = ({
         isTrackingEnabled: formData.isTrackingEnabled !== false,
         customerId: assignedCustomerId 
       } as ServiceOrder;
+
+      // Se nada mudou em relação ao que já está salvo, não envia para a nuvem nem gera sincronização desnecessária
+      if (areServiceOrdersEqual(editingOrder, updatedOrder)) {
+        setIsModalOpen(false);
+        clearDraft();
+        resetForm();
+        setIsSaving(false);
+        return;
+      }
       
       // Se o status mudou para Concluído ou Entregue, calcula comissão
       if ((updatedOrder.status === 'Concluído' || updatedOrder.status === 'Entregue') && 
@@ -926,6 +936,10 @@ const ServiceOrderTab: React.FC<Props> = ({
 
   const handleQuickStatusChange = (newStatus: ServiceOrder['status']) => {
     if (!statusChangeOrder) return;
+    if (statusChangeOrder.status === newStatus) {
+      setStatusChangeOrder(null);
+      return;
+    }
     
     const today = new Date().toLocaleDateString('pt-BR');
     const updatedOrder: ServiceOrder = { 

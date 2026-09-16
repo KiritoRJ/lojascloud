@@ -18,6 +18,7 @@ import { DeviceHardwareTestPage } from './components/DeviceHardwareTestPage';
 import { OnlineDB, supabase } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { OfflineAuth } from './utils/offlineAuth';
+import { getChangedOrders } from './utils/orderUtils';
 import { db } from './utils/localDb';
 import { useAppNotifications } from './utils/useAppNotifications';
 import { ConnectionStatusManager } from './utils/connectionStatus';
@@ -939,13 +940,14 @@ const App: React.FC = () => {
     const prevOrders = orders;
     setOrders(newOrders);
     if (session?.tenantId) {
-      const prevMap = new Map(prevOrders.map(o => [o.id, o]));
-      const changed = newOrders.filter(newO => {
-        const oldO = prevMap.get(newO.id);
-        if (!oldO) return true; // Nova OS criada!
-        return JSON.stringify(newO) !== JSON.stringify(oldO);
-      });
-      await OfflineSync.saveOrdersBatch(session.tenantId, newOrders, changed.length > 0 ? changed : undefined);
+      const changed = getChangedOrders(prevOrders, newOrders);
+      if (changed.length > 0) {
+        // Envia para o Supabase / fila offline APENAS as ordens que realmente foram alteradas ou criadas
+        await OfflineSync.saveOrdersBatch(session.tenantId, newOrders, changed);
+      } else {
+        // Se nenhuma OS mudou, apenas mantém atualizado localmente sem gerar requisição de rede
+        await db.orders.bulkPut(newOrders.map(o => ({ ...o, tenantId: session.tenantId })));
+      }
     }
   };
 

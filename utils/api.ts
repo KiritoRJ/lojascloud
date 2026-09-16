@@ -522,9 +522,108 @@ export class OnlineDB {
     }
   }
 
-  // Remove uma loja do sistema
+  // Remove uma loja do sistema com exclusão em cascata completa
   static async deleteTenant(tenantId: string) {
+    if (!tenantId) return { success: false, message: 'ID da loja não informado.' };
+
     try {
+      // 1. Tenta deletar primeiro através da rota segura do servidor Node
+      try {
+        const response = await fetch('/api/super/delete-tenant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId })
+        });
+        if (response.ok) {
+          const resData = await response.json();
+          if (resData.success) {
+            return { success: true };
+          }
+          if (resData.message) {
+            console.warn('[deleteTenant] Aviso da rota do servidor:', resData.message);
+          }
+        }
+      } catch (apiErr) {
+        console.warn('[deleteTenant] Servidor indisponível, executando cascata direta via Supabase:', apiErr);
+      }
+
+      // 2. Cascata direta ordenada no Supabase caso necessário:
+      // A) Coleta IDs de usuários vinculados à loja
+      const { data: tenantUsers } = await supabase
+        .from('users')
+        .select('id')
+        .eq('tenant_id', tenantId);
+      const userIds = (tenantUsers || []).map((u: any) => u.id).filter(Boolean);
+
+      // B) Coleta IDs de funcionários vinculados à loja
+      const { data: tenantEmployees } = await supabase
+        .from('employees')
+        .select('id')
+        .eq('tenant_id', tenantId);
+      const employeeIds = (tenantEmployees || []).map((e: any) => e.id).filter(Boolean);
+
+      if (userIds.length > 0) {
+        const { data: extraEmps } = await supabase
+          .from('employees')
+          .select('id')
+          .in('user_id', userIds);
+        if (extraEmps) {
+          for (const e of extraEmps) {
+            if (e.id && !employeeIds.includes(e.id)) {
+              employeeIds.push(e.id);
+            }
+          }
+        }
+      }
+
+      // C) Deleta regras de comissão, logs e metas (evita foreign key em employees)
+      await supabase.from('commissions_log').delete().eq('tenant_id', tenantId);
+      if (employeeIds.length > 0) {
+        await supabase.from('commissions_log').delete().in('employee_id', employeeIds);
+      }
+
+      await supabase.from('goal_tiers').delete().eq('tenant_id', tenantId);
+      if (employeeIds.length > 0) {
+        await supabase.from('goal_tiers').delete().in('employee_id', employeeIds);
+      }
+
+      await supabase.from('commission_rules').delete().eq('tenant_id', tenantId);
+      if (employeeIds.length > 0) {
+        await supabase.from('commission_rules').delete().in('employee_id', employeeIds);
+      }
+
+      // D) Deleta employees (resolve o erro: "employees_user_id_fkey" on table "employees")
+      await supabase.from('employees').delete().eq('tenant_id', tenantId);
+      if (userIds.length > 0) {
+        await supabase.from('employees').delete().in('user_id', userIds);
+      }
+      if (employeeIds.length > 0) {
+        await supabase.from('employees').delete().in('id', employeeIds);
+      }
+
+      // E) Deleta sessões ativas
+      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId);
+      if (userIds.length > 0) {
+        await supabase.from('active_sessions').delete().in('user_id', userIds);
+      }
+
+      // F) Deleta dados operacionais da loja
+      await supabase.from('service_orders').delete().eq('tenant_id', tenantId);
+      await supabase.from('sales').delete().eq('tenant_id', tenantId);
+      await supabase.from('products').delete().eq('tenant_id', tenantId);
+      await supabase.from('transactions').delete().eq('tenant_id', tenantId);
+      await supabase.from('customers').delete().eq('tenant_id', tenantId);
+      await supabase.from('suppliers').delete().eq('tenant_id', tenantId);
+      await supabase.from('cloud_data').delete().eq('tenant_id', tenantId);
+      await supabase.from('tenant_limits').delete().eq('tenant_id', tenantId);
+
+      // G) Deleta usuários da loja (agora sem violar a foreign key de employees)
+      await supabase.from('users').delete().eq('tenant_id', tenantId);
+      if (userIds.length > 0) {
+        await supabase.from('users').delete().in('id', userIds);
+      }
+
+      // H) Deleta a loja na tabela tenants
       const { error } = await supabase
         .from('tenants')
         .delete()
@@ -533,7 +632,8 @@ export class OnlineDB {
       if (error) throw error;
       return { success: true };
     } catch (e: any) {
-      return { success: false, message: e.message };
+      console.error('[deleteTenant] Erro ao excluir loja:', e);
+      return { success: false, message: e.message || 'Erro ao excluir loja.' };
     }
   }
 

@@ -336,6 +336,105 @@ app.post('/api/auth/change-super-password', async (req, res) => {
   }
 });
 
+// Exclusão completa de uma loja em cascata (Super Admin)
+app.post('/api/super/delete-tenant', async (req, res) => {
+  const { tenantId } = req.body;
+  if (!tenantId) {
+    return res.status(400).json({ success: false, message: 'ID da loja obrigatório.' });
+  }
+
+  try {
+    // 1. Obter IDs dos usuários da loja
+    const { data: tenantUsers } = await supabase
+      .from('users')
+      .select('id')
+      .eq('tenant_id', tenantId);
+    const userIds = (tenantUsers || []).map((u: any) => u.id).filter(Boolean);
+
+    // 2. Obter IDs dos funcionários da loja
+    const { data: tenantEmployees } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('tenant_id', tenantId);
+    const employeeIds = (tenantEmployees || []).map((e: any) => e.id).filter(Boolean);
+
+    // Se houver funcionários vinculados aos userIds da loja com outro tenant_id
+    if (userIds.length > 0) {
+      const { data: extraEmps } = await supabase
+        .from('employees')
+        .select('id')
+        .in('user_id', userIds);
+      if (extraEmps) {
+        for (const e of extraEmps) {
+          if (e.id && !employeeIds.includes(e.id)) {
+            employeeIds.push(e.id);
+          }
+        }
+      }
+    }
+
+    // 3. Deletar dependências de comissão e metas (apontam para employees)
+    await supabase.from('commissions_log').delete().eq('tenant_id', tenantId);
+    if (employeeIds.length > 0) {
+      await supabase.from('commissions_log').delete().in('employee_id', employeeIds);
+    }
+
+    await supabase.from('goal_tiers').delete().eq('tenant_id', tenantId);
+    if (employeeIds.length > 0) {
+      await supabase.from('goal_tiers').delete().in('employee_id', employeeIds);
+    }
+
+    await supabase.from('commission_rules').delete().eq('tenant_id', tenantId);
+    if (employeeIds.length > 0) {
+      await supabase.from('commission_rules').delete().in('employee_id', employeeIds);
+    }
+
+    // 4. Deletar employees (resolve violação de foreign key 'employees_user_id_fkey' em users!)
+    await supabase.from('employees').delete().eq('tenant_id', tenantId);
+    if (userIds.length > 0) {
+      await supabase.from('employees').delete().in('user_id', userIds);
+    }
+    if (employeeIds.length > 0) {
+      await supabase.from('employees').delete().in('id', employeeIds);
+    }
+
+    // 5. Deletar sessões ativas
+    await supabase.from('active_sessions').delete().eq('tenant_id', tenantId);
+    if (userIds.length > 0) {
+      await supabase.from('active_sessions').delete().in('user_id', userIds);
+    }
+
+    // 6. Deletar dados operacionais da loja
+    await supabase.from('service_orders').delete().eq('tenant_id', tenantId);
+    await supabase.from('sales').delete().eq('tenant_id', tenantId);
+    await supabase.from('products').delete().eq('tenant_id', tenantId);
+    await supabase.from('transactions').delete().eq('tenant_id', tenantId);
+    await supabase.from('customers').delete().eq('tenant_id', tenantId);
+    await supabase.from('suppliers').delete().eq('tenant_id', tenantId);
+    await supabase.from('cloud_data').delete().eq('tenant_id', tenantId);
+    await supabase.from('tenant_limits').delete().eq('tenant_id', tenantId);
+
+    // 7. Deletar usuários da loja
+    await supabase.from('users').delete().eq('tenant_id', tenantId);
+    if (userIds.length > 0) {
+      await supabase.from('users').delete().in('id', userIds);
+    }
+
+    // 8. Deletar o tenant
+    const { error: tenantErr } = await supabase
+      .from('tenants')
+      .delete()
+      .eq('id', tenantId);
+
+    if (tenantErr) throw tenantErr;
+
+    res.json({ success: true, message: 'Loja e todos os seus dados excluídos com sucesso.' });
+  } catch (err: any) {
+    console.error('Delete tenant error:', err);
+    res.status(500).json({ success: false, message: err.message || 'Erro ao deletar loja.' });
+  }
+});
+
 // Tracking API
 app.get('/api/os-tracking/:token', async (req, res) => {
   const { token } = req.params;

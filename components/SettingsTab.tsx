@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap } from 'lucide-react';
+import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus } from 'lucide-react';
 import { AppSettings, User, ServiceOrder, Product, Sale, Transaction, Employee } from '../types';
 import { OnlineDB } from '../utils/api';
 import { OfflineSync } from '../utils/offlineSync';

@@ -1068,7 +1068,7 @@ export class OnlineDB {
           description: p.category ? `[CAT:${p.category}] ${p.description || ''}` : p.description,
           additional_photos: additionalPhotos,
           promotional_price: p.promotionalPrice || 0,
-          isPromotion: p.isPromotion || false
+          is_promotion: p.isPromotion || false
         };
       });
       const { error } = await supabase.from('products').upsert(payload, { onConflict: 'id' });

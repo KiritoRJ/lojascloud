@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare } from 'lucide-react';
+import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -655,6 +655,28 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                         className="w-full bg-white border border-slate-200 rounded-lg p-2 pl-10 text-[10px] sm:text-xs text-slate-800 font-bold" 
                       />
                     </div>
+                  </div>
+                </div>
+
+                <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100 mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CreditCard size={16} className="text-emerald-600" />
+                    <h4 className="font-bold text-emerald-800 uppercase text-[10px] sm:text-xs">Mercado Pago (Pagamentos & IA)</h4>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[8px] sm:text-[9px] font-bold text-slate-400">Access Token de Produção / Teste (APP_USR-...)</label>
+                    <div className="relative">
+                      <input 
+                        type="password" 
+                        value={globalPlans.mercadoPagoAccessToken || ''} 
+                        onChange={e => setGlobalPlans((prev: any) => ({ ...prev, mercadoPagoAccessToken: e.target.value.trim() }))} 
+                        placeholder="APP_USR-0000000000000000-000000-..." 
+                        className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-[10px] sm:text-xs text-slate-800 font-mono" 
+                      />
+                    </div>
+                    <p className="text-[8px] text-slate-400 mt-1">
+                      Você pode configurar o Access Token aqui ou na variável de ambiente <code className="text-emerald-700 font-bold">MERCADO_PAGO_ACCESS_TOKEN</code> no painel de configurações.
+                    </p>
                   </div>
                 </div>
 

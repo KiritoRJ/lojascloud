@@ -34,10 +34,36 @@ const comparePassword = async (password: string, hash: string) => {
   return password === hash;
 };
 
-const getMPClient = () => {
-  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
+const getMPAccessToken = async () => {
+  // 1. Variável de ambiente direta
+  const envToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
+  if (envToken && envToken.trim()) {
+    return envToken.trim();
+  }
+
+  // 2. Fallback: buscar na tabela cloud_data configurada pelo SuperAdmin
+  try {
+    const { data } = await supabase
+      .from('cloud_data')
+      .select('data_json')
+      .eq('tenant_id', 'SYSTEM')
+      .eq('store_key', 'global_plans')
+      .single();
+
+    if (data?.data_json?.mercadoPagoAccessToken && typeof data.data_json.mercadoPagoAccessToken === 'string' && data.data_json.mercadoPagoAccessToken.trim()) {
+      return data.data_json.mercadoPagoAccessToken.trim();
+    }
+  } catch (err) {
+    console.error('Erro ao buscar token do Mercado Pago no banco:', err);
+  }
+
+  return null;
+};
+
+const getMPClient = async () => {
+  const token = await getMPAccessToken();
   if (!token) {
-    throw new Error('MERCADO_PAGO_ACCESS_TOKEN ou MP_ACCESS_TOKEN não definida nas variáveis de ambiente.');
+    throw new Error('Token do Mercado Pago não configurado. Adicione a variável MERCADO_PAGO_ACCESS_TOKEN ou configure o Access Token no painel SuperAdmin.');
   }
   return new MercadoPagoConfig({ accessToken: token });
 };
@@ -953,11 +979,11 @@ app.post('/api/create-preference', async (req, res) => {
   try {
     const { title, unit_price, quantity, tenantId, planType } = req.body;
 
-    const token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
+    const token = await getMPAccessToken();
     if (!token) {
       return res.status(500).json({ 
         error: 'Token do Mercado Pago não configurado.',
-        details: 'Certifique-se de que MERCADO_PAGO_ACCESS_TOKEN ou MP_ACCESS_TOKEN está definida no Vercel/Ambiente.'
+        details: 'Adicione a variável MERCADO_PAGO_ACCESS_TOKEN nas configurações ou configure o Access Token do Mercado Pago no painel SuperAdmin.'
       });
     }
 
@@ -985,7 +1011,7 @@ app.post('/api/create-preference', async (req, res) => {
       external_reference: `${tenantId}|${planType}`
     };
 
-    const client = getMPClient();
+    const client = await getMPClient();
     const preferenceClient = new Preference(client);
     console.log('Creating preference for:', { tenantId, planType, unit_price });
     
@@ -1006,7 +1032,7 @@ app.post(['/api/webhook', '/api/webhook/'], async (req, res) => {
     const payment = req.body;
 
     if (payment?.type === 'payment' || payment?.action === 'payment.updated') {
-      const client = getMPClient();
+      const client = await getMPClient();
       const paymentClient = new Payment(client);
       const paymentId = payment?.data?.id || payment?.id;
       

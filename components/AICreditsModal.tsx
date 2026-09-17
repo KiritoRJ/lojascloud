@@ -92,7 +92,12 @@ export const AICreditsModal: React.FC<AICreditsModalProps> = ({
       }
     } catch (err: any) {
       console.error('Erro ao comprar créditos de IA:', err);
-      setError(err?.message || 'Não foi possível iniciar o pagamento.');
+      const msg = err?.message || 'Não foi possível iniciar o pagamento.';
+      if (msg.toLowerCase().includes('token do mercado pago')) {
+        setError('O Access Token do Mercado Pago ainda não foi configurado pelo administrador. Configure a variável MERCADO_PAGO_ACCESS_TOKEN ou defina no painel SuperAdmin.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoadingId(null);
     }

@@ -147,8 +147,13 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
 
     } catch (err: any) {
       console.error('Error creating preference:', err);
-      setError(err.message || 'Ocorreu um erro inesperado. Tente novamente.');
-      alert(`Erro: ${err.message || 'Não foi possível iniciar o pagamento.'}`);
+      const msg = err.message || 'Ocorreu um erro inesperado. Tente novamente.';
+      setError(msg);
+      if (msg.toLowerCase().includes('token do mercado pago')) {
+        alert('Configuração Pendente: O Access Token do Mercado Pago ainda não foi inserido no sistema. O administrador da plataforma pode inseri-lo no Painel SuperAdmin ou nas variáveis de ambiente (MERCADO_PAGO_ACCESS_TOKEN).');
+      } else {
+        alert(`Erro: ${msg}`);
+      }
     } finally {
       setLoading(null);
     }

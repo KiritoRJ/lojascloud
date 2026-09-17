@@ -104,6 +104,7 @@ app.post('/api/ai/analyze-product-image', async (req, res) => {
       return res.status(400).json({ error: 'Nenhuma imagem foi enviada para análise.' });
     }
 
+    // Se o lojista tiver créditos de IA ativos no sistema, consome 1 crédito prioritário
     let creditsRemaining: number | null = null;
     if (tenantId) {
       try {
@@ -121,26 +122,12 @@ app.post('/api/ai/analyze-product-image', async (req, res) => {
           });
         }
 
-        // Verifica se a loja exige obrigatoriamente créditos pagos
-        const requirePaidCredits = !!tenantData?.enabled_features?.aiRequirePaidCredits;
-
-        if (requirePaidCredits) {
-          const currentCredits = await OnlineDB.getAICredits(tenantId);
-          if (currentCredits <= 0) {
-            return res.status(402).json({
-              success: false,
-              error: 'Esta loja atingiu o limite ou requer créditos de IA pagos. Recarregue seus créditos nas configurações para continuar.',
-              requireCredits: true
-            });
-          }
+        const currentCredits = await OnlineDB.getAICredits(tenantId);
+        if (currentCredits > 0) {
           const consumeResult = await OnlineDB.consumeAICredit(tenantId);
           if (consumeResult.success) {
             creditsRemaining = consumeResult.remainingCredits;
           }
-        } else {
-          // Modo Gratuito: utiliza a cota gratuita do Gemini sem descontar saldo pago
-          const currentCredits = await OnlineDB.getAICredits(tenantId);
-          creditsRemaining = currentCredits;
         }
       } catch (e) {
         console.warn('Aviso ao checar créditos do lojista:', e);
@@ -195,19 +182,16 @@ Retorne estritamente um objeto JSON com as chaves:
   "quantity": number
 }`;
 
-    // Cascata sequencial de modelos conforme solicitado:
-    // Inicia no Gemini 3.8 Flash, ao limitar ou falhar passa para Gemini 3.1 Flash Lite,
-    // depois Gemini Flash Latest e Gemini 2.5 Flash até esgotar todas as versões disponíveis.
+    // Lista de modelos suportados para fallback caso algum enfrente pico momentâneo de demanda (HTTP 503)
     const candidateModels = [
+      'gemini-3.6-flash',
       'gemini-3.8-flash',
       'gemini-3.1-flash-lite',
       'gemini-flash-latest',
-      'gemini-2.5-flash',
     ];
 
     let lastError: any = null;
     let responseText: string | null = null;
-    let usedModel: string | null = null;
 
     for (const model of candidateModels) {
       for (let attempt = 1; attempt <= 2; attempt++) {
@@ -235,15 +219,15 @@ Retorne estritamente um objeto JSON com as chaves:
 
           if (response?.text) {
             responseText = response.text;
-            usedModel = model;
             break;
           }
         } catch (err: any) {
           lastError = err;
           const errMsg = String(err?.message || err || '');
-          console.warn(`[Gemini Cascade] Tentativa ${attempt} com modelo ${model} falhou: ${errMsg.slice(0, 150)}`);
-          if (attempt < 2 && (errMsg.includes('503') || errMsg.includes('429') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand'))) {
-            await new Promise((resolve) => setTimeout(resolve, 800));
+          const isOverloaded = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE') || errMsg.includes('429');
+          console.warn(`Tentativa ${attempt} com modelo ${model} falhou: ${errMsg.slice(0, 150)}`);
+          if (isOverloaded && attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           } else {
             break;
           }
@@ -257,7 +241,7 @@ Retorne estritamente um objeto JSON com as chaves:
 
     if (!responseText) {
       const parsedErr = typeof lastError?.message === 'string' ? lastError.message : '';
-      let userFriendlyMsg = 'Todos os modelos de IA atingiram o limite temporário de consultas nos servidores. A foto do produto foi salva e você pode tentar novamente em instantes ou preencher manualmente.';
+      let userFriendlyMsg = 'O serviço de reconhecimento por IA está enfrentando alta demanda temporária nos servidores do Google. A foto foi salva e você pode tentar novamente em instantes ou preencher os dados manualmente.';
       
       try {
         const jsonErr = JSON.parse(parsedErr);
@@ -286,7 +270,6 @@ Retorne estritamente um objeto JSON com as chaves:
     return res.json({ 
       success: true, 
       data,
-      usedModel,
       creditsRemaining: creditsRemaining !== null ? creditsRemaining : undefined
     });
   } catch (error: any) {

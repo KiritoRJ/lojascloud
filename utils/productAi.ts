@@ -50,27 +50,14 @@ export async function analyzeProductImage(imageBase64: string, tenantId?: string
       } catch (_) {}
     }
 
-    if (response.status === 402 || json?.requireCredits) {
-      throw new Error(
-        json?.error || 'Esta loja requer créditos de IA pagos e o saldo está esgotado. Recarregue seus créditos nas configurações ou contate o administrador.'
-      );
-    }
-
-    if (response.status === 403) {
-      throw new Error(
-        json?.error || 'O recurso de Inteligência Artificial está desativado para esta loja pelo administrador.'
-      );
-    }
-
     if (
       String(rawError).includes('503') ||
       String(rawError).includes('high demand') ||
       String(rawError).includes('UNAVAILABLE') ||
-      String(rawError).includes('temporariamente') ||
-      String(rawError).includes('limite temporário')
+      String(rawError).includes('temporariamente')
     ) {
       throw new Error(
-        'Os servidores de Inteligência Artificial estão com alta demanda temporária. A foto foi salva e você pode tentar novamente em alguns instantes ou preencher manualmente.'
+        'Os servidores de Inteligência Artificial estão com alta demanda temporária. A foto foi salva e você pode tentar novamente em alguns segundos ou preencher manualmente.'
       );
     }
 

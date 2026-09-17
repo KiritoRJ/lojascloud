@@ -454,16 +454,6 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                          <Clock size={10} className={`${t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date() ? "text-red-500" : "text-emerald-500"} hidden sm:block`} />
                          <span>{formatDateBR(t.subscription_expires_at)}</span>
                        </div>
-                       <span className="opacity-30">•</span>
-                       <div className="flex items-center gap-1">
-                         {t.enabled_features?.aiFeature === false ? (
-                           <span className="px-1.5 py-0.5 rounded text-[7px] sm:text-[8px] font-black bg-red-500/10 text-red-400 border border-red-500/20">IA Desativada</span>
-                         ) : t.enabled_features?.aiRequirePaidCredits ? (
-                           <span className="px-1.5 py-0.5 rounded text-[7px] sm:text-[8px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20">IA Paga</span>
-                         ) : (
-                           <span className="px-1.5 py-0.5 rounded text-[7px] sm:text-[8px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">IA Grátis</span>
-                         )}
-                       </div>
                     </div>
                   </div>
                 </div>
@@ -1008,7 +998,6 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                     { id: 'financeTab', label: 'Aba Financeira' },
                     { id: 'toolsTab', label: 'Aba Ferramentas (Limpeza ADB / Vírus)' },
                     { id: 'aiFeature', label: 'Inteligência Artificial (Reconhecimento & Fotos)' },
-                    { id: 'aiRequirePaidCredits', label: 'Exigir Créditos Pagos de IA (Se desmarcado, loja usa IA grátis)' },
                     { id: 'hideFinancialReports', label: 'Ocultar Botão Relatórios' },
                     { id: 'profiles', label: 'Criar Perfis/Usuários' },
                     { id: 'xmlExportImport', label: 'Exportar/Importar XML' },

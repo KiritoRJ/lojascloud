@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus } from 'lucide-react';
+import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, ArrowRight, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus } from 'lucide-react';
 import { AppSettings, User, ServiceOrder, Product, Sale, Transaction, Employee } from '../types';
 import { OnlineDB } from '../utils/api';
 import { OfflineSync } from '../utils/offlineSync';
@@ -37,9 +37,10 @@ interface Props {
   maxOS?: number;
   maxProducts?: number;
   onLogout?: () => void;
+  onOpenSubscription?: () => void;
 }
 
-const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, lastPlanType, enabledFeatures, maxUsers, maxOS, maxProducts, onLogout }) => {
+const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, lastPlanType, enabledFeatures, maxUsers, maxOS, maxProducts, onLogout, onOpenSubscription }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
   const getPlanName = () => {
     if (subscriptionStatus === 'trial') return 'Período de Teste';
@@ -1422,24 +1423,67 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
           {subscriptionStatus && (
             <div className="bg-white rounded-[3rem] p-8 flex flex-col sm:flex-row items-center justify-between relative overflow-hidden border border-slate-100 shadow-sm gap-6">
               <div className="flex items-center gap-6 relative z-10">
-                <div className={`w-16 h-16 rounded-3xl flex items-center justify-center shadow-inner ${subscriptionStatus === 'trial' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                <div className={`w-16 h-16 rounded-3xl flex items-center justify-center shadow-inner ${subscriptionStatus === 'trial' ? 'bg-amber-50 text-amber-600 ring-2 ring-amber-200' : 'bg-emerald-50 text-emerald-600'}`}>
                   <Shield size={32} />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Plano Atual</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Plano Atual</p>
+                    {subscriptionStatus === 'trial' && (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[9px] font-black uppercase rounded-md tracking-wider">
+                        Período de Teste Gratuito
+                      </span>
+                    )}
+                  </div>
                   <h3 className="font-black text-slate-800 uppercase text-lg leading-tight">
                     {getPlanName()}
                   </h3>
                 </div>
               </div>
-              <div className="text-center sm:text-right relative z-10 bg-slate-50 sm:bg-transparent p-4 sm:p-0 rounded-2xl w-full sm:w-auto">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Expira em</p>
+              <div className="text-center sm:text-right relative z-10 bg-slate-50 sm:bg-transparent p-4 sm:p-0 rounded-2xl w-full sm:w-auto flex flex-col sm:items-end gap-1">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expira em</p>
                 <p className="font-black text-slate-800 text-lg">
                   {subscriptionExpiresAt ? new Date(subscriptionExpiresAt).toLocaleDateString('pt-BR') : 'N/A'}
                 </p>
+                {onOpenSubscription && (
+                  <button
+                    type="button"
+                    onClick={onOpenSubscription}
+                    className="mt-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider shadow-sm transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                  >
+                    <span>{subscriptionStatus === 'trial' ? 'Assinar Plano Definitivo' : 'Mudar / Renovar Plano'}</span>
+                  </button>
+                )}
               </div>
               {/* Decorative background element */}
               <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-slate-50 rounded-full blur-3xl pointer-events-none"></div>
+            </div>
+          )}
+
+          {/* CARD DE UPGRADE DE PLANO */}
+          {onOpenSubscription && (
+            <div className="bg-gradient-to-br from-blue-600 via-indigo-700 to-slate-900 rounded-[2.5rem] p-6 text-white shadow-xl shadow-blue-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 relative overflow-hidden">
+              <div className="relative z-10 space-y-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 text-white text-[9px] font-black uppercase tracking-widest backdrop-blur-xs">
+                  <Sparkles size={12} className="text-amber-300" />
+                  Upgrade de Recursos
+                </div>
+                <h4 className="text-lg font-black tracking-tight uppercase">
+                  Deseja aumentar seus limites?
+                </h4>
+                <p className="text-xs text-blue-100/80 max-w-sm leading-relaxed">
+                  Faça upgrade para um plano trimestral ou anual e ganhe mais limites de O.S., produtos no estoque e usuários conectados.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenSubscription}
+                className="relative z-10 w-full sm:w-auto px-6 py-3.5 bg-white hover:bg-slate-100 text-slate-950 rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+              >
+                <span>Ver Planos & Assinar</span>
+                <ArrowRight size={14} />
+              </button>
+              <div className="absolute -right-12 -top-12 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none" />
             </div>
           )}
 
@@ -1536,6 +1580,16 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
             </div>
 
             <div className="pt-4 flex flex-col sm:flex-row gap-3">
+              {onOpenSubscription && (
+                <button 
+                  type="button"
+                  onClick={onOpenSubscription}
+                  className="flex-1 py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <Shield size={16} />
+                  Fazer Upgrade / Assinar Novo Plano
+                </button>
+              )}
               <button 
                 onClick={() => setIsAICreditsModalOpen(true)}
                 className="flex-1 py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -1547,7 +1601,7 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
                 onClick={() => window.open(`https://wa.me/${supportPhone}?text=Olá, gostaria de falar sobre meu plano na ${settings.storeName}`, '_blank')}
                 className="flex-1 py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
               >
-                Falar com Suporte / Upgrade
+                Falar com Suporte
               </button>
             </div>
           </div>

@@ -13,11 +13,13 @@ interface SubscriptionViewProps {
   onLogout: () => void;
   onSuccess: (newExpiresAt: string) => void;
   onClose?: () => void;
+  isTrial?: boolean;
 }
 
 const SubscriptionView: React.FC<SubscriptionViewProps> = ({ 
   tenantId, storeName, expiresAt, onLogout, onSuccess, onClose,
-  customMonthlyPrice, customQuarterlyPrice, customYearlyPrice
+  customMonthlyPrice, customQuarterlyPrice, customYearlyPrice,
+  isTrial = false
 }) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [globalPlans, setGlobalPlans] = React.useState<any>({});
@@ -188,14 +190,25 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
             <Smartphone size={40} />
           </div>
           <h1 className="text-4xl font-black uppercase tracking-tighter mb-2">
-            {onClose ? 'Planos e Assinaturas' : 'Assinatura Expirada'}
+            {isTrial ? 'Assine seu Plano' : onClose ? 'Planos & Upgrade' : 'Assinatura Expirada'}
           </h1>
           <p className="text-slate-400 font-medium">
-            {onClose ? 'Escolha o melhor plano para sua loja ' : 'Sua loja '}
-            <span className="text-white font-bold">{storeName}</span>
-            {!onClose && ' precisa de uma assinatura ativa.'}
+            {isTrial ? (
+              <>
+                Sua loja <span className="text-white font-bold">{storeName}</span> está em período de teste gratuito. Assine para continuar usando sem interrupções!
+              </>
+            ) : onClose ? (
+              <>Escolha um novo plano ou faça upgrade dos limites da sua loja <span className="text-white font-bold">{storeName}</span></>
+            ) : (
+              <>Sua loja <span className="text-white font-bold">{storeName}</span> precisa de uma assinatura ativa.</>
+            )}
           </p>
-          {!onClose && (
+          {isTrial ? (
+            <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/30 rounded-full text-amber-400 text-xs font-bold uppercase tracking-widest">
+              <Clock size={14} />
+              Período de Teste Gratuito até: {formatDate(expiresAt)}
+            </div>
+          ) : !onClose && (
             <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-full text-red-400 text-xs font-bold uppercase tracking-widest">
               <Clock size={14} />
               Expirou em: {formatDate(expiresAt)}

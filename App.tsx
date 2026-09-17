@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, Wrench, WifiOff } from 'lucide-react';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, Wrench, WifiOff, Sparkles } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import CustomersTab from './components/CustomersTab';
@@ -27,6 +27,7 @@ import {
   DatabaseOfflineBanner, 
   ConnectionStatusToast 
 } from './components/DatabaseOfflineAlert';
+import { TrialBanner } from './components/TrialBanner';
 
 type Tab = 'os' | 'clientes' | 'estoque' | 'vendas' | 'financeiro' | 'config' | 'team' | 'ferramentas';
 
@@ -1434,6 +1435,7 @@ const App: React.FC = () => {
           customYearlyPrice={session.customYearlyPrice}
           onLogout={() => setIsLogoutModalOpen(true)}
           onClose={session.subscriptionStatus !== 'expired' ? () => setIsSubscriptionModalOpen(false) : undefined}
+          isTrial={session.subscriptionStatus === 'trial'}
           onSuccess={(newExpiresAt) => {
             const updatedSession = { ...session, subscriptionStatus: 'active', subscriptionExpiresAt: newExpiresAt };
             setSession(updatedSession);
@@ -1580,6 +1582,27 @@ const App: React.FC = () => {
           ))}
         </nav>
         <div className="mt-auto pt-4 border-t border-white/5 min-w-[240px]">
+          {session?.subscriptionStatus === 'trial' && (
+            <div className="mb-4 p-3 bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30 rounded-2xl animate-in fade-in">
+              <div className="flex items-center gap-2 mb-1.5">
+                <Sparkles size={14} className="text-amber-400 animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">
+                  Plano de Teste
+                </span>
+              </div>
+              <p className="text-[9px] text-slate-300 leading-tight mb-2.5">
+                Aproveite todos os recursos. Assine agora para não perder o acesso!
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsSubscriptionModalOpen(true)}
+                className="w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-[9px] uppercase tracking-wider rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>Assinar um Plano</span>
+                <ArrowRight size={11} />
+              </button>
+            </div>
+          )}
           <div className="px-2 mb-4">
             <ConnectionStatusTag className="w-full justify-center py-2" />
           </div>
@@ -1628,6 +1651,17 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            {session?.subscriptionStatus === 'trial' && (
+              <button
+                type="button"
+                onClick={() => setIsSubscriptionModalOpen(true)}
+                className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border border-amber-300 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer flex items-center gap-1"
+                title="Plano de Teste - Clique para assinar"
+              >
+                <Sparkles size={10} className="text-amber-600 animate-pulse" />
+                <span>Assinar</span>
+              </button>
+            )}
             <ConnectionStatusTag />
             <span className="text-[9px] font-black uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1.5 rounded-lg shadow-xs whitespace-nowrap">
               {visibleNavItems.find(i => i.id === activeTab)?.label || 'Menu'}
@@ -1653,9 +1687,28 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            {session?.subscriptionStatus === 'trial' && (
+              <button
+                type="button"
+                onClick={() => setIsSubscriptionModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border border-amber-300 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
+                title="Sua loja está em plano de teste gratuito. Clique para assinar."
+              >
+                <Sparkles size={12} className="text-amber-600 animate-pulse" />
+                <span>Plano de Teste</span>
+                <span className="text-[9px] bg-amber-600 text-white px-1.5 py-0.5 rounded font-black">Assinar</span>
+              </button>
+            )}
             <ConnectionStatusTag />
           </div>
         </div>
+
+        {/* Banner de Plano de Teste (Trial) com Botão para Assinar */}
+        <TrialBanner 
+          subscriptionStatus={session?.subscriptionStatus}
+          subscriptionExpiresAt={session?.subscriptionExpiresAt}
+          onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
+        />
 
         {/* Alerta de Banco SQL Offline / Modo Offline */}
         <DatabaseOfflineBanner 
@@ -1732,7 +1785,7 @@ const App: React.FC = () => {
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} setOrders={saveOrders} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
           {activeTab === 'team' && <EmployeeManagementTab tenantId={session.tenantId || ''} />}
           {activeTab === 'ferramentas' && <ToolsTab settings={settings} currentUser={currentUser} tenantId={session.tenantId || ''} />}
-          {activeTab === 'config' && <SettingsTab products={products} setProducts={saveProducts} settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} lastPlanType={session.lastPlanType} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} onLogout={() => setIsLogoutModalOpen(true)} />}
+          {activeTab === 'config' && <SettingsTab products={products} setProducts={saveProducts} settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} lastPlanType={session.lastPlanType} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} onLogout={() => setIsLogoutModalOpen(true)} onOpenSubscription={() => setIsSubscriptionModalOpen(true)} />}
         </div>
       </main>
 
@@ -1780,7 +1833,21 @@ const App: React.FC = () => {
               ))}
             </nav>
 
-            <div className="mt-3 pt-3 border-t border-slate-200/80 shrink-0">
+            <div className="mt-3 pt-3 border-t border-slate-200/80 shrink-0 space-y-2">
+              {session?.subscriptionStatus === 'trial' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSidebarOpen(false);
+                    setIsSubscriptionModalOpen(true);
+                  }}
+                  className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-[10px] uppercase tracking-wider rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles size={13} className="animate-pulse" />
+                  <span>Assinar um Plano</span>
+                  <ArrowRight size={13} />
+                </button>
+              )}
               <button 
                 onClick={() => setIsLogoutModalOpen(true)} 
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 text-red-600 font-black text-[10px] uppercase tracking-widest border border-red-200 rounded-xl bg-red-50 hover:bg-red-100 transition-all active:scale-95"

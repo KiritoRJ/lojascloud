@@ -1,4 +1,40 @@
 import { MercadoPagoConfig, Preference } from 'mercadopago';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://lawcmqsjhwuhogsukhbf.supabase.co';
+const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const getAccessToken = async (): Promise<string | null> => {
+  // 1. Variáveis de ambiente diretas (com trim para evitar quebras de linha/espaços acidentais)
+  const envToken = 
+    process.env.MERCADO_PAGO_ACCESS_TOKEN || 
+    process.env.MP_ACCESS_TOKEN ||
+    process.env.VITE_MERCADO_PAGO_ACCESS_TOKEN;
+  
+  if (envToken && typeof envToken === 'string' && envToken.trim().length > 10) {
+    return envToken.trim();
+  }
+
+  // 2. Fallback: buscar na tabela cloud_data configurada pelo SuperAdmin no Supabase
+  try {
+    const { data } = await supabase
+      .from('cloud_data')
+      .select('data_json')
+      .eq('tenant_id', 'SYSTEM')
+      .eq('store_key', 'global_plans')
+      .maybeSingle();
+
+    const dbToken = data?.data_json?.mercadoPagoAccessToken;
+    if (dbToken && typeof dbToken === 'string' && dbToken.trim().length > 10) {
+      return dbToken.trim();
+    }
+  } catch (err) {
+    console.error('Erro ao buscar token do Mercado Pago no banco:', err);
+  }
+
+  return null;
+};
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -7,12 +43,12 @@ export default async function handler(req: any, res: any) {
 
   const { title, unit_price, quantity, tenantId, planType } = req.body;
 
-  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
+  const token = await getAccessToken();
 
   if (!token) {
     return res.status(500).json({ 
       error: 'Token do Mercado Pago não configurado.',
-      details: 'Certifique-se de que MERCADO_PAGO_ACCESS_TOKEN ou MP_ACCESS_TOKEN está definida no Vercel.'
+      details: 'Certifique-se de que a variável MERCADO_PAGO_ACCESS_TOKEN está definida na Vercel (e que você realizou um novo deploy após adicioná-la) ou configure o Access Token no painel SuperAdmin.'
     });
   }
 

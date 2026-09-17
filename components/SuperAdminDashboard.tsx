@@ -659,23 +659,34 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                 </div>
 
                 <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100 mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CreditCard size={16} className="text-emerald-600" />
-                    <h4 className="font-bold text-emerald-800 uppercase text-[10px] sm:text-xs">Mercado Pago (Pagamentos & IA)</h4>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <CreditCard size={16} className="text-emerald-600" />
+                      <h4 className="font-bold text-emerald-800 uppercase text-[10px] sm:text-xs">Mercado Pago (Pagamentos & IA)</h4>
+                    </div>
+                    {globalPlans.mercadoPagoAccessToken && globalPlans.mercadoPagoAccessToken.trim().length > 10 ? (
+                      <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-[8px] sm:text-[9px] font-black uppercase tracking-wider">
+                        ✓ Configurado no Banco
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-amber-500 text-white rounded-md text-[8px] sm:text-[9px] font-black uppercase tracking-wider">
+                        Pendente
+                      </span>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <label className="text-[8px] sm:text-[9px] font-bold text-slate-400">Access Token de Produção / Teste (APP_USR-...)</label>
                     <div className="relative">
                       <input 
-                        type="password" 
+                        type="text" 
                         value={globalPlans.mercadoPagoAccessToken || ''} 
                         onChange={e => setGlobalPlans((prev: any) => ({ ...prev, mercadoPagoAccessToken: e.target.value.trim() }))} 
                         placeholder="APP_USR-0000000000000000-000000-..." 
                         className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-[10px] sm:text-xs text-slate-800 font-mono" 
                       />
                     </div>
-                    <p className="text-[8px] text-slate-400 mt-1">
-                      Você pode configurar o Access Token aqui ou na variável de ambiente <code className="text-emerald-700 font-bold">MERCADO_PAGO_ACCESS_TOKEN</code> no painel de configurações.
+                    <p className="text-[8px] text-slate-500 mt-1">
+                      Salve clicando no botão azul <strong>Salvar Planos Globais</strong> abaixo. Uma vez salvo aqui, o Vercel consulta o banco de dados mesmo que as variáveis de ambiente não tenham sido recarregadas.
                     </p>
                   </div>
                 </div>

@@ -1,9 +1,38 @@
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://lawcmqsjhwuhogsukhbf.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://lawcmqsjhwuhogsukhbf.supabase.co';
+const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_c2wQfanSj96FRWqoCq9KIw_2FhxuRBv';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const getAccessToken = async (): Promise<string | null> => {
+  const envToken = 
+    process.env.MERCADO_PAGO_ACCESS_TOKEN || 
+    process.env.MP_ACCESS_TOKEN ||
+    process.env.VITE_MERCADO_PAGO_ACCESS_TOKEN;
+  
+  if (envToken && typeof envToken === 'string' && envToken.trim().length > 10) {
+    return envToken.trim();
+  }
+
+  try {
+    const { data } = await supabase
+      .from('cloud_data')
+      .select('data_json')
+      .eq('tenant_id', 'SYSTEM')
+      .eq('store_key', 'global_plans')
+      .maybeSingle();
+
+    const dbToken = data?.data_json?.mercadoPagoAccessToken;
+    if (dbToken && typeof dbToken === 'string' && dbToken.trim().length > 10) {
+      return dbToken.trim();
+    }
+  } catch (err) {
+    console.error('Erro ao buscar token do Mercado Pago no banco:', err);
+  }
+
+  return null;
+};
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -14,7 +43,7 @@ export default async function handler(req: any, res: any) {
     const payment = req.body;
 
     if (payment?.type === 'payment' || payment?.action === 'payment.updated') {
-      const token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
+      const token = await getAccessToken();
       const client = new MercadoPagoConfig({ accessToken: token || '' });
       const paymentClient = new Payment(client);
       
@@ -33,31 +62,59 @@ export default async function handler(req: any, res: any) {
 
         if (externalReference && status === 'approved') {
           const [tenantId, planType] = externalReference.split('|');
-          const plans = {
-            monthly: 1,
-            quarterly: 3,
-            yearly: 12
-          };
 
-          const months = plans[planType as keyof typeof plans];
+          // Verifica se é pacote de créditos de IA
+          if (planType && planType.startsWith('ai_credits_')) {
+            const amount = parseInt(planType.replace('ai_credits_', ''), 10);
+            if (!isNaN(amount) && amount > 0) {
+              const { data: existingData } = await supabase
+                .from('cloud_data')
+                .select('data_json')
+                .eq('tenant_id', tenantId)
+                .eq('store_key', 'ai_credits')
+                .maybeSingle();
 
-          if (months) {
-            const expiresAt = new Date();
-            expiresAt.setMonth(expiresAt.getMonth() + months);
+              const current = Number(existingData?.data_json?.credits || 0);
+              const updated = current + amount;
 
-            const { error } = await supabase
-              .from('tenants')
-              .update({
-                subscription_status: 'active',
-                subscription_expires_at: expiresAt.toISOString(),
-                last_plan_type: planType
-              })
-              .eq('id', tenantId);
+              await supabase
+                .from('cloud_data')
+                .upsert({
+                  tenant_id: tenantId,
+                  store_key: 'ai_credits',
+                  data_json: { credits: updated },
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'tenant_id,store_key' });
 
-            if (error) {
-              console.error('Error updating subscription in Supabase:', error);
-            } else {
-              console.log(`Subscription updated successfully for tenant ${tenantId}`);
+              console.log(`IA Credits updated successfully on Vercel for tenant ${tenantId}: +${amount}`);
+            }
+          } else {
+            const plans = {
+              monthly: 1,
+              quarterly: 3,
+              yearly: 12
+            };
+
+            const months = plans[planType as keyof typeof plans];
+
+            if (months) {
+              const expiresAt = new Date();
+              expiresAt.setMonth(expiresAt.getMonth() + months);
+
+              const { error } = await supabase
+                .from('tenants')
+                .update({
+                  subscription_status: 'active',
+                  subscription_expires_at: expiresAt.toISOString(),
+                  last_plan_type: planType
+                })
+                .eq('id', tenantId);
+
+              if (error) {
+                console.error('Error updating subscription in Supabase:', error);
+              } else {
+                console.log(`Subscription updated successfully for tenant ${tenantId}`);
+              }
             }
           }
         } else {

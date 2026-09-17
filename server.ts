@@ -35,9 +35,13 @@ const comparePassword = async (password: string, hash: string) => {
 };
 
 const getMPAccessToken = async () => {
-  // 1. Variável de ambiente direta
-  const envToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
-  if (envToken && envToken.trim()) {
+  // 1. Variável de ambiente direta (com trim para ignorar espaços ou quebras de linha)
+  const envToken = 
+    process.env.MERCADO_PAGO_ACCESS_TOKEN || 
+    process.env.MP_ACCESS_TOKEN ||
+    process.env.VITE_MERCADO_PAGO_ACCESS_TOKEN;
+
+  if (envToken && typeof envToken === 'string' && envToken.trim().length > 10) {
     return envToken.trim();
   }
 
@@ -48,10 +52,11 @@ const getMPAccessToken = async () => {
       .select('data_json')
       .eq('tenant_id', 'SYSTEM')
       .eq('store_key', 'global_plans')
-      .single();
+      .maybeSingle();
 
-    if (data?.data_json?.mercadoPagoAccessToken && typeof data.data_json.mercadoPagoAccessToken === 'string' && data.data_json.mercadoPagoAccessToken.trim()) {
-      return data.data_json.mercadoPagoAccessToken.trim();
+    const dbToken = data?.data_json?.mercadoPagoAccessToken;
+    if (dbToken && typeof dbToken === 'string' && dbToken.trim().length > 10) {
+      return dbToken.trim();
     }
   } catch (err) {
     console.error('Erro ao buscar token do Mercado Pago no banco:', err);

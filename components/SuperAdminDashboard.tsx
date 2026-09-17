@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard } from 'lucide-react';
+import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard, Sparkles } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -474,6 +474,7 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                         features: {
                           toolsTab: t.enabled_features?.toolsTab !== false,
                           customersTab: t.enabled_features?.customersTab !== false,
+                          aiFeature: t.enabled_features?.aiFeature !== false,
                           ...t.enabled_features
                         },
                         maxUsers: t.max_users || 999,
@@ -688,6 +689,89 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                     <p className="text-[8px] text-slate-500 mt-1">
                       Salve clicando no botão azul <strong>Salvar Planos Globais</strong> abaixo. Uma vez salvo aqui, o Vercel consulta o banco de dados mesmo que as variáveis de ambiente não tenham sido recarregadas.
                     </p>
+                  </div>
+                </div>
+
+                <div className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-100 mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles size={16} className="text-indigo-600" />
+                    <h4 className="font-bold text-indigo-800 uppercase text-[10px] sm:text-xs">Preços dos Pacotes de IA</h4>
+                  </div>
+                  <p className="text-[8px] sm:text-[9px] text-slate-500 mb-3">
+                    Defina os valores que as lojas pagarão para recarregar créditos de leitura de fotos e descrições com IA:
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="bg-white p-2.5 rounded-xl border border-indigo-100 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black text-indigo-900 uppercase">Pacote Básico</span>
+                        <span className="text-[8px] font-bold text-indigo-600">50 Fotos</span>
+                      </div>
+                      <label className="text-[8px] text-slate-400 font-bold block">Preço (R$)</label>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        value={globalPlans.aiPackages?.package50?.price ?? 14.90} 
+                        onChange={e => setGlobalPlans((prev: any) => ({
+                          ...prev,
+                          aiPackages: {
+                            ...prev.aiPackages,
+                            package50: {
+                              credits: 50,
+                              price: parseFloat(e.target.value) || 0
+                            }
+                          }
+                        }))} 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-bold" 
+                      />
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-xl border border-indigo-200 shadow-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black text-indigo-900 uppercase">Pacote Pro</span>
+                        <span className="text-[8px] font-bold text-indigo-600">150 Fotos</span>
+                      </div>
+                      <label className="text-[8px] text-slate-400 font-bold block">Preço (R$)</label>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        value={globalPlans.aiPackages?.package150?.price ?? 29.90} 
+                        onChange={e => setGlobalPlans((prev: any) => ({
+                          ...prev,
+                          aiPackages: {
+                            ...prev.aiPackages,
+                            package150: {
+                              credits: 150,
+                              price: parseFloat(e.target.value) || 0
+                            }
+                          }
+                        }))} 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-bold" 
+                      />
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-xl border border-indigo-100 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black text-indigo-900 uppercase">Pacote Turbo</span>
+                        <span className="text-[8px] font-bold text-indigo-600">500 Fotos</span>
+                      </div>
+                      <label className="text-[8px] text-slate-400 font-bold block">Preço (R$)</label>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        value={globalPlans.aiPackages?.package500?.price ?? 69.90} 
+                        onChange={e => setGlobalPlans((prev: any) => ({
+                          ...prev,
+                          aiPackages: {
+                            ...prev.aiPackages,
+                            package500: {
+                              credits: 500,
+                              price: parseFloat(e.target.value) || 0
+                            }
+                          }
+                        }))} 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-bold" 
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -913,6 +997,7 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                     { id: 'salesTab', label: 'Aba Vendas' },
                     { id: 'financeTab', label: 'Aba Financeira' },
                     { id: 'toolsTab', label: 'Aba Ferramentas (Limpeza ADB / Vírus)' },
+                    { id: 'aiFeature', label: 'Inteligência Artificial (Reconhecimento & Fotos)' },
                     { id: 'hideFinancialReports', label: 'Ocultar Botão Relatórios' },
                     { id: 'profiles', label: 'Criar Perfis/Usuários' },
                     { id: 'xmlExportImport', label: 'Exportar/Importar XML' },
@@ -927,6 +1012,8 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                             ? tenantToEditFeatures.features.toolsTab !== false 
                             : feature.id === 'customersTab'
                             ? tenantToEditFeatures.features.customersTab !== false
+                            : feature.id === 'aiFeature'
+                            ? tenantToEditFeatures.features.aiFeature !== false
                             : !!tenantToEditFeatures.features[feature.id]
                         } 
                         onChange={e => setTenantToEditFeatures({

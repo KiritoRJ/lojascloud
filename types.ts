@@ -20,6 +20,7 @@ export interface Tenant {
     salesTab: boolean;
     financeTab: boolean;
     toolsTab?: boolean;
+    aiFeature?: boolean;
     profiles: boolean;
     xmlExportImport: boolean;
     hideFinancialReports?: boolean;

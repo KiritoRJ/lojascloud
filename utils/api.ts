@@ -74,7 +74,12 @@ export class OnlineDB {
         quarterly: { price: 129.90, maxUsers: 999, maxOS: 999, maxProducts: 999 },
         yearly: { price: 499.00, maxUsers: 999, maxOS: 999, maxProducts: 999 },
         trial: { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 },
-        supportPhone: '5511999999999'
+        supportPhone: '5511999999999',
+        aiPackages: {
+          package50: { price: 14.90, credits: 50 },
+          package150: { price: 29.90, credits: 150 },
+          package500: { price: 69.90, credits: 500 },
+        }
       };
 
       if (!data?.data_json) return defaultSettings;

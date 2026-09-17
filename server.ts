@@ -108,6 +108,20 @@ app.post('/api/ai/analyze-product-image', async (req, res) => {
     let creditsRemaining: number | null = null;
     if (tenantId) {
       try {
+        // Verifica se a função de IA está desabilitada para esta loja pelo SuperAdmin
+        const { data: tenantData } = await supabase
+          .from('tenants')
+          .select('enabled_features')
+          .eq('id', tenantId)
+          .maybeSingle();
+
+        if (tenantData?.enabled_features && tenantData.enabled_features.aiFeature === false) {
+          return res.status(403).json({
+            success: false,
+            error: 'O recurso de Inteligência Artificial está desativado para esta loja pelo administrador.',
+          });
+        }
+
         const currentCredits = await OnlineDB.getAICredits(tenantId);
         if (currentCredits > 0) {
           const consumeResult = await OnlineDB.consumeAICredit(tenantId);

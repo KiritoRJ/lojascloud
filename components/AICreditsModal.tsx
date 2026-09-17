@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles, Check, Zap, ShieldCheck, X, Loader2, ArrowRight, Smartphone } from 'lucide-react';
 import { OnlineDB } from '../utils/api';
 
@@ -58,6 +58,43 @@ export const AICreditsModal: React.FC<AICreditsModalProps> = ({
 }) => {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [packages, setPackages] = useState<AICreditPackage[]>(AI_PACKAGES);
+
+  useEffect(() => {
+    if (isOpen) {
+      OnlineDB.getGlobalSettings().then((settings) => {
+        const customPkg = settings?.aiPackages;
+        if (customPkg) {
+          setPackages([
+            {
+              id: 'ai_credits_50',
+              name: 'Pacote Básico',
+              credits: customPkg.package50?.credits || 50,
+              price: typeof customPkg.package50?.price === 'number' ? customPkg.package50.price : 14.90,
+              description: 'Ideal para reposição rápida e cadastros pontuais da semana.',
+            },
+            {
+              id: 'ai_credits_150',
+              name: 'Pacote Pro',
+              credits: customPkg.package150?.credits || 150,
+              price: typeof customPkg.package150?.price === 'number' ? customPkg.package150.price : 29.90,
+              popular: true,
+              bonus: 'Mais Vendido',
+              description: 'Excelente para quem recebe mercadorias semanalmente. Menos de R$ 0,20 por leitura.',
+            },
+            {
+              id: 'ai_credits_500',
+              name: 'Pacote Ilimitado',
+              credits: customPkg.package500?.credits || 500,
+              price: typeof customPkg.package500?.price === 'number' ? customPkg.package500.price : 69.90,
+              bonus: 'Super Econômico',
+              description: 'Catálogo completo, caixas de atacado e alta demanda diária sem interrupções.',
+            },
+          ]);
+        }
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -159,7 +196,7 @@ export const AICreditsModal: React.FC<AICreditsModalProps> = ({
 
           {/* Cards de Pacotes */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
-            {AI_PACKAGES.map((pkg) => (
+            {packages.map((pkg) => (
               <div
                 key={pkg.id}
                 className={`relative rounded-2xl p-4 flex flex-col justify-between border-2 transition-all ${

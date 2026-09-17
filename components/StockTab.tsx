@@ -16,9 +16,10 @@ interface Props {
   onUpdateSettings: (settings: AppSettings) => Promise<void>;
   maxProducts?: number;
   tenantId?: string;
+  aiEnabled?: boolean;
 }
 
-const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings, onUpdateSettings, maxProducts, tenantId }) => {
+const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings, onUpdateSettings, maxProducts, tenantId, aiEnabled = true }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -424,7 +425,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Gestão e Cadastro Inteligente</p>
         </div>
         <div className="flex items-center gap-2">
-          {tenantId && (
+          {aiEnabled && tenantId && (
             <button
               type="button"
               onClick={() => setIsAICreditsModalOpen(true)}
@@ -436,16 +437,18 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
               <span className="text-[9px] font-bold text-blue-500 uppercase hidden sm:inline">créditos</span>
             </button>
           )}
-          <button 
-            onClick={() => { resetForm(); setIsPhotoChoiceOpen(true); }} 
-            disabled={limitReached} 
-            className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white px-3.5 py-2.5 rounded-2xl shadow-lg shadow-blue-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-black text-xs uppercase tracking-wider transition-all"
-            title="Cadastrar produto por foto com Inteligência Artificial"
-          >
-            <Sparkles size={16} className="text-amber-300 animate-pulse" />
-            <span className="hidden sm:inline">Cadastro por Foto</span>
-            <Camera size={16} className="sm:hidden" />
-          </button>
+          {aiEnabled && (
+            <button 
+              onClick={() => { resetForm(); setIsPhotoChoiceOpen(true); }} 
+              disabled={limitReached} 
+              className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white px-3.5 py-2.5 rounded-2xl shadow-lg shadow-blue-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-black text-xs uppercase tracking-wider transition-all"
+              title="Cadastrar produto por foto com Inteligência Artificial"
+            >
+              <Sparkles size={16} className="text-amber-300 animate-pulse" />
+              <span className="hidden sm:inline">Cadastro por Foto</span>
+              <Camera size={16} className="sm:hidden" />
+            </button>
+          )}
           <button 
             onClick={() => { resetForm(); setIsModalOpen(true); }} 
             disabled={limitReached} 
@@ -619,22 +622,24 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
             
             <div className="p-6 space-y-5 overflow-y-auto flex-1">
               {/* Opção Inteligente de Foto com IA */}
-              <button
-                type="button"
-                onClick={() => setIsPhotoChoiceOpen(true)}
-                className="w-full py-3 px-4 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100/80 border border-blue-200/80 rounded-2xl flex items-center justify-between gap-3 text-blue-700 font-black text-xs uppercase tracking-wider shadow-sm active:scale-98 transition-all group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 bg-blue-600 text-white rounded-xl shadow-sm group-hover:scale-105 transition-transform">
-                    <Sparkles size={14} className="animate-pulse" />
+              {aiEnabled && (
+                <button
+                  type="button"
+                  onClick={() => setIsPhotoChoiceOpen(true)}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100/80 border border-blue-200/80 rounded-2xl flex items-center justify-between gap-3 text-blue-700 font-black text-xs uppercase tracking-wider shadow-sm active:scale-98 transition-all group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 bg-blue-600 text-white rounded-xl shadow-sm group-hover:scale-105 transition-transform">
+                      <Sparkles size={14} className="animate-pulse" />
+                    </div>
+                    <div className="text-left">
+                      <p className="font-black text-slate-800 text-xs">Preencher por Foto com IA</p>
+                      <p className="text-[9px] text-blue-600 font-bold lowercase tracking-normal">extrai foto, nome, código, valores, descontos e fiscais</p>
+                    </div>
                   </div>
-                  <div className="text-left">
-                    <p className="font-black text-slate-800 text-xs">Preencher por Foto com IA</p>
-                    <p className="text-[9px] text-blue-600 font-bold lowercase tracking-normal">extrai foto, nome, código, valores, descontos e fiscais</p>
-                  </div>
-                </div>
-                <Camera size={18} className="text-blue-600 shrink-0" />
-              </button>
+                  <Camera size={18} className="text-blue-600 shrink-0" />
+                </button>
+              )}
 
               {/* Alerta de Sucesso da IA */}
               {aiSuccessBadge && (

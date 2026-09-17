@@ -71,6 +71,7 @@ const App: React.FC = () => {
       salesTab: boolean;
       financeTab: boolean;
       toolsTab?: boolean;
+      aiFeature?: boolean;
       profiles: boolean;
       xmlExportImport: boolean;
       hideFinancialReports?: boolean;
@@ -1715,7 +1716,18 @@ const App: React.FC = () => {
               }}
             />
           )}
-          {activeTab === 'estoque' && <StockTab products={products} setProducts={saveProducts} onDeleteProduct={removeProduct} settings={settings} onUpdateSettings={saveSettings} maxProducts={session.maxProducts} tenantId={session.tenantId || ''} />}
+          {activeTab === 'estoque' && (
+            <StockTab 
+              products={products} 
+              setProducts={saveProducts} 
+              onDeleteProduct={removeProduct} 
+              settings={settings} 
+              onUpdateSettings={saveSettings} 
+              maxProducts={session.maxProducts} 
+              tenantId={session.tenantId || ''} 
+              aiEnabled={session.enabledFeatures?.aiFeature !== false}
+            />
+          )}
           {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} setOrders={saveOrders} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
           {activeTab === 'team' && <EmployeeManagementTab tenantId={session.tenantId || ''} />}

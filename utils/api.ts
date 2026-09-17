@@ -776,7 +776,13 @@ export class OnlineDB {
       additionalPhotos: additionalPhotos,
       promotionalPrice: Number(d.promotional_price || 0),
       isPromotion: d.is_promotion || false,
-      videoUrl: videoUrl
+      videoUrl: videoUrl,
+      discount: Number(d.discount || 0),
+      brand: d.brand || undefined,
+      model: d.model || undefined,
+      ncm: d.ncm || undefined,
+      cest: d.cest || undefined,
+      cfop: d.cfop || undefined
     };
   }
 
@@ -1068,7 +1074,13 @@ export class OnlineDB {
           description: p.category ? `[CAT:${p.category}] ${p.description || ''}` : p.description,
           additional_photos: additionalPhotos,
           promotional_price: p.promotionalPrice || 0,
-          is_promotion: p.isPromotion || false
+          is_promotion: p.isPromotion || false,
+          discount: p.discount || 0,
+          brand: p.brand || null,
+          model: p.model || null,
+          ncm: p.ncm || null,
+          cest: p.cest || null,
+          cfop: p.cfop || null
         };
       });
       const { error } = await supabase.from('products').upsert(payload, { onConflict: 'id' });

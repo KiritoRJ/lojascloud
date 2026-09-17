@@ -5,7 +5,7 @@ import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, Chec
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { Product, Sale, AppSettings, User } from '../types';
-import { formatCurrency, parseCurrencyString, formatDate, formatDateTime, playBeepSound, generateRandomNumericCode } from '../utils';
+import { formatCurrency, parseCurrencyString, formatDate, formatDateTime, playBeepSound, generateRandomNumericCode, getProductEffectivePrice } from '../utils';
 import { OnlineDB } from '../utils/api';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -60,6 +60,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showPrintConfirmModal, setShowPrintConfirmModal] = useState(false);
   const [totalDiscount, setTotalDiscount] = useState(0);
   const [totalSurcharge, setTotalSurcharge] = useState(0); // Acréscimo em %
   const [paymentEntries, setPaymentEntries] = useState<PaymentEntry[]>([{ method: 'Dinheiro', amount: 0 }]);
@@ -353,7 +354,10 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   }, []);
 
   const cartTotal = useMemo(() => {
-    return cart.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0);
+    return cart.reduce((acc, item) => {
+      const effectivePrice = getProductEffectivePrice(item.product);
+      return acc + (effectivePrice * item.quantity);
+    }, 0);
   }, [cart]);
 
   const cartCost = useMemo(() => {
@@ -483,7 +487,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     const surchargeAmount = discountedTotal * (totalSurcharge / 100);
 
     const newSales: Sale[] = cart.map((item, index) => {
-      const itemTotal = item.product.salePrice * item.quantity;
+      const effectiveUnit = getProductEffectivePrice(item.product);
+      const itemTotal = effectiveUnit * item.quantity;
       // Distribui o desconto proporcionalmente se houver mais de um item
       const itemDiscount = cartTotal > 0 ? (itemTotal / cartTotal) * totalDiscount : 0;
       const itemSurcharge = cartTotal > 0 ? (itemTotal / cartTotal) * surchargeAmount : 0;
@@ -497,13 +502,13 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
         category: item.product.category,
         date,
         quantity: item.quantity,
-        originalPrice: item.product.salePrice,
+        originalPrice: effectiveUnit,
         discount: itemDiscount,
         surcharge: itemSurcharge,
         finalPrice: itemTotal - itemDiscount + itemSurcharge,
         costAtSale: item.product.costPrice * item.quantity,
         costPerUnitAtSale: item.product.costPrice,
-        salePricePerUnitAtSale: item.product.salePrice,
+        salePricePerUnitAtSale: effectiveUnit,
         paymentMethod: paymentEntries.map(p => p.method === 'Cartão' && p.installments && p.installments > 1 ? `${p.method} (${p.installments}x)` : p.method).join(', '),
         paymentEntriesJson: JSON.stringify(paymentEntries),
         change: change,
@@ -543,14 +548,19 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     setShowCheckoutModal(false);
     setShowCartDrawer(false);
     
-    // Impressão Direta conforme solicitado
+    // Abre popup de confirmação para impressão na impressora
+    setShowPrintConfirmModal(true);
+  };
+
+  const handleConfirmPrint = () => {
+    setShowPrintConfirmModal(false);
     setTimeout(() => {
       try {
         window.print();
       } catch (e) {
         alert("Aviso: Impressora não reconhecida ou erro na comunicação.");
       }
-    }, 500);
+    }, 300);
   };
 
   const reprintReceipt = (sale: Sale) => {
@@ -834,7 +844,20 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                           <div className="min-w-0 flex-1 mr-1">
                             <h3 className={`font-black text-slate-800 uppercase truncate mb-0.5 ${layoutMode === 'small' ? 'text-[7px]' : 'text-[9px]'}`}>{product.name}</h3>
                             <div className="flex items-center justify-between gap-1">
-                              <p className="text-emerald-600 font-black text-[9px] sm:text-[10px] whitespace-nowrap">{formatCurrency(product.salePrice)}</p>
+                              {(() => {
+                                const effPrice = getProductEffectivePrice(product);
+                                const hasPromo = effPrice < product.salePrice;
+                                return (
+                                  <div className="flex items-center gap-1">
+                                    <p className="text-emerald-600 font-black text-[9px] sm:text-[10px] whitespace-nowrap">{formatCurrency(effPrice)}</p>
+                                    {hasPromo && (
+                                      <span className="text-[7px] text-slate-400 line-through">
+                                        {formatCurrency(product.salePrice)}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                               <span className={`text-[6px] font-black uppercase px-1.5 py-0.5 rounded-md shrink-0 ${
                                 product.quantity <= 0 ? 'bg-red-500 text-white' : 
                                 product.quantity <= 2 ? 'bg-amber-500 text-white' : 
@@ -873,7 +896,19 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                       </div>
                       <div className="space-y-1">
                         <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-tight">{lastAddedProduct.name}</h2>
-                        <p className="text-xl font-black text-emerald-600">{formatCurrency(lastAddedProduct.salePrice)}</p>
+                        {(() => {
+                          const eff = getProductEffectivePrice(lastAddedProduct);
+                          return (
+                            <div className="flex items-center justify-center gap-2">
+                              <p className="text-xl font-black text-emerald-600">{formatCurrency(eff)}</p>
+                              {eff < lastAddedProduct.salePrice && (
+                                <span className="text-sm text-slate-400 line-through">
+                                  {formatCurrency(lastAddedProduct.salePrice)}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   ) : (
@@ -932,29 +967,32 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                       <p className="text-[7px] font-black uppercase tracking-widest">Carrinho Vazio</p>
                     </div>
                   ) : (
-                    cart.map(item => (
-                      <div key={item.product.id} className="flex items-start justify-between gap-2 group">
-                        <div className="flex gap-2 min-w-0">
-                          <div className="w-7 h-7 bg-slate-50 rounded-md flex items-center justify-center text-slate-300 shrink-0 overflow-hidden border border-slate-100">
-                            {item.product.photo ? <img src={item.product.photo} className="w-full h-full object-cover" /> : <Package size={12} />}
+                    cart.map(item => {
+                      const eff = getProductEffectivePrice(item.product);
+                      return (
+                        <div key={item.product.id} className="flex items-start justify-between gap-2 group">
+                          <div className="flex gap-2 min-w-0">
+                            <div className="w-7 h-7 bg-slate-50 rounded-md flex items-center justify-center text-slate-300 shrink-0 overflow-hidden border border-slate-100">
+                              {item.product.photo ? <img src={item.product.photo} className="w-full h-full object-cover" /> : <Package size={12} />}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-[8px] font-black text-slate-800 uppercase truncate leading-tight">{item.product.name}</h4>
+                              <p className="text-[7px] font-bold text-slate-400 uppercase mt-0.5">
+                                {item.quantity} UN x {formatCurrency(eff)}
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <h4 className="text-[8px] font-black text-slate-800 uppercase truncate leading-tight">{item.product.name}</h4>
-                            <p className="text-[7px] font-bold text-slate-400 uppercase mt-0.5">
-                              {item.quantity} UN x {formatCurrency(item.product.salePrice)}
-                            </p>
+                          <div className="flex flex-col items-end gap-0.5">
+                            <p className="text-[9px] font-black text-slate-900">{formatCurrency(eff * item.quantity)}</p>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => updateCartQuantity(item.product.id, -1)} className="p-0.5 text-slate-400 hover:text-slate-900"><Minus size={8} /></button>
+                              <button onClick={() => updateCartQuantity(item.product.id, 1)} className="p-0.5 text-slate-400 hover:text-slate-900"><Plus size={8} /></button>
+                              <button onClick={() => removeFromCart(item.product.id)} className="p-1 text-red-400 hover:text-red-600 ml-0.5 bg-red-50 rounded-md transition-colors"><Trash2 size={10} /></button>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex flex-col items-end gap-0.5">
-                          <p className="text-[9px] font-black text-slate-900">{formatCurrency(item.product.salePrice * item.quantity)}</p>
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => updateCartQuantity(item.product.id, -1)} className="p-0.5 text-slate-400 hover:text-slate-900"><Minus size={8} /></button>
-                            <button onClick={() => updateCartQuantity(item.product.id, 1)} className="p-0.5 text-slate-400 hover:text-slate-900"><Plus size={8} /></button>
-                            <button onClick={() => removeFromCart(item.product.id)} className="p-1 text-red-400 hover:text-red-600 ml-0.5 bg-red-50 rounded-md transition-colors"><Trash2 size={10} /></button>
-                          </div>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
 
@@ -1111,7 +1149,19 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                       <div className="min-w-0 flex-1 mr-1">
                         <h3 className={`font-black text-slate-800 uppercase truncate mb-0.5 ${layoutMode === 'small' ? 'text-[5.5px]' : 'text-[7.5px]'}`}>{product.name}</h3>
                         <div className="flex items-center justify-between gap-1">
-                          <p className={`text-emerald-600 font-black whitespace-nowrap ${layoutMode === 'small' ? 'text-[7px]' : 'text-[8px]'}`}>{formatCurrency(product.salePrice)}</p>
+                          {(() => {
+                            const eff = getProductEffectivePrice(product);
+                            return (
+                              <div className="flex items-center gap-1">
+                                <p className={`text-emerald-600 font-black whitespace-nowrap ${layoutMode === 'small' ? 'text-[7px]' : 'text-[8px]'}`}>{formatCurrency(eff)}</p>
+                                {eff < product.salePrice && (
+                                  <span className="text-[6px] text-slate-400 line-through">
+                                    {formatCurrency(product.salePrice)}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                           <span className={`text-[4.5px] font-black uppercase px-0.5 py-0.5 rounded shrink-0 ${
                             product.quantity <= 0 ? 'bg-red-500 text-white' : 
                             product.quantity <= 2 ? 'bg-amber-500 text-white' : 
@@ -1178,31 +1228,34 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                   </div>
 
                   <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 custom-scrollbar">
-                    {cart.map(item => (
-                      <div key={item.product.id} className="flex items-center justify-between gap-2.5 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 bg-white rounded flex items-center justify-center text-slate-300 shrink-0 overflow-hidden border border-slate-100 shadow-sm">
-                            {item.product.photo ? <img src={item.product.photo} className="w-full h-full object-cover" /> : <Package size={14} />}
+                    {cart.map(item => {
+                      const eff = getProductEffectivePrice(item.product);
+                      return (
+                        <div key={item.product.id} className="flex items-center justify-between gap-2.5 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 bg-white rounded flex items-center justify-center text-slate-300 shrink-0 overflow-hidden border border-slate-100 shadow-sm">
+                              {item.product.photo ? <img src={item.product.photo} className="w-full h-full object-cover" /> : <Package size={14} />}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-[9px] font-black text-slate-800 uppercase truncate leading-tight">{item.product.name}</h4>
+                              <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">
+                                {formatCurrency(eff)}
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <h4 className="text-[9px] font-black text-slate-800 uppercase truncate leading-tight">{item.product.name}</h4>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">
-                              {formatCurrency(item.product.salePrice)}
-                            </p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 bg-white p-0.5 rounded border border-slate-200 shadow-sm">
+                              <button onClick={() => updateCartQuantity(item.product.id, -1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-900 active:scale-75 transition-transform"><Minus size={10} /></button>
+                              <span className="text-[9px] font-black text-slate-900 w-2.5 text-center">{item.quantity}</span>
+                              <button onClick={() => updateCartQuantity(item.product.id, 1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-900 active:scale-75 transition-transform"><Plus size={10} /></button>
+                            </div>
+                            <button onClick={() => removeFromCart(item.product.id)} className="p-1.5 text-red-500 bg-red-50 rounded-lg active:scale-90 transition-transform">
+                              <Trash2 size={12} />
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1.5 bg-white p-0.5 rounded border border-slate-200 shadow-sm">
-                            <button onClick={() => updateCartQuantity(item.product.id, -1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-900 active:scale-75 transition-transform"><Minus size={10} /></button>
-                            <span className="text-[9px] font-black text-slate-900 w-2.5 text-center">{item.quantity}</span>
-                            <button onClick={() => updateCartQuantity(item.product.id, 1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-900 active:scale-75 transition-transform"><Plus size={10} /></button>
-                          </div>
-                          <button onClick={() => removeFromCart(item.product.id)} className="p-1.5 text-red-500 bg-red-50 rounded-lg active:scale-90 transition-transform">
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 space-y-2.5">
@@ -1479,6 +1532,12 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           >
             <div style={{ textAlign: 'center', marginBottom: '6mm' }}>
               <p style={{ fontWeight: 'bold', fontSize: '16px', textTransform: 'uppercase', margin: '0 0 2mm 0' }}>{settings.storeName}</p>
+              {settings.storeCnpj && (
+                <p style={{ margin: '2px 0', fontSize: '10px' }}>CNPJ: {settings.storeCnpj}</p>
+              )}
+              {settings.storeStateRegistration && (
+                <p style={{ margin: '2px 0', fontSize: '10px' }}>IE: {settings.storeStateRegistration}</p>
+              )}
               <p style={{ margin: '2px 0', fontSize: '10px' }}>{settings.storeAddress}</p>
               <p style={{ margin: '2px 0', fontSize: '10px' }}>{settings.storePhone}</p>
               <div style={{ margin: '4mm 0', borderTop: '1px solid black', borderBottom: '1px solid black', padding: '1mm 0' }}>
@@ -1507,23 +1566,26 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                 <span>DESCRIÇÃO</span>
                 <span>TOTAL</span>
               </div>
-              {lastTransactionItems.map((item, index) => (
-                <div key={index} style={{ marginBottom: '2mm' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ textTransform: 'uppercase' }}>{String(index + 1).padStart(3, '0')} - {item.product.name}</span>
+              {lastTransactionItems.map((item, index) => {
+                const effPrice = getProductEffectivePrice(item.product);
+                return (
+                  <div key={index} style={{ marginBottom: '2mm' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ textTransform: 'uppercase' }}>{String(index + 1).padStart(3, '0')} - {item.product.name}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#666' }}>
+                      <span>{item.quantity} UN x {formatCurrency(effPrice)}</span>
+                      <span style={{ color: '#000' }}>{formatCurrency(effPrice * item.quantity)}</span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#666' }}>
-                    <span>{item.quantity} UN x {formatCurrency(item.product.salePrice)}</span>
-                    <span style={{ color: '#000' }}>{formatCurrency(item.product.salePrice * item.quantity)}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div style={{ marginBottom: '4mm' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1mm' }}>
                 <span>SUBTOTAL:</span>
-                <span>{formatCurrency(lastTransactionItems.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0))}</span>
+                <span>{formatCurrency(lastTransactionItems.reduce((acc, item) => acc + (getProductEffectivePrice(item.product) * item.quantity), 0))}</span>
               </div>
               {lastDiscount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1mm', color: '#d32f2f' }}>
@@ -1592,6 +1654,12 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
         >
           <div style={{ textAlign: 'center', marginBottom: '4mm' }}>
             <p style={{ fontWeight: 'bold', fontSize: '12px', textTransform: 'uppercase', margin: '0' }}>{settings.storeName}</p>
+            {settings.storeCnpj && (
+              <p style={{ margin: '1px 0' }}>CNPJ: {settings.storeCnpj}</p>
+            )}
+            {settings.storeStateRegistration && (
+              <p style={{ margin: '1px 0' }}>IE: {settings.storeStateRegistration}</p>
+            )}
             <p style={{ margin: '1px 0' }}>{settings.storeAddress}</p>
             <p style={{ margin: '1px 0' }}>{settings.storePhone}</p>
             <p style={{ fontWeight: 'bold', margin: '2mm 0 0 0', borderTop: '1px solid black', borderBottom: '1px solid black' }}>CUPOM DE VENDA</p>
@@ -1605,23 +1673,26 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           </div>
 
           <div style={{ borderTop: '1px dashed black', borderBottom: '1px dashed black', padding: '2mm 0', marginBottom: '3mm' }}>
-            {lastTransactionItems.map((item, index) => (
-              <div key={index} style={{ marginBottom: '1mm' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{String(index + 1).padStart(3, '0')} - {item.product.name.substring(0, 20)}</span>
+            {lastTransactionItems.map((item, index) => {
+              const effPrice = getProductEffectivePrice(item.product);
+              return (
+                <div key={index} style={{ marginBottom: '1mm' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{String(index + 1).padStart(3, '0')} - {item.product.name.substring(0, 20)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
+                    <span>{item.quantity}x {formatCurrency(effPrice)}</span>
+                    <span>{formatCurrency(effPrice * item.quantity)}</span>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
-                  <span>{item.quantity}x {formatCurrency(item.product.salePrice)}</span>
-                  <span>{formatCurrency(item.product.salePrice * item.quantity)}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ marginBottom: '3mm' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>SUBTOTAL:</span>
-              <span>{formatCurrency(lastTransactionItems.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0))}</span>
+              <span>{formatCurrency(lastTransactionItems.reduce((acc, item) => acc + (getProductEffectivePrice(item.product) * item.quantity), 0))}</span>
             </div>
             {lastDiscount > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1723,6 +1794,66 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                  <button onClick={() => { setIsAuthModalOpen(false); setPasswordInput(''); setSelectedSaleToCancel(null); setAuthAction(null); }} className="w-full py-2 text-slate-400 font-black uppercase text-[8px] tracking-widest">VOLTAR</button>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* POPUP DE CONFIRMAÇÃO DE IMPRESSÃO DO COMPROVANTE */}
+      {showPrintConfirmModal && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[200] flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-100 flex flex-col items-center text-center">
+            <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-4 shadow-inner ring-8 ring-emerald-50/50">
+              <Printer size={32} />
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider mb-2">
+              <CheckCircle2 size={12} />
+              Venda Finalizada com Sucesso!
+            </div>
+
+            <h3 className="font-black text-slate-800 uppercase text-sm mb-1 tracking-tight">
+              Imprimir Comprovante?
+            </h3>
+            
+            <p className="text-[10px] text-slate-500 font-medium leading-relaxed mb-4 max-w-[260px]">
+              Deseja imprimir o cupom de venda agora na impressora térmica ({settings.printerSize || 58}mm)?
+            </p>
+
+            {lastSaleAmount > 0 && (
+              <div className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 mb-5 space-y-1">
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="font-bold text-slate-400 uppercase">Cupom Nº:</span>
+                  <span className="font-black text-slate-700">#{lastTransactionId}</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="font-bold text-slate-400 uppercase">Total da Venda:</span>
+                  <span className="font-black text-emerald-600">{formatCurrency(lastSaleAmount)}</span>
+                </div>
+                {lastPaymentMethod && (
+                  <div className="flex justify-between items-center text-[9px]">
+                    <span className="font-bold text-slate-400 uppercase">Pagamento:</span>
+                    <span className="font-bold text-slate-600">{lastPaymentMethod}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="w-full space-y-2">
+              <button
+                onClick={handleConfirmPrint}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase text-xs tracking-wider shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Printer size={16} />
+                CONFIRMAR IMPRESSÃO
+              </button>
+              
+              <button
+                onClick={() => setShowPrintConfirmModal(false)}
+                className="w-full py-2.5 text-slate-400 hover:text-slate-600 font-black uppercase text-[9px] tracking-widest transition-colors"
+              >
+                NÃO IMPRIMIR AGORA
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

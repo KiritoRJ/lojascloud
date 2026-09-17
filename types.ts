@@ -248,6 +248,8 @@ export interface AppSettings {
   enableNewSaleNotifications?: boolean;
   salesBannerUrl?: string | null;
   customDomain?: string;
+  storeCnpj?: string;
+  storeStateRegistration?: string;
 }
 
 export interface Employee {

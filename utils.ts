@@ -46,6 +46,24 @@ export const generateRandomNumericCode = (length: number = 5): string => {
 };
 
 /**
+ * Calcula o preço unitário efetivo do produto considerando Promoção ou Desconto configurados no cadastro.
+ * 1. Se isPromotion for true e promotionalPrice > 0, utiliza o promotionalPrice.
+ * 2. Caso contrário, se houver desconto percentual (discount > 0), aplica o abatimento sobre o salePrice.
+ * 3. Caso contrário, utiliza o salePrice padrão.
+ */
+export const getProductEffectivePrice = (product: { salePrice: number; promotionalPrice?: number; isPromotion?: boolean; discount?: number }): number => {
+  if (!product) return 0;
+  if (product.isPromotion && product.promotionalPrice && product.promotionalPrice > 0) {
+    return product.promotionalPrice;
+  }
+  if (product.discount && product.discount > 0) {
+    const discounted = product.salePrice * (1 - product.discount / 100);
+    return Math.max(0, discounted);
+  }
+  return product.salePrice || 0;
+};
+
+/**
  * Retorna a URL base do sistema para links externos (como Teste de Hardware e Acompanhamento de O.S.).
  * Se a loja configurou um domínio customizado em Configurações, prioriza essa URL.
  * Caso contrário, utiliza dinamicamente o window.location.origin atual do navegador,

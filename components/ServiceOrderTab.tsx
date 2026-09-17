@@ -427,6 +427,7 @@ const ServiceOrderTab: React.FC<Props> = ({
 
   // Sugestões e busca automática de clientes existentes
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  const [activeCustomerSearchField, setActiveCustomerSearchField] = useState<'name' | 'phone' | null>(null);
 
   // Efeito para preencher cliente vindo da aba Clientes
   useEffect(() => {
@@ -448,38 +449,44 @@ const ServiceOrderTab: React.FC<Props> = ({
     }
   }, [prefilledCustomer]);
 
-  // Lista de sugestões de clientes baseada no que o usuário digita
-  const matchedCustomerSuggestions = useMemo(() => {
+  // Lista de sugestões de clientes baseada no NOME digitado
+  const matchedNameSuggestions = useMemo(() => {
     if (!customers || customers.length === 0) return [];
     const nameSearch = (formData.customerName || '').trim().toLowerCase();
-    const phoneSearch = (formData.phoneNumber || '').replace(/\D/g, '');
-
-    if (nameSearch.length < 2 && phoneSearch.length < 3) return [];
+    if (nameSearch.length < 2) return [];
 
     return customers.filter(c => {
       if (c.isDeleted) return false;
-      const cName = c.name.toLowerCase();
-      const cPhone = (c.phoneNumber || '').replace(/\D/g, '');
-
-      const matchName = nameSearch.length >= 2 && cName.includes(nameSearch);
-      const matchPhone = phoneSearch.length >= 3 && cPhone.includes(phoneSearch);
-
-      return matchName || matchPhone;
+      const cName = (c.name || '').toLowerCase();
+      return cName.includes(nameSearch);
     }).slice(0, 5);
-  }, [customers, formData.customerName, formData.phoneNumber]);
+  }, [customers, formData.customerName]);
+
+  // Lista de sugestões de clientes baseada no TELEFONE digitado (a partir de 4 dígitos além do DDI)
+  const matchedPhoneSuggestions = useMemo(() => {
+    if (!customers || customers.length === 0) return [];
+    const phoneDigits = (formData.phoneNumber || '').replace(/\D/g, '').replace(/^55/, '');
+    if (phoneDigits.length < 4) return [];
+
+    return customers.filter(c => {
+      if (c.isDeleted) return false;
+      const cPhoneDigits = (c.phoneNumber || '').replace(/\D/g, '').replace(/^55/, '');
+      return cPhoneDigits.includes(phoneDigits);
+    }).slice(0, 5);
+  }, [customers, formData.phoneNumber]);
 
   // Checa se o cliente atual já existe cadastrado
   const matchedExistingCustomer = useMemo(() => {
     if (!customers || customers.length === 0) return null;
     const cleanName = (formData.customerName || '').trim().toLowerCase();
-    const cleanPhone = (formData.phoneNumber || '').replace(/\D/g, '');
+    const cleanPhone = (formData.phoneNumber || '').replace(/\D/g, '').replace(/^55/, '');
 
     if (!cleanName && cleanPhone.length < 8) return null;
 
     return customers.find(c => {
       if (c.isDeleted) return false;
       if (formData.customerId && c.id === formData.customerId) return true;
-      const cPhone = (c.phoneNumber || '').replace(/\D/g, '');
+      const cPhone = (c.phoneNumber || '').replace(/\D/g, '').replace(/^55/, '');
       if (cleanPhone.length >= 8 && cPhone.length >= 8 && cleanPhone === cPhone) return true;
       if (cleanName && c.name.trim().toLowerCase() === cleanName) return true;
       return false;
@@ -495,6 +502,7 @@ const ServiceOrderTab: React.FC<Props> = ({
       customerId: customer.id
     }));
     setShowCustomerSuggestions(false);
+    setActiveCustomerSearchField(null);
   };
 
   // Manipulador de digitação de telefone com prefixo +55 automático
@@ -1784,27 +1792,34 @@ const ServiceOrderTab: React.FC<Props> = ({
                       value={formData.customerName || ''} 
                       onChange={(e) => {
                         handleInputChange(e);
+                        setActiveCustomerSearchField('name');
                         setShowCustomerSuggestions(true);
                       }} 
-                      onFocus={() => setShowCustomerSuggestions(true)}
+                      onFocus={() => {
+                        setActiveCustomerSearchField('name');
+                        setShowCustomerSuggestions(true);
+                      }}
                       placeholder="Nome do cliente" 
                       className="w-full p-3 bg-white rounded-xl outline-none font-bold text-xs border border-slate-100 focus:border-blue-500 transition-all" 
                     />
 
-                    {/* Sugestões de clientes cadastrados */}
-                    {showCustomerSuggestions && matchedCustomerSuggestions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 space-y-1">
+                    {/* Sugestões de clientes por Nome */}
+                    {showCustomerSuggestions && activeCustomerSearchField === 'name' && matchedNameSuggestions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 space-y-1 animate-in fade-in zoom-in-95">
                         <div className="px-2 py-1 flex items-center justify-between text-[9px] font-black text-slate-400 uppercase tracking-wider">
-                          <span>Clientes Existentes ({matchedCustomerSuggestions.length})</span>
+                          <span>Clientes Encontrados ({matchedNameSuggestions.length})</span>
                           <button 
                             type="button" 
-                            onClick={() => setShowCustomerSuggestions(false)}
-                            className="text-slate-400 hover:text-slate-600 font-bold"
+                            onClick={() => {
+                              setShowCustomerSuggestions(false);
+                              setActiveCustomerSearchField(null);
+                            }}
+                            className="text-slate-400 hover:text-slate-600 font-bold px-1"
                           >
                             ✕
                           </button>
                         </div>
-                        {matchedCustomerSuggestions.map(sug => (
+                        {matchedNameSuggestions.map(sug => (
                           <button
                             key={sug.id}
                             type="button"
@@ -1825,7 +1840,7 @@ const ServiceOrderTab: React.FC<Props> = ({
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
+                    <div className="space-y-1 relative">
                       <div className="flex items-center justify-between">
                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone / WhatsApp</label>
                         <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-1 py-0.2 rounded">+55 BR</span>
@@ -1836,18 +1851,55 @@ const ServiceOrderTab: React.FC<Props> = ({
                           value={formData.phoneNumber || '+55 '} 
                           onChange={(e) => {
                             handleInputChange(e);
+                            setActiveCustomerSearchField('phone');
                             setShowCustomerSuggestions(true);
                           }} 
                           onFocus={() => {
                             if (!formData.phoneNumber) {
                               setFormData(prev => ({ ...prev, phoneNumber: '+55 ' }));
                             }
+                            setActiveCustomerSearchField('phone');
                             setShowCustomerSuggestions(true);
                           }}
                           placeholder="+55 (00) 00000-0000" 
                           className="w-full p-3 bg-white rounded-xl outline-none font-bold text-xs border border-slate-100 focus:border-blue-500 transition-all font-mono" 
                         />
                       </div>
+
+                      {/* Sugestões de clientes por Telefone - posicionadas ABAIXO do input de telefone para não cobrir o número */}
+                      {showCustomerSuggestions && activeCustomerSearchField === 'phone' && matchedPhoneSuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 w-[280px] sm:w-[320px] z-30 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 space-y-1 animate-in fade-in zoom-in-95">
+                          <div className="px-2 py-1 flex items-center justify-between text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                            <span>Cliente Cadastrado ({matchedPhoneSuggestions.length})</span>
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setShowCustomerSuggestions(false);
+                                setActiveCustomerSearchField(null);
+                              }}
+                              className="text-slate-400 hover:text-slate-600 font-bold px-1"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          {matchedPhoneSuggestions.map(sug => (
+                            <button
+                              key={sug.id}
+                              type="button"
+                              onClick={() => selectSuggestedCustomer(sug)}
+                              className="w-full text-left p-2 hover:bg-emerald-50 rounded-xl transition-colors flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-xs font-black text-slate-800 truncate uppercase">{sug.name}</p>
+                                <p className="text-[10px] text-slate-400 truncate">{sug.phoneNumber || 'Sem telefone'}</p>
+                              </div>
+                              <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-md shrink-0">
+                                Preencher Dados
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Endereço</label>
@@ -3131,6 +3183,16 @@ const ServiceOrderTab: React.FC<Props> = ({
                 <h1 style={{ fontWeight: '900', fontSize: is80mm ? '14px' : '12px', textTransform: 'uppercase', margin: '0 0 1mm 0', letterSpacing: '0.5px' }}>
                   {settings.storeName || 'ASSISTÊNCIA TÉCNICA'}
                 </h1>
+                {settings.storeCnpj && (
+                  <p style={{ margin: '0.5mm 0', fontSize: is80mm ? '8.5px' : '7.5px', color: '#222' }}>
+                    CNPJ: {settings.storeCnpj}
+                  </p>
+                )}
+                {settings.storeStateRegistration && (
+                  <p style={{ margin: '0.5mm 0', fontSize: is80mm ? '8.5px' : '7.5px', color: '#222' }}>
+                    IE: {settings.storeStateRegistration}
+                  </p>
+                )}
                 {settings.storeAddress && (
                   <p style={{ margin: '0.5mm 0', fontSize: is80mm ? '8.5px' : '7.5px', color: '#222' }}>
                     {settings.storeAddress}

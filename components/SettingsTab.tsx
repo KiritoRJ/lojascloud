@@ -1936,6 +1936,16 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Phone size={10}/> Telefone</label>
                  <input readOnly={!isAdmin} type="text" value={settings.storePhone || ''} onChange={(e) => updateSetting('storePhone', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="(00) 00000-0000" />
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><FileText size={10}/> CNPJ da Empresa</label>
+                   <input readOnly={!isAdmin} type="text" value={settings.storeCnpj || ''} onChange={(e) => updateSetting('storeCnpj', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="00.000.000/0000-00" />
+                </div>
+                <div className="space-y-1">
+                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><FileText size={10}/> Inscrição Estadual (IE)</label>
+                   <input readOnly={!isAdmin} type="text" value={settings.storeStateRegistration || ''} onChange={(e) => updateSetting('storeStateRegistration', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="Inscrição Estadual / Isento" />
+                </div>
+              </div>
            </div>
 
            {/* DOMÍNIO BASE DOS LINKS EXTERNOS E QR CODE */}

@@ -559,18 +559,20 @@ app.post('/api/auth/verify-admin', async (req, res) => {
 
 app.post('/api/auth/change-password', async (req, res) => {
   const { tenantId, oldPassword, newPassword } = req.body;
+  const isSuper = req.query?.isSuper === 'true' || req.body?.isSuper === true || !tenantId;
   
   try {
-    // 1. Get the current admin user
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .eq('role', 'admin')
-      .maybeSingle();
+    let query = supabase.from('users').select('*');
+    if (isSuper) {
+      query = query.eq('role', 'super');
+    } else {
+      query = query.eq('tenant_id', tenantId).eq('role', 'admin');
+    }
+    
+    const { data, error } = await query.maybeSingle();
     
     if (error) throw error;
-    if (!data) return res.status(404).json({ success: false, message: "Usuário administrador não encontrado." });
+    if (!data) return res.status(404).json({ success: false, message: isSuper ? "Super Admin não encontrado." : "Usuário administrador não encontrado." });
     
     // 2. Verify old password
     const isMatch = await comparePassword(oldPassword.trim(), data.password);
@@ -587,7 +589,7 @@ app.post('/api/auth/change-password', async (req, res) => {
     
     if (updateError) throw updateError;
     
-    res.json({ success: true, message: "Senha alterada com sucesso!" });
+    res.json({ success: true, message: isSuper ? "Senha do Super Admin alterada com sucesso!" : "Senha alterada com sucesso!" });
   } catch (err: any) {
     console.error('Change password error:', err);
     res.status(500).json({ success: false, message: "Erro ao alterar senha." });

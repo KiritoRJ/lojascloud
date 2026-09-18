@@ -25,17 +25,25 @@ export default async function handler(req: any, res: any) {
   }
 
   const { tenantId, oldPassword, newPassword } = req.body || {};
+  const isSuper = req.query?.isSuper === 'true' || req.body?.isSuper === true || !tenantId;
 
   try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .eq('role', 'admin')
-      .maybeSingle();
+    let query = supabase.from('users').select('*');
+    if (isSuper) {
+      query = query.eq('role', 'super');
+    } else {
+      query = query.eq('tenant_id', tenantId).eq('role', 'admin');
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) throw error;
-    if (!data) return res.status(404).json({ success: false, message: 'Usuário administrador não encontrado.' });
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        message: isSuper ? 'Super Admin não encontrado.' : 'Usuário administrador não encontrado.'
+      });
+    }
 
     const isMatch = await comparePassword(String(oldPassword).trim(), data.password);
     if (!isMatch) return res.status(401).json({ success: false, message: 'Senha atual incorreta.' });
@@ -49,7 +57,10 @@ export default async function handler(req: any, res: any) {
 
     if (updateError) throw updateError;
 
-    return res.status(200).json({ success: true, message: 'Senha alterada com sucesso!' });
+    return res.status(200).json({
+      success: true,
+      message: isSuper ? 'Senha do Super Admin alterada com sucesso!' : 'Senha alterada com sucesso!'
+    });
   } catch (err: any) {
     console.error('Change password error:', err);
     return res.status(500).json({ success: false, message: 'Erro ao alterar senha: ' + (err?.message || err) });

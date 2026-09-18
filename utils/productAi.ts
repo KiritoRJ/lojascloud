@@ -30,11 +30,18 @@ export async function analyzeProductImage(imageBase64: string, tenantId?: string
     body: JSON.stringify({ imageBase64, tenantId }),
   });
 
+  const responseText = await response.text();
   let json: any = null;
   try {
-    json = await response.json();
+    json = JSON.parse(responseText);
   } catch (_) {
-    throw new Error('Não foi possível se comunicar com o servidor de IA. Verifique sua conexão e tente novamente.');
+    if (response.status === 404) {
+      throw new Error('A rota da Inteligência Artificial não foi encontrada no servidor (Erro 404). Se você estiver na Vercel, certifique-se de fazer um novo deploy.');
+    }
+    if (response.status === 413) {
+      throw new Error('A imagem enviada excede o limite de tamanho do servidor (Erro 413). Tente tirar uma foto mais aproximada.');
+    }
+    throw new Error(`Não foi possível se comunicar com o servidor de IA (Status ${response.status}). Verifique sua conexão e tente novamente.`);
   }
 
   if (!response.ok || !json?.success) {

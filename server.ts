@@ -107,7 +107,13 @@ const getSystemAISettings = async (): Promise<SystemAISettings> => {
     console.error('Erro ao buscar configurações de IA no banco:', err);
   }
 
-  const envKey = (process.env.GEMINI_API_KEY || process.env.AI_API_KEY || '').trim();
+  const envKey = (
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    process.env.AI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    ''
+  ).trim();
   const effectiveKey = dbApiKey || envKey;
   const source: 'database' | 'env' | 'none' = dbApiKey ? 'database' : (envKey ? 'env' : 'none');
 

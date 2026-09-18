@@ -131,7 +131,17 @@ export class OnlineDB {
         },
         body: JSON.stringify({ apiKey }),
       });
-      return await response.json();
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        return {
+          success: false,
+          error: `O servidor retornou uma resposta não-JSON (Status ${response.status}). Verifique a implantação na Vercel.`,
+        };
+      }
+      return data;
     } catch (err: any) {
       return {
         success: false,
@@ -144,7 +154,19 @@ export class OnlineDB {
   static async getAISystemStatus() {
     try {
       const response = await fetch('/api/ai/system-status');
-      return await response.json();
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        return {
+          success: false,
+          aiDisabledGlobally: false,
+          hasApiKey: false,
+          keySource: 'none',
+        };
+      }
+      return data;
     } catch (err: any) {
       return {
         success: false,

@@ -79,7 +79,9 @@ export class OnlineDB {
           package50: { price: 14.90, credits: 50 },
           package150: { price: 29.90, credits: 150 },
           package500: { price: 69.90, credits: 500 },
-        }
+        },
+        aiApiKey: '',
+        aiDisabledGlobally: false
       };
 
       if (!data?.data_json) return defaultSettings;
@@ -95,14 +97,60 @@ export class OnlineDB {
         };
       }
 
-      return { ...defaultSettings, ...json };
+      return {
+        ...defaultSettings,
+        ...json,
+        aiApiKey: json.aiApiKey || json.geminiApiKey || '',
+        aiDisabledGlobally: json.aiDisabledGlobally === true || json.isAiDisabledGlobally === true
+      };
     } catch (e) {
       return {
         monthly: { price: 49.90, maxUsers: 2, maxOS: 999, maxProducts: 999 },
         quarterly: { price: 129.90, maxUsers: 999, maxOS: 999, maxProducts: 999 },
         yearly: { price: 499.00, maxUsers: 999, maxOS: 999, maxProducts: 999 },
         trial: { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 },
-        supportPhone: '5511999999999'
+        supportPhone: '5511999999999',
+        aiPackages: {
+          package50: { price: 14.90, credits: 50 },
+          package150: { price: 29.90, credits: 150 },
+          package500: { price: 69.90, credits: 500 },
+        },
+        aiApiKey: '',
+        aiDisabledGlobally: false
+      };
+    }
+  }
+
+  // Testa a chave de API da IA (Google Gemini) no backend
+  static async testAIApiKey(apiKey?: string) {
+    try {
+      const response = await fetch('/api/ai/test-key', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ apiKey }),
+      });
+      return await response.json();
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'Falha de conexão com o servidor ao testar a chave da IA.',
+      };
+    }
+  }
+
+  // Obtém status detalhado da IA no sistema
+  static async getAISystemStatus() {
+    try {
+      const response = await fetch('/api/ai/system-status');
+      return await response.json();
+    } catch (err: any) {
+      return {
+        success: false,
+        aiDisabledGlobally: false,
+        hasApiKey: false,
+        keySource: 'none',
       };
     }
   }

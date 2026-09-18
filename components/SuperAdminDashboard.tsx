@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard, Sparkles } from 'lucide-react';
+import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard, Sparkles, Eye, EyeOff, Power, AlertTriangle, Cpu } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -24,8 +24,13 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
   const [tenantToEditSub, setTenantToEditSub] = useState<{ id: string, name: string, expiresAt: string, status: string, planType?: string } | null>(null);
   const [tenantToEditPrices, setTenantToEditPrices] = useState<{ id: string, name: string, monthly?: number, quarterly?: number, yearly?: number } | null>(null);
   const [tenantToEditFeatures, setTenantToEditFeatures] = useState<{ id: string; name: string; features: any; maxUsers: number; maxOS: number; maxProducts: number; printerSize: 58 | 80; retentionMonths: number; } | null>(null);
-const [globalPlans, setGlobalPlans] = useState<any>({});
+  const [globalPlans, setGlobalPlans] = useState<any>({});
   const [isEditingGlobal, setIsEditingGlobal] = useState(false);
+  const [isAiConfigModalOpen, setIsAiConfigModalOpen] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [isTestingKey, setIsTestingKey] = useState(false);
+  const [testKeyResult, setTestKeyResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [systemAiStatus, setSystemAiStatus] = useState<any>(null);
   const [newSubDate, setNewSubDate] = useState('');
   const [newPlanType, setNewPlanType] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
   const [isCompressing, setIsCompressing] = useState(false);
@@ -108,6 +113,10 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
   const loadGlobalSettings = async () => {
     const settings = await OnlineDB.getGlobalSettings();
     setGlobalPlans(settings);
+    try {
+      const status = await OnlineDB.getAISystemStatus();
+      setSystemAiStatus(status);
+    } catch (_) {}
   };
 
   const loadTenants = async () => {
@@ -213,10 +222,49 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
     }
   };
 
+  const handleTestApiKey = async (customKey?: string) => {
+    setIsTestingKey(true);
+    setTestKeyResult(null);
+    try {
+      const keyToUse = customKey !== undefined ? customKey : (globalPlans.aiApiKey || '');
+      const res = await OnlineDB.testAIApiKey(keyToUse);
+      if (res.success) {
+        setTestKeyResult({ success: true, message: res.message || 'Chave validada com sucesso no Google Gemini!' });
+      } else {
+        setTestKeyResult({ success: false, message: res.error || 'Falha ao validar chave de API.' });
+      }
+    } catch (err: any) {
+      setTestKeyResult({ success: false, message: 'Erro ao comunicar com o servidor de IA.' });
+    } finally {
+      setIsTestingKey(false);
+    }
+  };
+
+  const handleSaveAiConfig = async () => {
+    setIsSaving(true);
+    try {
+      const res = await OnlineDB.updateGlobalSettings(globalPlans);
+      if (res.success) {
+        const status = await OnlineDB.getAISystemStatus();
+        setSystemAiStatus(status);
+        setIsAiConfigModalOpen(false);
+        alert('Configurações de Inteligência Artificial salvas com sucesso!');
+      } else {
+        setErrorMsg(res.message || 'Erro ao salvar configurações de IA.');
+      }
+    } catch (e: any) {
+      setErrorMsg('Erro ao salvar configurações no banco de dados.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleUpdateGlobalPlans = async () => {
     setIsSaving(true);
     const res = await OnlineDB.updateGlobalSettings(globalPlans);
     if (res.success) {
+      const status = await OnlineDB.getAISystemStatus();
+      setSystemAiStatus(status);
       setIsEditingGlobal(false);
     } else {
       setErrorMsg(res.message || "Erro ao salvar planos.");
@@ -373,7 +421,23 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                  </p>
                </div>
             </div>
-            <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
+              <button 
+                onClick={() => {
+                  setTestKeyResult(null);
+                  setIsAiConfigModalOpen(true);
+                }}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 border rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${
+                  globalPlans.aiDisabledGlobally
+                    ? 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500 hover:text-white'
+                    : 'bg-purple-600/10 text-purple-400 border-purple-600/30 hover:bg-purple-600 hover:text-white'
+                }`}
+                title="Configurar Chave da IA e Status Global"
+              >
+                <Sparkles size={12} className="sm:hidden" />
+                <Sparkles size={14} className="hidden sm:block" />
+                <span>IA do Sistema {globalPlans.aiDisabledGlobally ? '(Desativada)' : '(Ativa)'}</span>
+              </button>
               <button 
                 onClick={() => setIsEditingGlobal(true)}
                 className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-600/20 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all"
@@ -389,6 +453,27 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
               )}
             </div>
           </div>
+
+          {globalPlans.aiDisabledGlobally && (
+            <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-400 text-xs font-bold animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle size={18} className="text-amber-400 shrink-0" />
+                <div>
+                  <p className="font-black uppercase tracking-wider text-[11px] text-amber-300">Inteligência Artificial Desativada em Todo o Sistema</p>
+                  <p className="text-[10px] text-amber-400/80 font-normal">Todas as funções de IA estão desabilitadas para os lojistas e colaboradores.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setTestKeyResult(null);
+                  setIsAiConfigModalOpen(true);
+                }}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[9px] uppercase tracking-wider rounded-lg transition-all shrink-0"
+              >
+                Reativar / Gerenciar IA
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6">
@@ -692,6 +777,109 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                   </div>
                 </div>
 
+                <div className="bg-gradient-to-r from-purple-50/80 to-indigo-50/80 p-4 rounded-2xl border border-purple-100 mb-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-purple-600 text-white rounded-lg shadow-xs">
+                        <Sparkles size={16} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-purple-900 uppercase text-[10px] sm:text-xs">Inteligência Artificial (Google Gemini)</h4>
+                        <p className="text-[8px] text-slate-500">Chave de API da IA e controle global de ativação</p>
+                      </div>
+                    </div>
+                    {globalPlans.aiDisabledGlobally ? (
+                      <span className="px-2 py-0.5 bg-red-600 text-white rounded-md text-[8px] sm:text-[9px] font-black uppercase tracking-wider">
+                        Desativada Globalmente
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-[8px] sm:text-[9px] font-black uppercase tracking-wider">
+                        Ativada no Sistema
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Chave de API */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[8px] sm:text-[9px] font-bold text-slate-600 uppercase">Chave de API (Google Gemini)</label>
+                      {globalPlans.aiApiKey && globalPlans.aiApiKey.length > 5 ? (
+                        <span className="text-[8px] text-emerald-600 font-bold">✓ Salva no banco de dados</span>
+                      ) : systemAiStatus?.keySource === 'env' ? (
+                        <span className="text-[8px] text-blue-600 font-bold">ℹ️ Chave padrão em uso (.env)</span>
+                      ) : (
+                        <span className="text-[8px] text-amber-600 font-bold">⚠️ Nenhuma chave salva</span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input 
+                        type={showApiKey ? "text" : "password"}
+                        value={globalPlans.aiApiKey || ''} 
+                        onChange={e => setGlobalPlans((prev: any) => ({ ...prev, aiApiKey: e.target.value.trim() }))} 
+                        placeholder="AIzaSy... (Cole aqui sua chave da API do Google Gemini)" 
+                        className="w-full bg-white border border-purple-200 rounded-lg p-2.5 pr-20 text-[10px] sm:text-xs text-slate-800 font-mono" 
+                      />
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                          title={showApiKey ? "Ocultar Chave" : "Mostrar Chave"}
+                        >
+                          {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleTestApiKey(globalPlans.aiApiKey)}
+                        disabled={isTestingKey}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[8px] sm:text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {isTestingKey ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        <span>{isTestingKey ? 'Testando...' : 'Testar Chave de API'}</span>
+                      </button>
+
+                      {globalPlans.aiApiKey && (
+                        <button
+                          type="button"
+                          onClick={() => setGlobalPlans((prev: any) => ({ ...prev, aiApiKey: '' }))}
+                          className="text-[8px] text-red-500 hover:text-red-700 font-bold underline uppercase"
+                        >
+                          Limpar Chave do Banco
+                        </button>
+                      )}
+                    </div>
+
+                    {testKeyResult && (
+                      <div className={`p-2.5 rounded-lg text-[9px] font-bold border ${testKeyResult.success ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                        {testKeyResult.message}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Opção para desativar IA no sistema todo */}
+                  <div className="bg-white/80 p-3 rounded-xl border border-purple-100 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-800 uppercase">Desativar IA em Todo o Sistema</p>
+                      <p className="text-[8px] text-slate-500">Bloqueia o uso da IA para todas as empresas e usuários</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setGlobalPlans((prev: any) => ({ ...prev, aiDisabledGlobally: !prev.aiDisabledGlobally }))}
+                      className={`px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                        globalPlans.aiDisabledGlobally
+                          ? 'bg-red-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <Power size={12} />
+                      <span>{globalPlans.aiDisabledGlobally ? 'IA Desativada' : 'IA Ativa'}</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-100 mb-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Sparkles size={16} className="text-indigo-600" />
@@ -812,6 +1000,274 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                   {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Planos Globais'}
                 </button>
                 <button onClick={() => setIsEditingGlobal(false)} disabled={isSaving} className="w-full sm:w-auto sm:px-10 py-4 sm:py-5 bg-slate-100 text-slate-500 rounded-xl sm:rounded-2xl font-black uppercase text-[10px] sm:text-xs tracking-widest hover:bg-slate-200 transition-colors">
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EXCLUSIVO DE CONFIGURAÇÃO DA IA DO SISTEMA */}
+      {isAiConfigModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-2xl sm:rounded-[2.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100 my-auto flex flex-col max-h-[90vh]">
+            <div className="p-6 sm:p-8 pb-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-gradient-to-r from-purple-50 via-white to-indigo-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-purple-600/30">
+                  <Sparkles size={22} className="animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 uppercase text-sm sm:text-base tracking-tight">Inteligência Artificial (IA)</h3>
+                  <p className="text-slate-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">Chave da API Google Gemini & Controle Global</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsAiConfigModalOpen(false)} 
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1">
+              {/* 1. INTERRUPTOR GERAL DO SISTEMA */}
+              <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                globalPlans.aiDisabledGlobally 
+                  ? 'bg-red-500/10 border-red-500/30 text-red-950' 
+                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-950'
+              }`}>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                        globalPlans.aiDisabledGlobally 
+                          ? 'bg-red-600 text-white' 
+                          : 'bg-emerald-600 text-white'
+                      }`}>
+                        {globalPlans.aiDisabledGlobally ? 'Status: IA DESATIVADA' : 'Status: IA ATIVA'}
+                      </span>
+                    </div>
+                    <h4 className="font-black text-xs sm:text-sm text-slate-800 uppercase tracking-tight">
+                      {globalPlans.aiDisabledGlobally 
+                        ? 'A Inteligência Artificial está Desativada em Todo o Sistema' 
+                        : 'A Inteligência Artificial está Habilitada no Sistema'}
+                    </h4>
+                    <p className="text-[9px] sm:text-[10px] text-slate-500 leading-relaxed max-w-md">
+                      {globalPlans.aiDisabledGlobally
+                        ? 'Nenhuma empresa ou colaborador conseguirá utilizar leitura de fotos, preenchimento por IA ou consumo de créditos enquanto esta opção estiver desativada.'
+                        : 'Lojas autorizadas com o módulo de IA habilitado conseguem utilizar leitura de fotos de produtos, códigos de barras, dados fiscais e preenchimento automático.'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setGlobalPlans((prev: any) => ({
+                      ...prev,
+                      aiDisabledGlobally: !prev.aiDisabledGlobally
+                    }))}
+                    className={`px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-2 transition-all shadow-md active:scale-95 shrink-0 ${
+                      globalPlans.aiDisabledGlobally
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                        : 'bg-red-600 hover:bg-red-700 text-white shadow-red-600/20'
+                    }`}
+                  >
+                    <Power size={14} />
+                    <span>{globalPlans.aiDisabledGlobally ? 'Ativar IA no Sistema' : 'Desativar IA do Sistema Todo'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. CHAVE DE API DO GOOGLE GEMINI */}
+              <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <KeySquare size={16} className="text-purple-600" />
+                    <h4 className="font-black text-xs text-slate-800 uppercase tracking-tight">Chave da API (Google Gemini)</h4>
+                  </div>
+                  {globalPlans.aiApiKey && globalPlans.aiApiKey.length > 5 ? (
+                    <span className="text-[8px] sm:text-[9px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      ✓ Salva no banco de dados
+                    </span>
+                  ) : systemAiStatus?.keySource === 'env' ? (
+                    <span className="text-[8px] sm:text-[9px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                      ℹ️ Chave padrão do .env ativa ({systemAiStatus.maskedKey || '••••'})
+                    </span>
+                  ) : (
+                    <span className="text-[8px] sm:text-[9px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                      ⚠️ Nenhuma chave cadastrada
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-[9px] sm:text-[10px] text-slate-500">
+                  Insira abaixo a chave da API do <strong>Google Gemini</strong>. Esta chave é utilizada no backend para o processamento de imagens e catalogação de produtos.
+                </p>
+
+                <div className="relative">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={globalPlans.aiApiKey || ''}
+                    onChange={e => setGlobalPlans((prev: any) => ({ ...prev, aiApiKey: e.target.value.trim() }))}
+                    placeholder="AIzaSy... (Cole sua API Key do Google Gemini aqui)"
+                    className="w-full bg-white border border-slate-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-xl p-3 pr-20 text-xs text-slate-800 font-mono transition-all outline-none"
+                  />
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+                      title={showApiKey ? 'Ocultar Chave' : 'Visualizar Chave'}
+                    >
+                      {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleTestApiKey(globalPlans.aiApiKey)}
+                    disabled={isTestingKey}
+                    className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-sm disabled:opacity-50 active:scale-95"
+                  >
+                    {isTestingKey ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                    <span>{isTestingKey ? 'Testando no Google...' : 'Testar Chave de API'}</span>
+                  </button>
+
+                  {globalPlans.aiApiKey && (
+                    <button
+                      type="button"
+                      onClick={() => setGlobalPlans((prev: any) => ({ ...prev, aiApiKey: '' }))}
+                      className="text-[9px] text-red-500 hover:text-red-700 font-bold uppercase underline"
+                    >
+                      Remover Chave do Banco
+                    </button>
+                  )}
+                </div>
+
+                {testKeyResult && (
+                  <div className={`p-3 rounded-xl text-[10px] font-bold border transition-all animate-in fade-in ${
+                    testKeyResult.success 
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                      : 'bg-red-50 text-red-700 border-red-200'
+                  }`}>
+                    {testKeyResult.message}
+                  </div>
+                )}
+
+                <div className="bg-purple-50/50 p-3 rounded-xl border border-purple-100 text-[9px] text-purple-900 leading-relaxed flex items-start gap-2">
+                  <div className="p-1 bg-purple-200 text-purple-800 rounded-md shrink-0">
+                    <Sparkles size={12} />
+                  </div>
+                  <div>
+                    <strong>Como obter a chave de API gratuita?</strong> Acesse{' '}
+                    <a 
+                      href="https://aistudio.google.com/app/apikey" 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="text-purple-700 underline font-black"
+                    >
+                      Google AI Studio (aistudio.google.com/app/apikey)
+                    </a>
+                    , faça login e crie uma API Key. Copie a chave gerada e cole no campo acima.
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. PREÇOS DOS PACOTES DE CRÉDITOS */}
+              <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="flex items-center gap-2">
+                  <CreditCard size={16} className="text-indigo-600" />
+                  <h4 className="font-black text-xs text-slate-800 uppercase tracking-tight">Preços dos Pacotes de Créditos de IA</h4>
+                </div>
+                <p className="text-[9px] text-slate-500">
+                  Preços cobrados dos lojistas quando eles recarregam créditos de fotos no painel:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-800 uppercase">50 Fotos</span>
+                      <span className="text-[8px] font-bold text-indigo-600 uppercase">Básico</span>
+                    </div>
+                    <label className="text-[8px] text-slate-400 font-bold block">Preço (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={globalPlans.aiPackages?.package50?.price ?? 14.90}
+                      onChange={e => setGlobalPlans((prev: any) => ({
+                        ...prev,
+                        aiPackages: {
+                          ...prev.aiPackages,
+                          package50: { credits: 50, price: parseFloat(e.target.value) || 0 }
+                        }
+                      }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-indigo-200 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-800 uppercase">150 Fotos</span>
+                      <span className="text-[8px] font-bold text-indigo-600 uppercase">Pro</span>
+                    </div>
+                    <label className="text-[8px] text-slate-400 font-bold block">Preço (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={globalPlans.aiPackages?.package150?.price ?? 29.90}
+                      onChange={e => setGlobalPlans((prev: any) => ({
+                        ...prev,
+                        aiPackages: {
+                          ...prev.aiPackages,
+                          package150: { credits: 150, price: parseFloat(e.target.value) || 0 }
+                        }
+                      }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-800 uppercase">500 Fotos</span>
+                      <span className="text-[8px] font-bold text-indigo-600 uppercase">Turbo</span>
+                    </div>
+                    <label className="text-[8px] text-slate-400 font-bold block">Preço (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={globalPlans.aiPackages?.package500?.price ?? 69.90}
+                      onChange={e => setGlobalPlans((prev: any) => ({
+                        ...prev,
+                        aiPackages: {
+                          ...prev.aiPackages,
+                          package500: { credits: 500, price: parseFloat(e.target.value) || 0 }
+                        }
+                      }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 sm:p-8 pt-4 border-t border-slate-100 bg-white shrink-0">
+              <div className="flex flex-col sm:flex-row-reverse gap-3">
+                <button
+                  type="button"
+                  onClick={handleSaveAiConfig}
+                  disabled={isSaving}
+                  className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl sm:rounded-2xl font-black uppercase text-[10px] sm:text-xs tracking-widest shadow-xl shadow-purple-600/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 transition-all"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Salvar Configurações de IA'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAiConfigModalOpen(false)}
+                  disabled={isSaving}
+                  className="w-full sm:w-auto sm:px-8 py-4 bg-slate-100 text-slate-500 rounded-xl sm:rounded-2xl font-black uppercase text-[10px] sm:text-xs tracking-widest hover:bg-slate-200 transition-colors"
+                >
                   Fechar
                 </button>
               </div>

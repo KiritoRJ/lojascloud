@@ -73,33 +73,201 @@ const getMPClient = async () => {
   return new MercadoPagoConfig({ accessToken: token });
 };
 
-let genAIClient: GoogleGenAI | null = null;
-const getGenAI = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
+interface SystemAISettings {
+  aiDisabledGlobally: boolean;
+  apiKey: string;
+  source: 'database' | 'env' | 'none';
+  maskedKey: string;
+}
+
+const getSystemAISettings = async (): Promise<SystemAISettings> => {
+  let dbApiKey = '';
+  let aiDisabledGlobally = false;
+
+  try {
+    const { data } = await supabase
+      .from('cloud_data')
+      .select('data_json')
+      .eq('tenant_id', 'SYSTEM')
+      .eq('store_key', 'global_plans')
+      .maybeSingle();
+
+    if (data?.data_json) {
+      const json = data.data_json;
+      if (json.aiDisabledGlobally === true || json.isAiDisabledGlobally === true) {
+        aiDisabledGlobally = true;
+      }
+      if (typeof json.aiApiKey === 'string' && json.aiApiKey.trim().length > 5) {
+        dbApiKey = json.aiApiKey.trim();
+      } else if (typeof json.geminiApiKey === 'string' && json.geminiApiKey.trim().length > 5) {
+        dbApiKey = json.geminiApiKey.trim();
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao buscar configurações de IA no banco:', err);
+  }
+
+  const envKey = (process.env.GEMINI_API_KEY || process.env.AI_API_KEY || '').trim();
+  const effectiveKey = dbApiKey || envKey;
+  const source: 'database' | 'env' | 'none' = dbApiKey ? 'database' : (envKey ? 'env' : 'none');
+
+  let maskedKey = '';
+  if (effectiveKey) {
+    if (effectiveKey.length > 10) {
+      maskedKey = `${effectiveKey.slice(0, 6)}...${effectiveKey.slice(-4)}`;
+    } else {
+      maskedKey = '••••••••';
+    }
+  }
+
+  return {
+    aiDisabledGlobally,
+    apiKey: effectiveKey,
+    source,
+    maskedKey,
+  };
+};
+
+let cachedAIClient: { key: string; client: GoogleGenAI } | null = null;
+const getGenAI = (apiKey: string) => {
   if (!apiKey) {
-    throw new Error('Chave de API Gemini (GEMINI_API_KEY) não configurada nas variáveis de ambiente.');
+    throw new Error('Chave de API da IA (Google Gemini) não configurada.');
   }
-  if (!genAIClient) {
-    genAIClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
+  if (!cachedAIClient || cachedAIClient.key !== apiKey) {
+    cachedAIClient = {
+      key: apiKey,
+      client: new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
         },
-      },
-    });
+      }),
+    };
   }
-  return genAIClient;
+  return cachedAIClient.client;
 };
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors());
 
+// Status da IA no sistema
+app.get('/api/ai/system-status', async (req, res) => {
+  try {
+    const settings = await getSystemAISettings();
+    return res.json({
+      success: true,
+      aiDisabledGlobally: settings.aiDisabledGlobally,
+      hasApiKey: !!settings.apiKey,
+      keySource: settings.source,
+      maskedKey: settings.maskedKey,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Erro ao consultar status da IA.' });
+  }
+});
+
+// Endpoint para testar chave de API da IA diretamente no Google Gemini
+app.post('/api/ai/test-key', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    let keyToTest = typeof apiKey === 'string' && apiKey.trim().length > 5 ? apiKey.trim() : '';
+
+    if (!keyToTest) {
+      const currentSettings = await getSystemAISettings();
+      keyToTest = currentSettings.apiKey;
+    }
+
+    if (!keyToTest) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nenhuma chave de API da IA fornecida para teste. Insira a chave do Google Gemini.',
+      });
+    }
+
+    const testClient = new GoogleGenAI({
+      apiKey: keyToTest,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    const candidateModels = [
+      'gemini-3.8-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-flash-latest',
+    ];
+
+    let success = false;
+    let sampleResponse = '';
+    let lastErr: any = null;
+
+    for (const model of candidateModels) {
+      try {
+        const response = await testClient.models.generateContent({
+          model,
+          contents: 'Teste de conexão com a API da IA. Responda apenas com: OK.',
+        });
+        if (response?.text) {
+          success = true;
+          sampleResponse = response.text.trim();
+          break;
+        }
+      } catch (err: any) {
+        lastErr = err;
+      }
+    }
+
+    if (success) {
+      return res.json({
+        success: true,
+        message: 'Chave de API validada com sucesso! Conexão ativa com o Google Gemini.',
+        sampleResponse,
+      });
+    } else {
+      const errMsg = lastErr?.message || String(lastErr || 'Erro desconhecido ao testar a chave.');
+      return res.status(400).json({
+        success: false,
+        error: `Falha ao validar chave de API: ${errMsg}`,
+      });
+    }
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Erro ao processar teste da chave de API.',
+    });
+  }
+});
+
 // AI Intelligent Product Scanner endpoint
 app.post('/api/ai/analyze-product-image', async (req, res) => {
   try {
     const { imageBase64, mimeType, tenantId } = req.body;
+
+    const { aiDisabledGlobally, apiKey } = await getSystemAISettings();
+
+    // 1. Verificação global do sistema:
+    if (aiDisabledGlobally) {
+      return res.status(403).json({
+        success: false,
+        aiDisabledGlobally: true,
+        error: 'A Inteligência Artificial está desativada em todo o sistema pelo Super Administrador.',
+      });
+    }
+
+    // 2. Verificação de chave de API configurada:
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        missingApiKey: true,
+        error: 'Chave de API da IA não configurada no sistema. O Super Administrador precisa definir a chave no painel Super Admin.',
+      });
+    }
+
     if (!imageBase64) {
       return res.status(400).json({ error: 'Nenhuma imagem foi enviada para análise.' });
     }
@@ -143,7 +311,7 @@ app.post('/api/ai/analyze-product-image', async (req, res) => {
       if (match) detectedMime = match[1];
     }
 
-    const ai = getGenAI();
+    const ai = getGenAI(apiKey);
 
     const prompt = `Você é um assistente de inteligência artificial de elite especializado em catalogação e automação de cadastro de produtos para varejo, comércio e assistência técnica.
 Analise detalhadamente a foto do produto/embalagem/caixa/rótulo fornecida e identifique o máximo de informações disponíveis:

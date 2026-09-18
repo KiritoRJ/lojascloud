@@ -1,4 +1,20 @@
 
+export interface GlobalSystemSettings {
+  monthly: { price: number; maxUsers: number; maxOS: number; maxProducts: number };
+  quarterly: { price: number; maxUsers: number; maxOS: number; maxProducts: number };
+  yearly: { price: number; maxUsers: number; maxOS: number; maxProducts: number };
+  trial: { maxUsers: number; maxOS: number; maxProducts: number };
+  supportPhone?: string;
+  mercadoPagoAccessToken?: string;
+  aiPackages?: {
+    package50?: { price: number; credits: number };
+    package150?: { price: number; credits: number };
+    package500?: { price: number; credits: number };
+  };
+  aiApiKey?: string;
+  aiDisabledGlobally?: boolean;
+}
+
 export interface Tenant {
   id: string;
   storeName: string;

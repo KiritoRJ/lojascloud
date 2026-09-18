@@ -132,6 +132,7 @@ const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isAiGloballyDisabled, setIsAiGloballyDisabled] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
 
@@ -271,6 +272,12 @@ const App: React.FC = () => {
 
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
+
+  useEffect(() => {
+    OnlineDB.getAISystemStatus().then(status => {
+      setIsAiGloballyDisabled(!!status?.disabled);
+    }).catch(() => {});
+  }, [session?.tenantId]);
 
   const handleInstallApp = async () => {
     if (!deferredPrompt) return;
@@ -1778,7 +1785,7 @@ const App: React.FC = () => {
               onUpdateSettings={saveSettings} 
               maxProducts={session.maxProducts} 
               tenantId={session.tenantId || ''} 
-              aiEnabled={session.enabledFeatures?.aiFeature !== false}
+              aiEnabled={!isAiGloballyDisabled && session.enabledFeatures?.aiFeature !== false}
             />
           )}
           {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}

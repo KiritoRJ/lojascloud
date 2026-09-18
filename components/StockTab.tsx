@@ -67,42 +67,17 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
-  // Limpa rascunho de produto
+  // Limpa rascunho residual de produto do navegador para nunca reabrir sozinho
   const clearStockDraft = () => {
     try {
       localStorage.removeItem('lojascloud_stock_draft');
     } catch (e) {}
   };
 
-  // Restaura rascunho de produto caso recarregue no celular
+  // Garante que nenhum rascunho antigo force abertura automática da tela ao entrar na aba estoque
   useEffect(() => {
-    try {
-      const savedDraft = localStorage.getItem('lojascloud_stock_draft');
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft);
-        if (parsed && parsed.formData && (parsed.formData.name || parsed.formData.barcode || parsed.formData.salePrice)) {
-          setFormData(parsed.formData);
-          if (parsed.editingProduct) setEditingProduct(parsed.editingProduct);
-          setIsModalOpen(true);
-        }
-      }
-    } catch (e) {
-      console.warn('Erro ao restaurar rascunho de estoque:', e);
-    }
+    clearStockDraft();
   }, []);
-
-  // Salva automaticamente o rascunho enquanto o modal de produto estiver aberto
-  useEffect(() => {
-    if (isModalOpen && (formData.name || formData.barcode || (formData.salePrice || 0) > 0 || (formData.quantity || 0) > 0)) {
-      try {
-        localStorage.setItem('lojascloud_stock_draft', JSON.stringify({
-          formData: { ...formData, photo: null }, // evita fotos pesadas no localStorage
-          editingProduct,
-          savedAt: Date.now()
-        }));
-      } catch (e) {}
-    }
-  }, [formData, isModalOpen, editingProduct]);
 
   // Função para comprimir imagem antes de salvar no banco
   const compressImage = (base64Str: string): Promise<string> => {
@@ -363,6 +338,11 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     }
   };
 
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    resetForm();
+  };
+
   const resetForm = () => {
     clearStockDraft();
     setEditingProduct(null);
@@ -606,7 +586,14 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
 
       {/* MODAL DE CADASTRO / EDIÇÃO */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 z-50 flex flex-col justify-end p-2 backdrop-blur-sm animate-in fade-in duration-200">
+        <div 
+          className="fixed inset-0 bg-slate-950/80 z-50 flex flex-col justify-end p-2 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleCloseModal();
+            }
+          }}
+        >
           <div className="bg-white w-full max-w-lg mx-auto rounded-[2.5rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 flex flex-col max-h-[90vh]">
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
               <div className="flex items-center gap-2">
@@ -615,7 +602,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                   <span className="bg-blue-50 text-blue-600 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">Inteligente</span>
                 )}
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors">
+              <button onClick={handleCloseModal} className="p-2 text-slate-400 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors" title="Fechar">
                 <X size={18} />
               </button>
             </div>
@@ -941,7 +928,11 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
             </div>
 
             <div className="p-5 bg-slate-50 border-t border-slate-100 flex gap-3 shrink-0">
-              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-3.5 font-black text-slate-400 hover:text-slate-600 uppercase text-[10px] tracking-widest transition-colors">
+              <button 
+                type="button"
+                onClick={handleCloseModal} 
+                className="flex-1 py-3.5 font-black text-slate-400 hover:text-slate-600 uppercase text-[10px] tracking-widest transition-colors cursor-pointer active:scale-95"
+              >
                 Sair
               </button>
               <button onClick={handleSave} disabled={isSaving || isCompressing} className="flex-[2] py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all">

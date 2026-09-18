@@ -52,6 +52,51 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   // Créditos de IA no Estoque
   const [aiCredits, setAiCredits] = useState<number>(0);
   const [isAICreditsModalOpen, setIsAICreditsModalOpen] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  // Helper para verificar se há alterações pendentes não salvas
+  const hasUnsavedChanges = () => {
+    if (editingProduct) {
+      return (
+        formData.name !== editingProduct.name ||
+        formData.salePrice !== editingProduct.salePrice ||
+        formData.costPrice !== editingProduct.costPrice ||
+        formData.quantity !== editingProduct.quantity ||
+        formData.barcode !== (editingProduct.barcode || '') ||
+        formData.photo !== editingProduct.photo
+      );
+    }
+    return !!(
+      formData.name?.trim() ||
+      (formData.salePrice || 0) > 0 ||
+      (formData.costPrice || 0) > 0 ||
+      (formData.quantity || 0) > 0 ||
+      formData.barcode?.trim() ||
+      formData.photo
+    );
+  };
+
+  const handleRequestClose = () => {
+    if (hasUnsavedChanges()) {
+      setShowDiscardConfirm(true);
+    } else {
+      forceCloseAndDiscard();
+    }
+  };
+
+  const forceCloseAndDiscard = () => {
+    clearStockDraft();
+    resetForm();
+    setIsModalOpen(false);
+    setShowDiscardConfirm(false);
+  };
+
+  // Garante que se o usuário mudar de aba enquanto o modal estiver fechado, o rascunho seja limpo
+  useEffect(() => {
+    return () => {
+      clearStockDraft();
+    };
+  }, []);
 
   const fetchAICredits = async () => {
     if (tenantId) {
@@ -74,33 +119,18 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     } catch (e) {}
   };
 
-  // Restaura rascunho de produto caso recarregue no celular
-  useEffect(() => {
-    try {
-      const savedDraft = localStorage.getItem('lojascloud_stock_draft');
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft);
-        if (parsed && parsed.formData && (parsed.formData.name || parsed.formData.barcode || parsed.formData.salePrice)) {
-          setFormData(parsed.formData);
-          if (parsed.editingProduct) setEditingProduct(parsed.editingProduct);
-          setIsModalOpen(true);
-        }
-      }
-    } catch (e) {
-      console.warn('Erro ao restaurar rascunho de estoque:', e);
-    }
-  }, []);
-
-  // Salva automaticamente o rascunho enquanto o modal de produto estiver aberto
+  // Salva temporariamente rascunho enquanto o modal estiver aberto, apenas para evitar perdas acidentais de reload
   useEffect(() => {
     if (isModalOpen && (formData.name || formData.barcode || (formData.salePrice || 0) > 0 || (formData.quantity || 0) > 0)) {
       try {
         localStorage.setItem('lojascloud_stock_draft', JSON.stringify({
-          formData: { ...formData, photo: null }, // evita fotos pesadas no localStorage
+          formData: { ...formData, photo: null },
           editingProduct,
           savedAt: Date.now()
         }));
       } catch (e) {}
+    } else if (!isModalOpen) {
+      clearStockDraft();
     }
   }, [formData, isModalOpen, editingProduct]);
 
@@ -615,7 +645,12 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                   <span className="bg-blue-50 text-blue-600 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">Inteligente</span>
                 )}
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors">
+              <button 
+                type="button" 
+                onClick={handleRequestClose} 
+                className="p-2 text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors active:scale-95"
+                title="Fechar cadastro"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -941,11 +976,53 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
             </div>
 
             <div className="p-5 bg-slate-50 border-t border-slate-100 flex gap-3 shrink-0">
-              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-3.5 font-black text-slate-400 hover:text-slate-600 uppercase text-[10px] tracking-widest transition-colors">
+              <button 
+                type="button" 
+                onClick={handleRequestClose} 
+                className="flex-1 py-3.5 font-black text-slate-500 hover:text-slate-800 uppercase text-[10px] tracking-widest transition-colors rounded-2xl hover:bg-slate-200/60 active:scale-95"
+              >
                 Sair
               </button>
               <button onClick={handleSave} disabled={isSaving || isCompressing} className="flex-[2] py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all">
                 {isSaving ? <Loader2 className="animate-spin mx-auto" size={16} /> : 'Confirmar no SQL'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL COMPACTO E ELEGANTE DE CONFIRMAÇÃO DE DESCARTE */}
+      {showDiscardConfirm && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[200] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] overflow-hidden shadow-2xl p-6 space-y-5 animate-in zoom-in-95">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shrink-0">
+                <AlertTriangle size={24} />
+              </div>
+              <div>
+                <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">Descartar Cadastro?</h4>
+                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Aviso de Segurança</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 font-medium leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              Ao sair agora, os dados digitados <strong className="text-slate-900 font-bold">não serão salvos no sistema</strong> e o produto será cancelado.
+            </p>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowDiscardConfirm(false)}
+                className="py-3.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-wider transition-all active:scale-95"
+              >
+                Continuar Editando
+              </button>
+              <button
+                type="button"
+                onClick={forceCloseAndDiscard}
+                className="py-3.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition-all active:scale-95"
+              >
+                Sim, Descartar
               </button>
             </div>
           </div>

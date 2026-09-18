@@ -73,44 +73,23 @@ const getMPClient = async () => {
   return new MercadoPagoConfig({ accessToken: token });
 };
 
-const getGeminiApiKey = async (): Promise<string | null> => {
-  const envKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-  if (envKey && typeof envKey === 'string' && envKey.trim().length > 10) {
-    return envKey.trim();
-  }
-
-  try {
-    const { data } = await supabase
-      .from('cloud_data')
-      .select('data_json')
-      .eq('tenant_id', 'SYSTEM')
-      .eq('store_key', 'global_plans')
-      .maybeSingle();
-
-    const dbKey = data?.data_json?.geminiApiKey;
-    if (dbKey && typeof dbKey === 'string' && dbKey.trim().length > 10) {
-      return dbKey.trim();
-    }
-  } catch (err) {
-    console.warn('Aviso ao buscar chave Gemini no Supabase:', err);
-  }
-
-  return null;
-};
-
-const getGenAI = async () => {
-  const apiKey = await getGeminiApiKey();
+let genAIClient: GoogleGenAI | null = null;
+const getGenAI = () => {
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('Chave de API Gemini (GEMINI_API_KEY) não configurada nas variáveis de ambiente nem no painel SuperAdmin.');
+    throw new Error('Chave de API Gemini (GEMINI_API_KEY) não configurada nas variáveis de ambiente.');
   }
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
+  if (!genAIClient) {
+    genAIClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
       },
-    },
-  });
+    });
+  }
+  return genAIClient;
 };
 
 app.use(express.json({ limit: '50mb' }));
@@ -125,46 +104,33 @@ app.post('/api/ai/analyze-product-image', async (req, res) => {
       return res.status(400).json({ error: 'Nenhuma imagem foi enviada para análise.' });
     }
 
-    let requirePaidCredits = false;
-
-    // Se o lojista tiver permissões configuradas pelo SuperAdmin
+    // Se o lojista tiver créditos de IA ativos no sistema, consome 1 crédito prioritário
+    let creditsRemaining: number | null = null;
     if (tenantId) {
       try {
+        // Verifica se a função de IA está desabilitada para esta loja pelo SuperAdmin
         const { data: tenantData } = await supabase
           .from('tenants')
-          .select('id, store_name, enabled_features')
+          .select('enabled_features')
           .eq('id', tenantId)
           .maybeSingle();
 
-        if (tenantData) {
-          // Verifica se a função de IA está desabilitada para esta loja pelo SuperAdmin
-          if (tenantData.enabled_features && tenantData.enabled_features.aiFeature === false) {
-            return res.status(403).json({
-              success: false,
-              error: 'O recurso de Inteligência Artificial está desativado para esta loja pelo administrador.',
-            });
-          }
+        if (tenantData?.enabled_features && tenantData.enabled_features.aiFeature === false) {
+          return res.status(403).json({
+            success: false,
+            error: 'O recurso de Inteligência Artificial está desativado para esta loja pelo administrador.',
+          });
+        }
 
-          // Se a opção de exigir créditos pagos estiver ativada no SuperAdmin
-          // Se for false ou indefinido (padrão), o modo gratuito da IA permanece ativo!
-          requirePaidCredits = tenantData.enabled_features?.aiRequirePaidCredits === true;
+        const currentCredits = await OnlineDB.getAICredits(tenantId);
+        if (currentCredits > 0) {
+          const consumeResult = await OnlineDB.consumeAICredit(tenantId);
+          if (consumeResult.success) {
+            creditsRemaining = consumeResult.remainingCredits;
+          }
         }
       } catch (e) {
-        console.warn('Aviso ao checar permissões do lojista:', e);
-      }
-    }
-
-    // Se a cobrança de créditos pagos estiver ativada, valida saldo da loja
-    if (tenantId && requirePaidCredits) {
-      const currentCredits = await OnlineDB.getAICredits(tenantId);
-      if (currentCredits <= 0) {
-        return res.status(402).json({
-          success: false,
-          error: 'Seus créditos de Inteligência Artificial acabaram. Adquira um novo pacote de créditos de IA ou solicite ao administrador a liberação do modo gratuito.',
-          code: 'INSUFFICIENT_CREDITS',
-          requirePaidCredits: true,
-          currentCredits: 0,
-        });
+        console.warn('Aviso ao checar créditos do lojista:', e);
       }
     }
 
@@ -177,7 +143,7 @@ app.post('/api/ai/analyze-product-image', async (req, res) => {
       if (match) detectedMime = match[1];
     }
 
-    const ai = await getGenAI();
+    const ai = getGenAI();
 
     const prompt = `Você é um assistente de inteligência artificial de elite especializado em catalogação e automação de cadastro de produtos para varejo, comércio e assistência técnica.
 Analise detalhadamente a foto do produto/embalagem/caixa/rótulo fornecida e identifique o máximo de informações disponíveis:
@@ -216,69 +182,71 @@ Retorne estritamente um objeto JSON com as chaves:
   "quantity": number
 }`;
 
-    // Cascata inteligente: começa na versão mais recente (3.8) e se limitar passa para a versão anterior sucessivamente
+    // Lista de modelos suportados para fallback caso algum enfrente pico momentâneo de demanda (HTTP 503)
     const candidateModels = [
+      'gemini-3.6-flash',
       'gemini-3.8-flash',
-      'gemini-3.7-flash',
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-8b',
-      'gemini-2.5-flash-lite',
-      'gemini-2.0-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-flash-latest',
     ];
 
     let lastError: any = null;
     let responseText: string | null = null;
-    let successfulModel: string | null = null;
 
     for (const model of candidateModels) {
-      try {
-        console.log(`[Express Gemini] Analisando imagem com modelo: ${model}...`);
-        const response = await ai.models.generateContent({
-          model,
-          contents: {
-            parts: [
-              {
-                inlineData: {
-                  mimeType: detectedMime,
-                  data: cleanBase64,
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: detectedMime,
+                    data: cleanBase64,
+                  },
                 },
-              },
-              {
-                text: prompt,
-              },
-            ],
-          },
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.1,
-          },
-        });
+                {
+                  text: prompt,
+                },
+              ],
+            },
+            config: {
+              responseMimeType: 'application/json',
+              temperature: 0.1,
+            },
+          });
 
-        if (response?.text) {
-          responseText = response.text;
-          successfulModel = model;
-          console.log(`[Express Gemini] Sucesso obtido com o modelo: ${model}`);
-          break;
+          if (response?.text) {
+            responseText = response.text;
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = String(err?.message || err || '');
+          const isOverloaded = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE') || errMsg.includes('429');
+          console.warn(`Tentativa ${attempt} com modelo ${model} falhou: ${errMsg.slice(0, 150)}`);
+          if (isOverloaded && attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } else {
+            break;
+          }
         }
-      } catch (err: any) {
-        lastError = err;
-        const errMsg = String(err?.message || err || '');
-        console.warn(`[Express Gemini] Modelo ${model} atingiu limite ou erro: ${errMsg.slice(0, 160)}`);
-        // Se este modelo atingiu cota ou indisponibilidade, continua automaticamente para a versão anterior da lista
-        continue;
+      }
+
+      if (responseText) {
+        break;
       }
     }
 
     if (!responseText) {
       const parsedErr = typeof lastError?.message === 'string' ? lastError.message : '';
-      let userFriendlyMsg = 'O serviço de reconhecimento por IA atingiu temporariamente o limite de consultas em todos os modelos. Tente novamente em instantes ou preencha manualmente.';
+      let userFriendlyMsg = 'O serviço de reconhecimento por IA está enfrentando alta demanda temporária nos servidores do Google. A foto foi salva e você pode tentar novamente em instantes ou preencher os dados manualmente.';
       
       try {
         const jsonErr = JSON.parse(parsedErr);
         if (jsonErr?.error?.message) {
-          userFriendlyMsg = `Servidores de IA temporariamente ocupados (${jsonErr.error.status || 'Limite excedido'}). A foto foi anexada ao formulário. Tente o reconhecimento em instantes ou preencha manualmente.`;
+          userFriendlyMsg = `Servidores de IA temporariamente ocupados (${jsonErr.error.status || 503}). A foto foi anexada ao formulário. Tente o reconhecimento novamente em instantes ou preencha manualmente.`;
         }
       } catch (_) {}
 
@@ -299,30 +267,9 @@ Retorne estritamente um objeto JSON com as chaves:
     }
 
     const data = JSON.parse(cleanedJsonText);
-
-    // Se o uso de créditos pagos estiver ativado para a loja no SuperAdmin, consome 1 crédito
-    let creditsRemaining: number | null = null;
-    if (tenantId && requirePaidCredits) {
-      try {
-        const consumeResult = await OnlineDB.consumeAICredit(tenantId);
-        if (consumeResult.success) {
-          creditsRemaining = consumeResult.remainingCredits;
-        }
-      } catch (e) {
-        console.warn('Aviso ao debitar crédito de IA:', e);
-      }
-    } else if (tenantId) {
-      // Modo gratuito ativo: busca apenas o saldo para exibir na interface sem debitar
-      try {
-        creditsRemaining = await OnlineDB.getAICredits(tenantId);
-      } catch (e) {}
-    }
-
     return res.json({ 
       success: true, 
       data,
-      modelUsed: successfulModel,
-      isFreeMode: !requirePaidCredits,
       creditsRemaining: creditsRemaining !== null ? creditsRemaining : undefined
     });
   } catch (error: any) {
@@ -559,20 +506,18 @@ app.post('/api/auth/verify-admin', async (req, res) => {
 
 app.post('/api/auth/change-password', async (req, res) => {
   const { tenantId, oldPassword, newPassword } = req.body;
-  const isSuper = req.query?.isSuper === 'true' || req.body?.isSuper === true || !tenantId;
   
   try {
-    let query = supabase.from('users').select('*');
-    if (isSuper) {
-      query = query.eq('role', 'super');
-    } else {
-      query = query.eq('tenant_id', tenantId).eq('role', 'admin');
-    }
-    
-    const { data, error } = await query.maybeSingle();
+    // 1. Get the current admin user
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('role', 'admin')
+      .maybeSingle();
     
     if (error) throw error;
-    if (!data) return res.status(404).json({ success: false, message: isSuper ? "Super Admin não encontrado." : "Usuário administrador não encontrado." });
+    if (!data) return res.status(404).json({ success: false, message: "Usuário administrador não encontrado." });
     
     // 2. Verify old password
     const isMatch = await comparePassword(oldPassword.trim(), data.password);
@@ -589,7 +534,7 @@ app.post('/api/auth/change-password', async (req, res) => {
     
     if (updateError) throw updateError;
     
-    res.json({ success: true, message: isSuper ? "Senha do Super Admin alterada com sucesso!" : "Senha alterada com sucesso!" });
+    res.json({ success: true, message: "Senha alterada com sucesso!" });
   } catch (err: any) {
     console.error('Change password error:', err);
     res.status(500).json({ success: false, message: "Erro ao alterar senha." });

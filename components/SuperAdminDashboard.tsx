@@ -475,7 +475,6 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                           toolsTab: t.enabled_features?.toolsTab !== false,
                           customersTab: t.enabled_features?.customersTab !== false,
                           aiFeature: t.enabled_features?.aiFeature !== false,
-                          aiRequirePaidCredits: t.enabled_features?.aiRequirePaidCredits === true,
                           ...t.enabled_features
                         },
                         maxUsers: t.max_users || 999,
@@ -689,39 +688,6 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                     </div>
                     <p className="text-[8px] text-slate-500 mt-1">
                       Salve clicando no botão azul <strong>Salvar Planos Globais</strong> abaixo. Uma vez salvo aqui, o Vercel consulta o banco de dados mesmo que as variáveis de ambiente não tenham sido recarregadas.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-sky-50/70 p-4 rounded-2xl border border-sky-100 mb-4">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2">
-                      <Sparkles size={16} className="text-sky-600" />
-                      <h4 className="font-bold text-sky-900 uppercase text-[10px] sm:text-xs">Chave de API do Google Gemini (IA)</h4>
-                    </div>
-                    {globalPlans.geminiApiKey && globalPlans.geminiApiKey.trim().length > 10 ? (
-                      <span className="px-2 py-0.5 bg-sky-600 text-white rounded-md text-[8px] sm:text-[9px] font-black uppercase tracking-wider">
-                        ✓ Configurado no Banco
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 bg-amber-500 text-white rounded-md text-[8px] sm:text-[9px] font-black uppercase tracking-wider">
-                        Variável / Pendente
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] sm:text-[9px] font-bold text-slate-400">API Key do Google AI Studio (AIzaSy...)</label>
-                    <div className="relative">
-                      <input 
-                        type="text" 
-                        value={globalPlans.geminiApiKey || ''} 
-                        onChange={e => setGlobalPlans((prev: any) => ({ ...prev, geminiApiKey: e.target.value.trim() }))} 
-                        placeholder="AIzaSy..." 
-                        className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-[10px] sm:text-xs text-slate-800 font-mono" 
-                      />
-                    </div>
-                    <p className="text-[8px] text-slate-500 mt-1">
-                      Usada para reconhecimento de produtos por foto via IA. Salve em <strong>Salvar Planos Globais</strong>. O sistema prioriza a variável GEMINI_API_KEY e usa esta chave de banco como contingência para a Vercel e produção.
                     </p>
                   </div>
                 </div>
@@ -1024,68 +990,6 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
               </div>
 
               <div className="space-y-3 text-left pt-2">
-                  {/* Card Especial de Inteligência Artificial com Controle de Modo Grátis vs Pago */}
-                  <div className="p-4 bg-gradient-to-br from-indigo-50/90 to-blue-50/90 border border-indigo-200/80 rounded-2xl space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                          <Sparkles size={16} />
-                        </div>
-                        <div>
-                          <p className="text-xs font-black uppercase tracking-tight text-indigo-950">Inteligência Artificial (Gemini)</p>
-                          <p className="text-[9px] text-slate-500 font-medium">Reconhecimento inteligente de produtos e descrição por foto</p>
-                        </div>
-                      </div>
-                      <input 
-                        type="checkbox" 
-                        checked={tenantToEditFeatures.features.aiFeature !== false} 
-                        onChange={e => setTenantToEditFeatures({
-                          ...tenantToEditFeatures,
-                          features: { ...tenantToEditFeatures.features, aiFeature: e.target.checked }
-                        })}
-                        className="w-5 h-5 rounded-lg border-indigo-300 text-indigo-600 focus:ring-indigo-500"
-                        title="Ativar/Desativar IA para esta loja"
-                      />
-                    </div>
-
-                    {tenantToEditFeatures.features.aiFeature !== false && (
-                      <div className="pt-2.5 border-t border-indigo-100">
-                        <label className="flex items-start justify-between gap-3 cursor-pointer bg-white/80 p-3 rounded-xl border border-indigo-100 hover:bg-white transition-all">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] font-black uppercase tracking-tight text-slate-800">
-                                Cobrar Créditos Pagos da Loja
-                              </span>
-                              {tenantToEditFeatures.features.aiRequirePaidCredits ? (
-                                <span className="px-2 py-0.5 bg-amber-500 text-white rounded text-[8px] font-black uppercase tracking-wider">
-                                  Créditos Pagos
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[8px] font-black uppercase tracking-wider">
-                                  Uso Grátis
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[9px] text-slate-500 leading-relaxed">
-                              {tenantToEditFeatures.features.aiRequirePaidCredits
-                                ? "💳 Cobrança Ativada: A loja só usa IA se tiver saldo de créditos adicionados/comprados no sistema (consome 1 crédito por foto)."
-                                : "✨ Uso Grátis Ativo (Padrão): A loja sempre usa as cotas gratuitas do Gemini sem descontar os créditos pagos cadastrados no sistema."}
-                            </p>
-                          </div>
-                          <input 
-                            type="checkbox" 
-                            checked={!!tenantToEditFeatures.features.aiRequirePaidCredits} 
-                            onChange={e => setTenantToEditFeatures({
-                              ...tenantToEditFeatures,
-                              features: { ...tenantToEditFeatures.features, aiRequirePaidCredits: e.target.checked }
-                            })}
-                            className="w-5 h-5 mt-1 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
-                          />
-                        </label>
-                      </div>
-                    )}
-                  </div>
-
                   {[
                     { id: 'osTab', label: 'Aba Ordem de Serviço' },
                     { id: 'customersTab', label: 'Aba Clientes' },
@@ -1093,6 +997,7 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                     { id: 'salesTab', label: 'Aba Vendas' },
                     { id: 'financeTab', label: 'Aba Financeira' },
                     { id: 'toolsTab', label: 'Aba Ferramentas (Limpeza ADB / Vírus)' },
+                    { id: 'aiFeature', label: 'Inteligência Artificial (Reconhecimento & Fotos)' },
                     { id: 'hideFinancialReports', label: 'Ocultar Botão Relatórios' },
                     { id: 'profiles', label: 'Criar Perfis/Usuários' },
                     { id: 'xmlExportImport', label: 'Exportar/Importar XML' },
@@ -1107,6 +1012,8 @@ const [globalPlans, setGlobalPlans] = useState<any>({});
                             ? tenantToEditFeatures.features.toolsTab !== false 
                             : feature.id === 'customersTab'
                             ? tenantToEditFeatures.features.customersTab !== false
+                            : feature.id === 'aiFeature'
+                            ? tenantToEditFeatures.features.aiFeature !== false
                             : !!tenantToEditFeatures.features[feature.id]
                         } 
                         onChange={e => setTenantToEditFeatures({

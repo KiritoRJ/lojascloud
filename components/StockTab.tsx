@@ -984,7 +984,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                 Sair
               </button>
               <button onClick={handleSave} disabled={isSaving || isCompressing} className="flex-[2] py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all">
-                {isSaving ? <Loader2 className="animate-spin mx-auto" size={16} /> : 'Confirmar no SQL'}
+                {isSaving ? <Loader2 className="animate-spin mx-auto" size={16} /> : 'Confirmar e Salvar'}
               </button>
             </div>
           </div>

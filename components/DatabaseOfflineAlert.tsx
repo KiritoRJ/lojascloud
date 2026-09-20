@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Database, 
+  Cloud,
+  CloudOff,
   Wifi, 
   WifiOff, 
   AlertTriangle, 
   RefreshCw, 
   CheckCircle2, 
-  CloudOff, 
   HardDrive, 
   X, 
   Info,
@@ -55,9 +55,9 @@ export const ConnectionStatusTag: React.FC<{
         onClick={handleClick}
         title={
           isOnline 
-            ? `Banco de Dados SQL Online (${state.responseTimeMs ? `${state.responseTimeMs}ms` : 'Conectado'})`
+            ? `Nuvem Conectada (${state.responseTimeMs ? `${state.responseTimeMs}ms` : 'Online'})`
             : isDbOffline
-            ? 'Banco SQL em nuvem offline! O app está funcionando em modo local.'
+            ? 'Nuvem temporariamente inacessível! O app está funcionando em modo local.'
             : 'Dispositivo sem conexão de internet.'
         }
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all select-none cursor-pointer active:scale-95 ${
@@ -71,17 +71,17 @@ export const ConnectionStatusTag: React.FC<{
         {isOnline && (
           <>
             <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-            <Database size={12} className="shrink-0" />
-            <span className="hidden sm:inline">Banco SQL Online</span>
-            <span className="sm:hidden">SQL ON</span>
+            <Cloud size={12} className="shrink-0" />
+            <span className="hidden sm:inline">Nuvem Online</span>
+            <span className="sm:hidden">Nuvem ON</span>
           </>
         )}
 
         {isDbOffline && (
           <>
             <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0"></span>
-            <Database size={12} className="shrink-0" />
-            <span className="font-black">SQL OFFLINE (MODO LOCAL)</span>
+            <CloudOff size={12} className="shrink-0" />
+            <span className="font-black">NUVEM OFFLINE (MODO LOCAL)</span>
           </>
         )}
 
@@ -110,7 +110,7 @@ export const ConnectionStatusTag: React.FC<{
   );
 };
 
-// 2. Banner de Alerta Superior para quando o Banco SQL estiver Offline ou sem Internet
+// 2. Banner de Alerta Superior para quando a Nuvem estiver Offline ou sem Internet
 export const DatabaseOfflineBanner: React.FC<{
   tenantId?: string;
   onRefreshData?: () => void;
@@ -139,7 +139,7 @@ export const DatabaseOfflineBanner: React.FC<{
     try {
       const result = await ConnectionStatusManager.checkNow();
       if (result.status === 'online') {
-        setRetryMessage('Banco SQL conectado com sucesso!');
+        setRetryMessage('Nuvem conectada com sucesso!');
         await OfflineSync.processQueue();
         if (onRefreshData) onRefreshData();
       } else {
@@ -160,12 +160,12 @@ export const DatabaseOfflineBanner: React.FC<{
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0 border border-white/30 shadow-inner mt-0.5 md:mt-0">
-            {isDbOffline ? <Database size={20} className="animate-pulse" /> : <WifiOff size={20} />}
+            {isDbOffline ? <CloudOff size={20} className="animate-pulse" /> : <WifiOff size={20} />}
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="bg-white text-orange-700 px-2 py-0.5 rounded-md font-black text-[9px] uppercase tracking-wider shadow-xs">
-                {isDbOffline ? 'AVISO: BANCO SQL OFFLINE' : 'AVISO: SEM INTERNET'}
+                {isDbOffline ? 'AVISO: NUVEM OFFLINE' : 'AVISO: SEM INTERNET'}
               </span>
               <span className="font-black text-xs uppercase tracking-tight text-white drop-shadow-xs">
                 Sistema operando em Modo Local (Offline)
@@ -173,7 +173,7 @@ export const DatabaseOfflineBanner: React.FC<{
             </div>
             <p className="text-[11px] text-amber-100 font-medium leading-relaxed mt-0.5 max-w-3xl">
               {isDbOffline 
-                ? 'O banco de dados em nuvem está inacessível no momento. Você pode continuar emitindo Ordens de Serviço, vendas e cadastros normalmente. Seus dados estão 100% seguros na memória local do seu navegador e serão sincronizados automaticamente assim que o banco voltar.'
+                ? 'O servidor na nuvem está inacessível no momento. Você pode continuar emitindo Ordens de Serviço, vendas e cadastros normalmente. Seus dados estão 100% seguros na memória local do seu navegador e serão sincronizados automaticamente com a nuvem assim que a conexão restabelecer.'
                 : 'Seu dispositivo perdeu a conexão com a internet. O app continuará funcionando localmente sem interrupção.'}
             </p>
             {state.pendingSyncCount > 0 && (
@@ -215,7 +215,7 @@ export const DatabaseOfflineBanner: React.FC<{
   );
 };
 
-// 3. Notificação Toast Instantânea quando o status do Banco SQL mudar
+// 3. Notificação Toast Instantânea quando o status da Nuvem mudar
 export const ConnectionStatusToast: React.FC = () => {
   const [toast, setToast] = useState<{
     type: 'offline' | 'db_offline' | 'online';
@@ -233,8 +233,8 @@ export const ConnectionStatusToast: React.FC = () => {
       if (prev === 'online' && newState.status === 'db_offline') {
         setToast({
           type: 'db_offline',
-          message: 'Banco SQL Offline!',
-          subMessage: 'O sistema ativou o Modo Local. Suas alterações estão salvas neste dispositivo.'
+          message: 'Nuvem Offline!',
+          subMessage: 'O sistema ativou o Modo Local. Suas alterações estão salvas com segurança neste dispositivo.'
         });
       } else if (prev === 'online' && newState.status === 'offline') {
         setToast({
@@ -245,7 +245,7 @@ export const ConnectionStatusToast: React.FC = () => {
       } else if ((prev === 'db_offline' || prev === 'offline') && newState.status === 'online') {
         setToast({
           type: 'online',
-          message: 'Banco SQL Reconectado!',
+          message: 'Nuvem Reconectada!',
           subMessage: 'Conexão restabelecida. Sincronizando dados pendentes com a nuvem...'
         });
         OfflineSync.processQueue();
@@ -280,7 +280,7 @@ export const ConnectionStatusToast: React.FC = () => {
           {toast.type === 'online' ? (
             <CheckCircle2 size={20} />
           ) : toast.type === 'db_offline' ? (
-            <Database size={20} className="animate-pulse" />
+            <CloudOff size={20} className="animate-pulse" />
           ) : (
             <WifiOff size={20} />
           )}
@@ -314,10 +314,10 @@ export const ConnectionStatusDetailModal: React.FC<{
     try {
       const res = await ConnectionStatusManager.checkNow();
       if (res.status === 'online') {
-        setTestResult(`Conexão restabelecida com sucesso! (${res.responseTimeMs || 0}ms)`);
+        setTestResult(`Conexão com a nuvem restabelecida com sucesso! (${res.responseTimeMs || 0}ms)`);
         await OfflineSync.processQueue();
       } else {
-        setTestResult('Banco de dados ainda indisponível. Modo local segue ativo.');
+        setTestResult('Nuvem ainda indisponível. Modo local segue ativo.');
       }
     } catch (e: any) {
       setTestResult('Falha no teste de conexão.');
@@ -337,10 +337,10 @@ export const ConnectionStatusDetailModal: React.FC<{
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white ${
               isOnline ? 'bg-emerald-600' : isDbOffline ? 'bg-amber-500' : 'bg-rose-600'
             }`}>
-              <Database size={20} />
+              <Cloud size={20} />
             </div>
             <div>
-              <h3 className="font-black text-sm uppercase tracking-tight">Status do Banco SQL</h3>
+              <h3 className="font-black text-sm uppercase tracking-tight">Status da Nuvem</h3>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Diagnóstico de Conexão</p>
             </div>
           </div>
@@ -363,14 +363,14 @@ export const ConnectionStatusDetailModal: React.FC<{
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] ${
                 isOnline ? 'bg-emerald-600 text-white' : isDbOffline ? 'bg-amber-500 text-white' : 'bg-rose-600 text-white'
               }`}>
-                {isOnline ? 'Nuvem Conectada' : isDbOffline ? 'Banco SQL Offline (Modo Local)' : 'Sem Conexão'}
+                {isOnline ? 'Nuvem Conectada' : isDbOffline ? 'Nuvem Offline (Modo Local)' : 'Sem Conexão'}
               </span>
             </div>
             <p className="text-xs font-medium leading-relaxed mt-2">
               {isOnline
-                ? 'O banco de dados SQL na nuvem está online e respondendo perfeitamente em tempo real.'
+                ? 'Os servidores em nuvem estão online e sincronizando perfeitamente em tempo real.'
                 : isDbOffline
-                ? 'O banco SQL em nuvem está inacessível. O aplicativo está utilizando o banco de dados local (IndexedDB) para garantir que nenhuma operação seja perdida.'
+                ? 'A nuvem está temporariamente inacessível. O aplicativo está utilizando a memória local (IndexedDB) para garantir que nenhuma operação seja perdida.'
                 : 'O seu dispositivo está desconectado da internet. As funções locais continuam operando normalmente.'}
             </p>
           </div>
@@ -382,7 +382,7 @@ export const ConnectionStatusDetailModal: React.FC<{
               <span className="font-black text-slate-800">{state.isOnline ? '🟢 Conectado' : '🔴 Desconectado'}</span>
             </div>
             <div className="flex justify-between items-center text-slate-600">
-              <span className="font-bold">Banco de Dados Cloud (Supabase):</span>
+              <span className="font-bold">Servidor em Nuvem:</span>
               <span className="font-black text-slate-800">{state.isDbConnected ? '🟢 Respondendo' : '🟠 Inacessível (Modo Local)'}</span>
             </div>
             <div className="flex justify-between items-center text-slate-600">
@@ -412,7 +412,7 @@ export const ConnectionStatusDetailModal: React.FC<{
             className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             <RefreshCw size={16} className={isTesting ? 'animate-spin' : ''} />
-            {isTesting ? 'Testando Conexão...' : 'Testar Conexão com o Banco SQL'}
+            {isTesting ? 'Testando Conexão...' : 'Testar Conexão com a Nuvem'}
           </button>
           <button
             type="button"

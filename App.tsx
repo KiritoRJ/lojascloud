@@ -1724,9 +1724,6 @@ const App: React.FC = () => {
               </button>
             )}
             <ConnectionStatusTag />
-            <span className="text-[9px] font-black uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1.5 rounded-lg shadow-xs whitespace-nowrap">
-              {visibleNavItems.find(i => i.id === activeTab)?.label || 'Menu'}
-            </span>
           </div>
         </div>
 
@@ -1742,9 +1739,6 @@ const App: React.FC = () => {
                 <Menu size={18} />
               </button>
             )}
-            <span className="text-xs font-black uppercase tracking-wider text-slate-800">
-              {visibleNavItems.find(i => i.id === activeTab)?.label || 'Painel'}
-            </span>
           </div>
 
           <div className="flex items-center gap-2.5">

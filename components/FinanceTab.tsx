@@ -712,8 +712,8 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
                   className="cursor-pointer hover:bg-slate-50 p-2 -m-2 rounded-xl transition-colors group"
                 >
                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-blue-500 transition-colors">Margem Líquida</p>
-                  <p className={`text-xl font-black ${summary.margin >= 20 ? 'text-emerald-500' : summary.margin >= 10 ? 'text-amber-500' : 'text-red-500'}`}>
-                    {summary.margin.toFixed(1)}%
+                  <p className={`text-xl font-black ${(summary.margin ?? 0) >= 20 ? 'text-emerald-500' : (summary.margin ?? 0) >= 10 ? 'text-amber-500' : 'text-red-500'}`}>
+                    {(summary.margin ?? 0).toFixed(1)}%
                   </p>
                 </div>
                 <div 
@@ -735,9 +735,9 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
                 <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Insights</h3>
               </div>
               <div className="space-y-2 overflow-y-auto max-h-[80px] custom-scrollbar">
-                <div className={`flex items-center gap-2 text-[9px] font-bold p-2 rounded-xl ${summary.previousMonthComparison.revenueChange >= 0 ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
-                   {summary.previousMonthComparison.revenueChange >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                   {Math.abs(summary.previousMonthComparison.revenueChange).toFixed(1)}% Receita vs Mês Anterior
+                <div className={`flex items-center gap-2 text-[9px] font-bold p-2 rounded-xl ${(summary.previousMonthComparison?.revenueChange ?? 0) >= 0 ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
+                   {(summary.previousMonthComparison?.revenueChange ?? 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                   {Math.abs(summary.previousMonthComparison?.revenueChange ?? 0).toFixed(1)}% Receita vs Mês Anterior
                 </div>
                 {summary.margin < 15 && (
                   <div className="flex items-center gap-2 text-[9px] font-bold text-red-500 bg-red-50 p-2 rounded-xl">
@@ -783,7 +783,7 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
                       axisLine={false} 
                       tickLine={false} 
                       tick={{fill: '#94a3b8'}} 
-                      tickFormatter={(value) => `R$ ${value >= 1000 ? (value/1000).toFixed(1) + 'k' : value}`}
+                      tickFormatter={(value) => `R$ ${value >= 1000 ? ((value || 0)/1000).toFixed(1) + 'k' : (value || 0)}`}
                     />
                     <Tooltip 
                       cursor={{fill: '#f8fafc'}}
@@ -1556,10 +1556,10 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
                   <div className="font-mono text-[9px] font-bold text-slate-500 bg-white p-3 rounded-xl border border-slate-100 text-center shadow-sm flex flex-col gap-1">
                     <span>Receita Proj. × (Margem Líquida ÷ 100)</span>
                     <span className="text-emerald-600 border-t border-slate-100 pt-1 mt-1">
-                      {formatCurrency(summary.projectedRevenue)} × ({summary.margin.toFixed(1)}% ÷ 100)
+                      {formatCurrency(summary.projectedRevenue)} × ({((summary.margin ?? 0)).toFixed(1)}% ÷ 100)
                     </span>
                     <span className="text-xs font-black text-slate-800">
-                      = {formatCurrency(summary.projectedRevenue * (summary.margin / 100))}
+                      = {formatCurrency(summary.projectedRevenue * ((summary.margin || 0) / 100))}
                     </span>
                   </div>
                 </div>

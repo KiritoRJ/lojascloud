@@ -262,15 +262,18 @@ export default async function handler(req: any, res: any) {
           max_products: trialLimits.maxProducts
         }]);
 
+      const adminUserId = 'USR_ADM_' + Math.random().toString(36).substring(2, 7).toUpperCase();
       const { error: uError } = await supabase
         .from('users')
         .insert([{
+          id: adminUserId,
           username: String(adminUsername).trim().toLowerCase(),
           name: storeName,
           password: hashedPassword,
           role: 'admin',
           tenant_id: id,
-          store_name: storeName
+          store_name: storeName,
+          photo: logoUrl || null
         }]);
 
       if (uError) throw uError;
@@ -298,8 +301,9 @@ export default async function handler(req: any, res: any) {
         password = await hashPassword(password.trim());
       }
 
+      const userId = user.id || ('USR_' + Math.random().toString(36).substring(2, 7).toUpperCase());
       const payload: any = {
-        id: user.id,
+        id: userId,
         username: username,
         name: user.name,
         role: user.role,

@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS public.tenant_limits (
 
 -- Tabela de Usuários / Operadores
 CREATE TABLE IF NOT EXISTS public.users (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY DEFAULT ('USR_' || substr(md5(random()::text), 1, 10)),
     tenant_id TEXT NOT NULL,
     store_name TEXT,
     username TEXT NOT NULL,

@@ -244,6 +244,37 @@ export class OnlineDB {
     }
   }
 
+  // Ativa ou desativa rapidamente o Modo Fiscal de uma loja
+  static async toggleTenantFiscalMode(tenantId: string, enabled: boolean) {
+    try {
+      const { data: tenant, error: fetchErr } = await supabase
+        .from('tenants')
+        .select('enabled_features')
+        .eq('id', tenantId)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+
+      const currentFeatures = tenant?.enabled_features || {};
+      const updatedFeatures = {
+        ...currentFeatures,
+        fiscalMode: enabled,
+        fiscalTab: enabled ? true : currentFeatures.fiscalTab
+      };
+
+      const { error: updateErr } = await supabase
+        .from('tenants')
+        .update({
+          enabled_features: updatedFeatures
+        })
+        .eq('id', tenantId);
+
+      if (updateErr) throw updateErr;
+      return { success: true, enabled };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
+
   // Realiza o login do usuário via API do servidor (seguro)
   static async login(username: string, passwordPlain: string) {
     try {

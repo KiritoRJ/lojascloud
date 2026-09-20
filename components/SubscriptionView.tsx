@@ -29,11 +29,13 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({
     OnlineDB.getGlobalSettings().then(setGlobalPlans);
   }, []);
 
-  const getPrice = (id: string) => {
-    if (id === 'monthly') return customMonthlyPrice || globalPlans.monthly?.price || 0;
-    if (id === 'quarterly') return customQuarterlyPrice || globalPlans.quarterly?.price || 0;
-    if (id === 'yearly') return customYearlyPrice || globalPlans.yearly?.price || 0;
-    return 0;
+  const getPrice = (id: string): number => {
+    let val: any = 0;
+    if (id === 'monthly') val = customMonthlyPrice ?? globalPlans?.monthly?.price;
+    else if (id === 'quarterly') val = customQuarterlyPrice ?? globalPlans?.quarterly?.price;
+    else if (id === 'yearly') val = customYearlyPrice ?? globalPlans?.yearly?.price;
+    const num = Number(val);
+    return isNaN(num) ? 0 : num;
   };
 
   const plans = [

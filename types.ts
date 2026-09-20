@@ -29,11 +29,14 @@ export interface Tenant {
   customYearlyPrice?: number;
   lastPlanType?: 'monthly' | 'quarterly' | 'yearly';
   aiCredits?: number;
+  fiscalModeEnabled?: boolean;
   enabledFeatures?: {
     osTab: boolean;
     customersTab?: boolean;
     stockTab: boolean;
     salesTab: boolean;
+    fiscalTab?: boolean;
+    fiscalMode?: boolean;
     financeTab: boolean;
     toolsTab?: boolean;
     aiFeature?: boolean;
@@ -121,6 +124,10 @@ export interface ServiceOrder {
   publicNotes?: string;
   isTrackingEnabled?: boolean;
   diagnosticTests?: DeviceDiagnosticResults;
+  fiscalNoteNumber?: string;
+  fiscalNoteEmitted?: boolean;
+  fiscalNoteVerificationCode?: string;
+  fiscalNoteDate?: string;
 }
 
 export interface CustomerNote {
@@ -135,8 +142,11 @@ export interface Customer {
   tenantId?: string;
   name: string;
   phoneNumber: string;
+  phone?: string;
   address?: string;
   document?: string;
+  cpf?: string;
+  cnpj?: string;
   email?: string;
   notes?: string;
   notesHistory?: CustomerNote[];
@@ -197,6 +207,13 @@ export interface Sale {
   sellerId?: string;
   transactionId?: string;
   isDeleted?: boolean;
+  customerName?: string;
+  customerPhone?: string;
+  total?: number;
+  items?: any[];
+  fiscalNoteNumber?: string;
+  fiscalNoteEmitted?: boolean;
+  fiscalNoteAccessKey?: string;
 }
 
 export interface Transaction {
@@ -266,6 +283,14 @@ export interface AppSettings {
   customDomain?: string;
   storeCnpj?: string;
   storeStateRegistration?: string;
+  fiscalModeEnabled?: boolean;
+  autoEmitFiscalOnSale?: boolean;
+  autoEmitFiscalOnOS?: boolean;
+  autoEmitNfceOnSale?: boolean;
+  defaultFiscalDocType?: 'nfce' | 'nfe';
+  certificateA1?: CertificateA1Data;
+  nfceNfeConfig?: NfceNfeConfig;
+  nfseConfig?: NfseConfig;
 }
 
 export interface Employee {
@@ -348,4 +373,293 @@ export interface CommissionLog {
   status: 'pending' | 'paid' | 'cancelled';
   paymentDate?: string;
   createdAt: string;
+}
+
+export interface NfseConfig {
+  environment: 'homologacao' | 'producao';
+  provider: 'padrao_nacional' | 'nuvemfiscal' | 'focusnfe' | 'plugnotas' | 'enotas' | 'direct_abrasf';
+  apiKey: string;
+  apiSecret?: string;
+  companyName: string;
+  tradeName?: string;
+  cnpj: string;
+  im: string; // Inscrição Municipal
+  cityIbgeCode: string;
+  cityName: string;
+  uf: string;
+  cnae: string;
+  taxRegime: 'simples_nacional' | 'mei' | 'lucro_presumido' | 'lucro_real';
+  specialTaxRegime?: string;
+  defaultItemLc116: string;
+  defaultIssRate: number;
+  issRetained: boolean;
+  rpsSeries: string;
+  rpsNextNumber: number;
+  prestadorMunicipio?: string;
+  prestadorUf?: string;
+  aliquotaIss?: number;
+  certificateA1?: CertificateA1Data;
+}
+
+export interface NfseItem {
+  id: string;
+  tenantId: string;
+  number?: string;
+  rpsNumber: number;
+  rpsSeries: string;
+  verificationCode?: string;
+  issuedAt: string;
+  status: 'authorized' | 'processing' | 'rejected' | 'canceled' | 'draft';
+  environment: 'homologacao' | 'producao';
+  serviceOrderId?: string;
+  saleId?: string;
+  customer: {
+    id?: string;
+    name: string;
+    document: string; // CPF or CNPJ
+    email?: string;
+    phone?: string;
+    address?: {
+      street?: string;
+      number?: string;
+      complement?: string;
+      neighborhood?: string;
+      city?: string;
+      uf?: string;
+      cep?: string;
+      cityIbge?: string;
+    };
+  };
+  service: {
+    itemLc116: string;
+    cnae: string;
+    description: string;
+    municipalTaxCode?: string;
+  };
+  values: {
+    serviceAmount: number;
+    deductionsAmount: number;
+    unconditionedDiscount: number;
+    calculationBase: number;
+    issRate: number;
+    issAmount: number;
+    issRetained: boolean;
+    pisAmount?: number;
+    cofinsAmount?: number;
+    inssAmount?: number;
+    irAmount?: number;
+    csllAmount?: number;
+    netAmount: number;
+  };
+  xmlContent?: string;
+  pdfUrl?: string;
+  protocol?: string;
+  errorMessage?: string;
+  cancelReason?: string;
+  canceledAt?: string;
+  cancelProtocol?: string;
+}
+
+export type FiscalDocType = 'nfce' | 'nfe';
+
+export interface NfceNfeProductItem {
+  id?: string;
+  productId?: string;
+  code?: string;
+  name?: string;
+  itemNumber?: number;
+  description?: string;
+  ncm: string;
+  cest?: string;
+  cfop: string;
+  unit?: string;
+  unitOfMeasure?: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  discount?: number;
+  origin?: number; // 0 - Nacional, 1 - Importação Direta, 2 - Mercado Interno
+  csosn?: string; // 102, 500, 101, 400
+  cst?: string;
+  icmsRate?: number;
+  icmsAmount?: number;
+  pisRate?: number;
+  pisAmount?: number;
+  cofinsRate?: number;
+  cofinsAmount?: number;
+}
+
+export interface NfceNfeItem {
+  id: string;
+  tenantId: string;
+  docType: FiscalDocType; // 'nfce' (Modelo 65) ou 'nfe' (Modelo 55)
+  number: string;
+  series: string;
+  accessKey: string;
+  qrCodeUrl?: string;
+  issuedAt: string;
+  status: 'authorized' | 'processing' | 'rejected' | 'canceled' | 'inutilized' | 'draft';
+  environment: 'homologacao' | 'producao';
+  saleId?: string;
+  items: NfceNfeProductItem[];
+  customer?: {
+    id?: string;
+    name?: string;
+    document?: string; // CPF or CNPJ
+    cpfCnpj?: string;
+    cpf?: string;
+    cnpj?: string;
+    email?: string;
+    phone?: string;
+    phoneNumber?: string;
+    stateRegistration?: string;
+    isFinalConsumer?: boolean;
+    address?: {
+      street?: string;
+      number?: string;
+      complement?: string;
+      neighborhood?: string;
+      city?: string;
+      uf?: string;
+      cep?: string;
+      zipCode?: string;
+      cityIbge?: string;
+    };
+  };
+  payment: {
+    method?: 'dinheiro' | 'pix' | 'cartao_credito' | 'cartao_debito' | 'boleto' | 'credito_loja' | 'outros' | string;
+    paymentType?: string;
+    paymentMethodName?: string;
+    amount?: number;
+    amountPaid?: number;
+    change?: number;
+    cardBrand?: string;
+  };
+  totals: {
+    productsAmount: number;
+    discountAmount: number;
+    freightAmount?: number;
+    otherExpenses?: number;
+    totalAmount: number;
+    icmsCalculationBase?: number;
+    icmsTotalAmount?: number;
+    icmsAmount?: number;
+    pisTotalAmount?: number;
+    pisAmount?: number;
+    cofinsTotalAmount?: number;
+    cofinsAmount?: number;
+    approximateTaxAmount?: number;
+  };
+  naturezaOperacao?: string; // Ex: "VENDA AO CONSUMIDOR FINAL" ou "VENDA DE MERCADORIA"
+  protocol?: string;
+  xmlContent?: string;
+  pdfUrl?: string;
+  errorMessage?: string;
+  cancelReason?: string;
+  canceledAt?: string;
+  cancelProtocol?: string;
+  cce?: Array<{
+    sequence: number;
+    correctionText: string;
+    registeredAt: string;
+    protocol: string;
+  }>;
+}
+
+export interface NfceNfeConfig {
+  environment: 'homologacao' | 'producao';
+  provider: 'sefaz_direta' | 'nuvemfiscal' | 'focusnfe' | 'plugnotas' | 'webmania' | 'enotas';
+  apiKey: string;
+  apiSecret?: string;
+  companyName: string;
+  tradeName?: string;
+  cnpj: string;
+  ie: string; // Inscrição Estadual
+  im?: string; // Inscrição Municipal
+  cityIbgeCode: string;
+  cityName: string;
+  uf: string;
+  cnae: string;
+  taxRegime: 'simples_nacional' | 'mei' | 'lucro_presumido' | 'lucro_real';
+  csosnDefault: string; // 102, 500, etc.
+  cfopDefault: string; // 5102, 5405
+  ncmDefault: string; // 8517.79.00
+  icmsDefaultRate: number;
+  nfceSeries: string;
+  nfceNextNumber: number;
+  nfeSeries: string;
+  nfeNextNumber: number;
+  cscId: string; // IdToken CSC (ex: 000001)
+  cscCode: string; // Código de Segurança do Contribuinte
+  certificateA1?: CertificateA1Data;
+}
+
+export interface CertificateA1Data {
+  hasCertificate: boolean;
+  fileName?: string;
+  uploadedAt?: string;
+  expiresAt?: string;
+  validFrom?: string;
+  issuer?: string;
+  subjectCnpj?: string;
+  subjectName?: string;
+  serialNumber?: string;
+  status?: 'valid' | 'expiring_soon' | 'expired' | 'unconfigured';
+  isExpired?: boolean;
+  daysRemaining?: number;
+  certBase64?: string;
+  certPassword?: string;
+}
+
+export interface FiscalEventItem {
+  id: string;
+  tenantId: string;
+  docType: 'nfe' | 'nfce' | 'nfse';
+  eventType: 'cce' | 'cancelamento' | 'inutilizacao' | 'manifestacao';
+  accessKey: string;
+  docNumber?: string;
+  sequence?: number;
+  description: string;
+  correctionText?: string;
+  justification?: string;
+  startNumber?: number;
+  endNumber?: number;
+  series?: string;
+  year?: number;
+  manifestType?: 'ciencia' | 'confirmacao' | 'desconhecimento' | 'nao_realizada';
+  protocol: string;
+  status: 'authorized' | 'rejected' | 'processing';
+  registeredAt: string;
+  xmlEventContent?: string;
+}
+
+export interface XmlDocItem {
+  id: string;
+  tenantId: string;
+  type: 'entrada' | 'saida';
+  docType: 'nfe' | 'nfce' | 'nfse';
+  accessKey: string;
+  number: string;
+  series: string;
+  emitterName: string;
+  emitterCnpj: string;
+  destName?: string;
+  destCnpjCpf?: string;
+  issuedAt: string;
+  totalAmount: number;
+  xmlContent: string;
+  importedAt?: string;
+  status: 'imported_stock' | 'archived' | 'pending';
+  itemsCount?: number;
+}
+
+export interface FiscalAuditRule {
+  id: string;
+  category: 'ncm' | 'cfop' | 'icms' | 'pis_cofins' | 'certificado' | 'sefaz_status';
+  title: string;
+  severity: 'error' | 'warning' | 'info' | 'success';
+  message: string;
+  suggestion: string;
+  affectedCount?: number;
+  targetDoc?: string;
 }

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, Wrench, WifiOff, Sparkles, Download, HelpCircle } from 'lucide-react';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, Wrench, WifiOff, Sparkles, Download, HelpCircle, FileText } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import CustomersTab from './components/CustomersTab';
@@ -10,6 +10,7 @@ import FinanceTab from './components/FinanceTab';
 import SettingsTab from './components/SettingsTab';
 import EmployeeManagementTab from './components/EmployeeManagementTab';
 import ToolsTab from './components/ToolsTab';
+import { FiscalTab } from './components/FiscalTab';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import SubscriptionView from './components/SubscriptionView';
 import CustomerCatalog from './components/CustomerCatalog';
@@ -31,7 +32,7 @@ import {
 } from './components/DatabaseOfflineAlert';
 import { TrialBanner } from './components/TrialBanner';
 
-type Tab = 'os' | 'clientes' | 'estoque' | 'vendas' | 'financeiro' | 'config' | 'team' | 'ferramentas';
+type Tab = 'os' | 'clientes' | 'estoque' | 'vendas' | 'fiscal' | 'financeiro' | 'config' | 'team' | 'ferramentas';
 
 const DEFAULT_SETTINGS: AppSettings = {
   storeName: 'Minha Assistência',
@@ -72,6 +73,8 @@ const App: React.FC = () => {
       customersTab?: boolean;
       stockTab: boolean;
       salesTab: boolean;
+      fiscalTab?: boolean;
+      fiscalMode?: boolean;
       financeTab: boolean;
       toolsTab?: boolean;
       aiFeature?: boolean;
@@ -103,11 +106,12 @@ const App: React.FC = () => {
       if (params.get('tab') === 'clientes') return 'clientes';
       if (params.get('tab') === 'estoque') return 'estoque';
       if (params.get('tab') === 'vendas') return 'vendas';
+      if (params.get('tab') === 'fiscal') return 'fiscal';
       if (params.get('tab') === 'financeiro') return 'financeiro';
       if (params.get('tab') === 'team') return 'team';
 
       const saved = localStorage.getItem('last_active_tab') as Tab;
-      if (saved && ['os', 'clientes', 'estoque', 'vendas', 'financeiro', 'config', 'team', 'ferramentas'].includes(saved)) {
+      if (saved && ['os', 'clientes', 'estoque', 'vendas', 'fiscal', 'financeiro', 'config', 'team', 'ferramentas'].includes(saved)) {
         return saved;
       }
     } catch (e) {}
@@ -158,6 +162,7 @@ const App: React.FC = () => {
     { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin', 'colaborador'], feature: 'customersTab' },
     { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
+    { id: 'fiscal', label: 'Fiscal', icon: FileText, roles: ['admin', 'colaborador'], feature: 'fiscalTab' },
     { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
     { id: 'team', label: 'Equipe', icon: ShieldCheck, roles: ['admin'], feature: 'financeTab' },
     { id: 'ferramentas', label: 'Ferramentas', icon: Wrench, roles: ['admin', 'colaborador'], feature: 'toolsTab' },
@@ -168,7 +173,9 @@ const App: React.FC = () => {
     if (!currentUser) return [];
     return navItems.filter(item => {
       const roleAllowed = item.roles.includes(currentUser.role);
-      const featureAllowed = !item.feature || (session?.enabledFeatures as any)?.[item.feature] !== false;
+      const featureAllowed = item.id === 'fiscal'
+        ? (session?.enabledFeatures?.fiscalMode || (session?.enabledFeatures as any)?.fiscalTab !== false)
+        : (!item.feature || (session?.enabledFeatures as any)?.[item.feature] !== false);
       return roleAllowed && featureAllowed;
     });
   }, [currentUser, session?.enabledFeatures, navItems]);
@@ -1813,6 +1820,7 @@ const App: React.FC = () => {
               onSaveCustomers={saveCustomers}
               prefilledCustomer={prefilledCustomerForOS}
               onClearPrefilledCustomer={() => setPrefilledCustomerForOS(null)}
+              enabledFeatures={session?.enabledFeatures}
             />
           )}
           {activeTab === 'clientes' && (session?.enabledFeatures?.customersTab !== false) && (
@@ -1847,7 +1855,19 @@ const App: React.FC = () => {
               aiEnabled={!isAiGloballyDisabled && session.enabledFeatures?.aiFeature !== false}
             />
           )}
-          {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} />}
+          {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} enabledFeatures={session?.enabledFeatures} />}
+          {activeTab === 'fiscal' && (
+            <FiscalTab
+              settings={settings}
+              setSettings={saveSettings}
+              sales={sales.filter(s => !s.isDeleted)}
+              products={products}
+              setProducts={saveProducts}
+              customers={customers}
+              serviceOrders={orders.filter(o => !o.isDeleted)}
+              tenantId={session.tenantId || ''}
+            />
+          )}
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} setOrders={saveOrders} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
           {activeTab === 'team' && <EmployeeManagementTab tenantId={session.tenantId || ''} />}
           {activeTab === 'ferramentas' && <ToolsTab settings={settings} currentUser={currentUser} tenantId={session.tenantId || ''} />}
@@ -1857,6 +1877,9 @@ const App: React.FC = () => {
               setProducts={saveProducts} 
               settings={settings} 
               setSettings={saveSettings} 
+              serviceOrders={orders}
+              customers={customers}
+              sales={sales}
               isCloudConnected={isCloudConnected} 
               currentUser={currentUser} 
               onSwitchProfile={handleSwitchProfile} 

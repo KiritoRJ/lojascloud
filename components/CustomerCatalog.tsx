@@ -415,7 +415,7 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
                     <div>
                       <p className="text-white text-xs font-bold truncate">{product.name}</p>
                       <p className="text-emerald-400 text-xs font-black">
-                        R$ {(product.isPromotion && product.promotionalPrice ? product.promotionalPrice : product.salePrice).toFixed(2).replace('.', ',')}
+                        R$ {((product.isPromotion && product.promotionalPrice ? product.promotionalPrice : product.salePrice) || 0).toFixed(2).replace('.', ',')}
                       </p>
                     </div>
                     <div className="flex items-center gap-1">
@@ -472,7 +472,7 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
         className={`h-full w-full overflow-y-scroll snap-y snap-mandatory hide-scrollbar [&::-webkit-scrollbar]:hidden ${viewMode !== 'feed' ? 'hidden' : ''}`}
       >
         {displayProducts.map((product, index) => {
-          const currentPrice = product.isPromotion && product.promotionalPrice ? product.promotionalPrice : product.salePrice;
+          const currentPrice = (product.isPromotion && product.promotionalPrice ? product.promotionalPrice : product.salePrice) || 0;
           const isActive = index === activeProductIndex;
           const hasVideo = !!product.videoUrl;
           const isLiked = likedProducts[product.id];

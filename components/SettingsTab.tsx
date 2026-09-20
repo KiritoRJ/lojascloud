@@ -1,12 +1,14 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, ArrowRight, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus, Store } from 'lucide-react';
-import { AppSettings, User, ServiceOrder, Product, Sale, Transaction, Employee } from '../types';
+import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, ArrowRight, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus, Store, Key } from 'lucide-react';
+import { AppSettings, User, ServiceOrder, Product, Sale, Transaction, Employee, Customer } from '../types';
 import { OnlineDB } from '../utils/api';
 import { OfflineSync } from '../utils/offlineSync';
 import { db } from '../utils/localDb';
 import CatalogManager from './CatalogManager';
 import AdbVirusCleaner from './AdbVirusCleaner';
+import NfseManager from './NfseManager';
+import NfceNfeManager from './nfce/NfceNfeManager';
 import { ConnectionStatusTag, ConnectionStatusDetailModal } from './DatabaseOfflineAlert';
 import { AICreditsModal } from './AICreditsModal';
 
@@ -15,6 +17,9 @@ interface Props {
   setProducts: (products: Product[]) => void;
   settings: AppSettings;
   setSettings: (settings: AppSettings) => void;
+  serviceOrders?: ServiceOrder[];
+  customers?: Customer[];
+  sales?: Sale[];
   isCloudConnected?: boolean;
   currentUser: User;
   onSwitchProfile: (user: User) => void;
@@ -46,6 +51,9 @@ const SettingsTab: React.FC<Props> = ({
   setProducts, 
   settings, 
   setSettings, 
+  serviceOrders = [],
+  customers = [],
+  sales = [],
   isCloudConnected = true, 
   currentUser, 
   onSwitchProfile, 
@@ -74,9 +82,15 @@ const SettingsTab: React.FC<Props> = ({
     }
   };
 
-  const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup' | 'catalog' | 'notifications' | 'subscription' | 'suppliers' | 'adb-cleaner'>(() => {
+  const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup' | 'catalog' | 'notifications' | 'subscription' | 'suppliers' | 'adb-cleaner' | 'nfse' | 'nfce'>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
+      if (params.get('view') === 'nfse' || window.location.hash.includes('nfse')) {
+        return 'nfse';
+      }
+      if (params.get('view') === 'nfce' || window.location.hash.includes('nfce') || params.get('view') === 'nfe' || window.location.hash.includes('nfe')) {
+        return 'nfce';
+      }
       if (params.get('view') === 'adb-cleaner' || window.location.hash.includes('adb-cleaner')) {
         return 'adb-cleaner';
       }
@@ -1847,6 +1861,33 @@ const SettingsTab: React.FC<Props> = ({
     );
   }
 
+  if (view === 'nfse') {
+    return (
+      <NfseManager
+        settings={settings}
+        setSettings={setSettings}
+        serviceOrders={serviceOrders}
+        customers={customers}
+        tenantId={tenantId || ''}
+        onBack={() => setView('main')}
+      />
+    );
+  }
+
+  if (view === 'nfce') {
+    return (
+      <NfceNfeManager
+        settings={settings}
+        setSettings={setSettings}
+        sales={sales}
+        products={products}
+        customers={customers}
+        tenantId={tenantId || ''}
+        onBack={() => setView('main')}
+      />
+    );
+  }
+
   if (view === 'adb-cleaner') {
     return <AdbVirusCleaner onBack={() => setView('main')} />;
   }
@@ -1881,6 +1922,12 @@ const SettingsTab: React.FC<Props> = ({
                   <>
                     <button onClick={() => { setIsAICreditsModalOpen(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent">
                       <Sparkles size={16} className="text-blue-600 animate-pulse" /> Créditos de IA ({aiCredits})
+                    </button>
+                    <button onClick={() => { setView('nfce'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'nfce' ? 'border-emerald-500 bg-emerald-50' : 'border-transparent'}`}>
+                      <Package size={16} className="text-emerald-600" /> Módulo NFC-e / NF-e Vendas
+                    </button>
+                    <button onClick={() => { setView('nfse'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'nfse' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                      <FileText size={16} className="text-blue-600" /> Módulo NFS-e Serviços
                     </button>
                     <button onClick={() => { setView('subscription'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'subscription' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
                       <Shield size={16} /> Plano e Limites
@@ -1927,6 +1974,55 @@ const SettingsTab: React.FC<Props> = ({
       </div>
 
       <div className="max-w-xl mx-auto space-y-4">
+        {/* MÓDULOS FISCAIS */}
+        {isAdmin && (
+          <div className="space-y-3">
+            {/* NFC-e / NF-e VENDAS DE PRODUTOS */}
+            <button
+              type="button"
+              onClick={() => setView('nfce')}
+              className="w-full p-4 bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 hover:from-emerald-900 hover:to-slate-800 text-white rounded-[2rem] text-left transition-all active:scale-98 flex items-center gap-3.5 shadow-md shadow-emerald-950/20 cursor-pointer group border border-emerald-800/40"
+            >
+              <div className="w-11 h-11 bg-white/10 backdrop-blur-xs text-emerald-400 rounded-2xl flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform shrink-0 border border-white/10">
+                <Package size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="text-[9px] font-black text-emerald-300 uppercase tracking-widest">SEFAZ • Balcão & Produtos</p>
+                  <span className="text-[8px] font-black bg-emerald-500/20 text-emerald-300 px-2 py-0.2 rounded-full border border-emerald-400/30 uppercase">
+                    Modelo 65 (NFC-e) & 55 (NF-e)
+                  </span>
+                </div>
+                <p className="text-xs font-black text-white uppercase tracking-tight truncate">Módulo NFC-e & NF-e de Vendas</p>
+                <p className="text-[10px] text-slate-300 truncate">Emissão com CSC, DANFE com QR Code, cancelamentos e solução de rejeições SEFAZ</p>
+              </div>
+              <ChevronRight size={16} className="text-white/80 shrink-0" />
+            </button>
+
+            {/* NFS-E SERVIÇOS */}
+            <button
+              type="button"
+              onClick={() => setView('nfse')}
+              className="w-full p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 hover:from-slate-800 hover:to-indigo-900 text-white rounded-[2rem] text-left transition-all active:scale-98 flex items-center gap-3.5 shadow-md shadow-indigo-950/20 cursor-pointer group border border-indigo-900/30"
+            >
+              <div className="w-11 h-11 bg-white/10 backdrop-blur-xs text-blue-400 rounded-2xl flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform shrink-0 border border-white/10">
+                <FileText size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="text-[9px] font-black text-blue-300 uppercase tracking-widest">Emissão & Transmissão</p>
+                  <span className="text-[8px] font-black bg-emerald-500/20 text-emerald-300 px-2 py-0.2 rounded-full border border-emerald-400/30 uppercase">
+                    Certificado A1 & Padrão Nacional
+                  </span>
+                </div>
+                <p className="text-xs font-black text-white uppercase tracking-tight truncate">Módulo NFS-e & Serviços (O.S.)</p>
+                <p className="text-[10px] text-slate-300 truncate">Emita notas de serviço, configure APIs e resolva erros de prefeituras</p>
+              </div>
+              <ChevronRight size={16} className="text-white/80 shrink-0" />
+            </button>
+          </div>
+        )}
+
         {/* INSTALAR APP (Banner de Destaque) */}
         <div>
           <button

@@ -6,7 +6,7 @@ import {
   AlertTriangle, Calculator, CheckCircle, Image as ImageIcon, Calendar, 
   KeyRound, Lock, Download, Maximize2, Layout, Check, Printer, Share2,
   SlidersHorizontal, ArrowDownAZ, Clock, ShieldCheck, RotateCcw,
-  Wrench, CheckCircle2, Sparkles, QrCode, TrendingUp, MessageSquare, Send, Zap
+  Wrench, CheckCircle2, Sparkles, QrCode, TrendingUp, MessageSquare, Send, Zap, FileText
 } from 'lucide-react';
 import { ServiceOrder, AppSettings, User, Customer, DeviceDiagnosticResults } from '../types';
 import { formatCurrency, parseCurrencyString, formatDate, formatDateTime, generateRandomNumericCode, getTrackingUrl, getHardwareTestUrl } from '../utils';
@@ -59,6 +59,7 @@ interface Props {
   onSaveCustomers?: (customers: Customer[]) => Promise<void>;
   prefilledCustomer?: Customer | null;
   onClearPrefilledCustomer?: () => void;
+  enabledFeatures?: any;
 }
 
 export const COMMON_DEFECTS = [
@@ -80,8 +81,13 @@ const ServiceOrderTab: React.FC<Props> = ({
   onSaveCustomer,
   onSaveCustomers,
   prefilledCustomer,
-  onClearPrefilledCustomer
+  onClearPrefilledCustomer,
+  enabledFeatures
 }) => {
+  const isFiscalModeActive = !!(
+    enabledFeatures?.fiscalMode || 
+    (settings as any)?.fiscalModeEnabled
+  );
   // --- ESTADOS DE CONTROLE DE INTERFACE ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -755,6 +761,69 @@ const ServiceOrderTab: React.FC<Props> = ({
       newOrdersList = [newOrder, ...orders];
     }
     
+    // EMISSÃO AUTOMÁTICA DE NFS-e QUANDO O MODO FISCAL ESTIVER ATIVO
+    if (isFiscalModeActive && (savedOrder.status === 'Concluído' || savedOrder.status === 'Entregue') && !savedOrder.fiscalNoteEmitted) {
+      try {
+        const storagePrefix = tenantId ? `nfse_${tenantId}_` : 'nfse_default_';
+        const rawExisting = localStorage.getItem(`${storagePrefix}items`);
+        const existingNfse = rawExisting ? JSON.parse(rawExisting) : [];
+        const nextRps = (settings.nfseConfig?.rpsNextNumber || existingNfse.length + 1);
+        const nfseNum = `${new Date().getFullYear()}${String(nextRps).padStart(6, '0')}`;
+        const verCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+        const protocol = `NFS${Date.now()}`;
+        const serviceVal = Number(savedOrder.serviceCost || savedOrder.total || 0);
+
+        const newNfse = {
+          id: `nfse-os-${savedOrder.id}-${Date.now()}`,
+          number: nfseNum,
+          rpsNumber: nextRps,
+          series: settings.nfseConfig?.rpsSeries || '1',
+          status: 'emitida',
+          issuedAt: new Date().toISOString(),
+          verificationCode: verCode,
+          protocol: protocol,
+          environment: settings.nfseConfig?.environment || 'homologacao',
+          customer: {
+            name: savedOrder.customerName || 'Consumidor',
+            document: (savedOrder as any).customerCpf || '000.000.000-00',
+            phone: savedOrder.phoneNumber || '',
+            address: {
+              street: savedOrder.address || 'Rua Principal',
+              number: 'S/N',
+              neighborhood: 'Centro',
+              city: settings.nfseConfig?.prestadorMunicipio || 'São Paulo',
+              uf: settings.nfseConfig?.prestadorUf || 'SP',
+              cep: '00000-000'
+            }
+          },
+          service: {
+            serviceCode: '14.01',
+            cnae: '9511-8/00',
+            description: `Serviço de Assistência Técnica Especializada em ${savedOrder.deviceBrand} ${savedOrder.deviceModel} (Ref. O.S. #${savedOrder.id}). Defeito: ${savedOrder.defect}. Reparo: ${savedOrder.repairDetails || 'Manutenção técnica'}.`
+          },
+          values: {
+            serviceAmount: serviceVal,
+            deductions: 0,
+            issRate: settings.nfseConfig?.aliquotaIss || 2.0,
+            issAmount: (serviceVal * (settings.nfseConfig?.aliquotaIss || 2.0)) / 100,
+            netAmount: serviceVal
+          }
+        };
+
+        const updatedNfseList = [newNfse, ...existingNfse];
+        localStorage.setItem(`${storagePrefix}items`, JSON.stringify(updatedNfseList));
+
+        savedOrder.fiscalNoteNumber = nfseNum;
+        savedOrder.fiscalNoteEmitted = true;
+        savedOrder.fiscalNoteVerificationCode = verCode;
+        savedOrder.fiscalNoteDate = newNfse.issuedAt;
+
+        newOrdersList = newOrdersList.map(o => o.id === savedOrder.id ? { ...savedOrder } : o);
+      } catch (err) {
+        console.error('Erro ao emitir NFS-e automática da O.S.:', err);
+      }
+    }
+
     setOrders(newOrdersList);
     setIsModalOpen(false);
     setLastCreatedOrder(savedOrder);
@@ -768,6 +837,74 @@ const ServiceOrderTab: React.FC<Props> = ({
     clearDraft();
     resetForm();
     setIsSaving(false);
+  };
+
+  // Emissão manual / individual de NFS-e para uma Ordem de Serviço
+  const handleEmitNfseForOrder = (targetOrder: ServiceOrder) => {
+    try {
+      const storagePrefix = tenantId ? `nfse_${tenantId}_` : 'nfse_default_';
+      const rawExisting = localStorage.getItem(`${storagePrefix}items`);
+      const existingNfse = rawExisting ? JSON.parse(rawExisting) : [];
+      const nextRps = (settings.nfseConfig?.rpsNextNumber || existingNfse.length + 1);
+      const nfseNum = `${new Date().getFullYear()}${String(nextRps).padStart(6, '0')}`;
+      const verCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const protocol = `NFS${Date.now()}`;
+      const serviceVal = Number(targetOrder.serviceCost || targetOrder.total || 0);
+
+      const newNfse = {
+        id: `nfse-os-${targetOrder.id}-${Date.now()}`,
+        number: nfseNum,
+        rpsNumber: nextRps,
+        series: settings.nfseConfig?.rpsSeries || '1',
+        status: 'emitida',
+        issuedAt: new Date().toISOString(),
+        verificationCode: verCode,
+        protocol: protocol,
+        environment: settings.nfseConfig?.environment || 'homologacao',
+        customer: {
+          name: targetOrder.customerName || 'Consumidor',
+          document: (targetOrder as any).customerCpf || '000.000.000-00',
+          phone: targetOrder.phoneNumber || '',
+          address: {
+            street: targetOrder.address || 'Rua Principal',
+            number: 'S/N',
+            neighborhood: 'Centro',
+            city: settings.nfseConfig?.prestadorMunicipio || 'São Paulo',
+            uf: settings.nfseConfig?.prestadorUf || 'SP',
+            cep: '00000-000'
+          }
+        },
+        service: {
+          serviceCode: '14.01',
+          cnae: '9511-8/00',
+          description: `Serviço de Assistência Técnica Especializada em ${targetOrder.deviceBrand} ${targetOrder.deviceModel} (Ref. O.S. #${targetOrder.id}). Defeito relatado: ${targetOrder.defect}. Reparo: ${targetOrder.repairDetails || 'Manutenção e testes operacionais'}.`
+        },
+        values: {
+          serviceAmount: serviceVal,
+          deductions: 0,
+          issRate: settings.nfseConfig?.aliquotaIss || 2.0,
+          issAmount: (serviceVal * (settings.nfseConfig?.aliquotaIss || 2.0)) / 100,
+          netAmount: serviceVal
+        }
+      };
+
+      const updatedNfseList = [newNfse, ...existingNfse];
+      localStorage.setItem(`${storagePrefix}items`, JSON.stringify(updatedNfseList));
+
+      const updatedOrderWithNfse: ServiceOrder = {
+        ...targetOrder,
+        fiscalNoteNumber: nfseNum,
+        fiscalNoteEmitted: true,
+        fiscalNoteVerificationCode: verCode,
+        fiscalNoteDate: newNfse.issuedAt
+      };
+
+      setOrders(orders.map(o => o.id === targetOrder.id ? updatedOrderWithNfse : o));
+      alert(`✅ Nota Fiscal de Serviço (NFS-e) emitida com sucesso!\n\nNº da Nota: ${nfseNum}\nCódigo Verificador: ${verCode}\nValor Total: R$ ${(serviceVal || 0).toFixed(2)}`);
+    } catch (err) {
+      console.error('Erro ao emitir NFS-e:', err);
+      alert('Erro ao emitir NFS-e da O.S. Verifique as configurações.');
+    }
   };
 
   // Limpa o formulário para uma nova entrada
@@ -1664,6 +1801,25 @@ const ServiceOrderTab: React.FC<Props> = ({
                          </button>
                        );
                      })()}
+                     {order.fiscalNoteEmitted ? (
+                       <span className={`font-black text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}`} title={`NFS-e emitida: Nº ${order.fiscalNoteNumber}`}>
+                         <FileText size={osLayout === 'small' ? 8 : 10} className="text-purple-600" />
+                         NFS-e #{order.fiscalNoteNumber}
+                       </span>
+                     ) : isFiscalModeActive ? (
+                       <button
+                         type="button"
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           handleEmitNfseForOrder(order);
+                         }}
+                         className={`font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 transition-all cursor-pointer ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}`}
+                         title="Modo Fiscal Ativo: Clique para emitir a NFS-e desta O.S."
+                       >
+                         <FileText size={osLayout === 'small' ? 8 : 10} className="text-amber-600" />
+                         Emitir NFS-e
+                       </button>
+                     ) : null}
                      {expired && (
                        <span className={`font-black px-2 py-0.5 rounded-full bg-red-600 text-white uppercase animate-pulse shrink-0
                          ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}
@@ -1688,6 +1844,14 @@ const ServiceOrderTab: React.FC<Props> = ({
                   ${osLayout === 'small' ? 'p-1 sm:p-1.5' : osLayout === 'medium' ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-3.5'}
                 `} title="Testes de Hardware (QR Code)">
                   <QrCode size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />
+                </button>
+                <button onClick={(e) => { 
+                  e.stopPropagation(); 
+                  handleEmitNfseForOrder(order);
+                }} className={`rounded-lg sm:rounded-xl shadow-md active:scale-90 flex items-center justify-center transition-colors ${order.fiscalNoteEmitted ? 'bg-purple-600 text-white hover:bg-purple-500' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'}
+                  ${osLayout === 'small' ? 'p-1 sm:p-1.5' : osLayout === 'medium' ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-3.5'}
+                `} title={order.fiscalNoteEmitted ? `NFS-e Emitida: Nº ${order.fiscalNoteNumber} (Clique para reemitir/ver)` : "Emitir Nota Fiscal de Serviço (NFS-e)"}>
+                  <FileText size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />
                 </button>
                 <button onClick={(e) => { 
                   e.stopPropagation(); 
@@ -1766,6 +1930,31 @@ const ServiceOrderTab: React.FC<Props> = ({
                   >
                     Descartar
                   </button>
+                </div>
+              )}
+
+              {isFiscalModeActive && (
+                <div className="bg-purple-50/90 border border-purple-200 p-3 rounded-2xl flex items-center justify-between gap-2 animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <FileText size={16} className="text-purple-600 shrink-0" />
+                    <div>
+                      <span className="text-[10px] font-black text-purple-900 uppercase tracking-tight block">
+                        Modo Fiscal Ativo na Loja
+                      </span>
+                      <span className="text-[9px] text-purple-700 font-medium block">
+                        A NFS-e é emitida automaticamente ao salvar a O.S. como Concluída ou Entregue.
+                      </span>
+                    </div>
+                  </div>
+                  {formData.fiscalNoteEmitted ? (
+                    <span className="text-[9px] font-black uppercase text-purple-700 bg-purple-100 px-2.5 py-1 rounded-xl shrink-0">
+                      NFS-e #{formData.fiscalNoteNumber}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-black uppercase text-purple-600 bg-white border border-purple-200 px-2.5 py-1 rounded-xl shrink-0">
+                      Auto NFS-e
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -2424,7 +2613,7 @@ const ServiceOrderTab: React.FC<Props> = ({
                             <TrendingUp size={12} className="text-emerald-400" /> Lucro Líquido do Reparo:
                           </span>
                           <span className="font-black text-emerald-400 text-[10px]">
-                            {formatCurrency(profit)} ({marginPct.toFixed(0)}% margem)
+                            {formatCurrency(profit)} ({(marginPct ?? 0).toFixed(0)}% margem)
                           </span>
                         </div>
                       );

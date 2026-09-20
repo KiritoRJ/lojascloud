@@ -630,8 +630,9 @@ app.post('/api/auth/upsert-user', async (req, res) => {
       password = await hashPassword(password.trim());
     }
 
+    const userId = user.id || ('USR_' + Math.random().toString(36).substring(2, 7).toUpperCase());
     const payload: any = {
-      id: user.id,
+      id: userId,
       username: username,
       name: user.name,
       role: user.role,

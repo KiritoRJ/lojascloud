@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard, Sparkles, Eye, EyeOff, Power, AlertTriangle, Cpu } from 'lucide-react';
+import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard, Sparkles, Eye, EyeOff, Power, AlertTriangle, Cpu, FileText, Receipt } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -310,6 +310,31 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
     setIsSaving(false);
   };
 
+  const handleToggleFiscalMode = async (tenant: any) => {
+    const current = !!tenant.enabled_features?.fiscalMode;
+    const newFeatures = {
+      ...tenant.enabled_features,
+      fiscalMode: !current,
+      fiscalTab: true
+    };
+    setIsSaving(true);
+    const res = await OnlineDB.updateTenantFeatures(
+      tenant.id,
+      newFeatures,
+      tenant.max_users || 999,
+      tenant.tenant_limits?.max_os || 999,
+      tenant.tenant_limits?.max_products || 999,
+      tenant.printer_size || 58,
+      tenant.retention_months || 6
+    );
+    if (res.success) {
+      await loadTenants();
+    } else {
+      alert(`Erro ao alterar Modo Fiscal: ${res.message}`);
+    }
+    setIsSaving(false);
+  };
+
   const handleUpdateSubscription = async () => {
     if (!tenantToEditSub || !newSubDate) return;
     setIsSaving(true);
@@ -573,6 +598,19 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
                     >
                       <Settings2 size={14} className="sm:hidden" />
                       <Settings2 size={16} className="hidden sm:block" />
+                    </button>
+                    <button 
+                      onClick={() => handleToggleFiscalMode(t)}
+                      className={`p-2 sm:p-2.5 rounded-lg sm:rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all active:scale-90 flex items-center gap-1 ${
+                        t.enabled_features?.fiscalMode 
+                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30' 
+                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                      }`}
+                      title={t.enabled_features?.fiscalMode ? "Modo Fiscal Ativado (Emissão Obrigatória de Notas). Clique para desativar." : "Modo Fiscal Desativado. Clique para ativar."}
+                    >
+                      <Receipt size={14} className={`sm:hidden ${t.enabled_features?.fiscalMode ? 'text-purple-400' : ''}`} />
+                      <Receipt size={16} className={`hidden sm:block ${t.enabled_features?.fiscalMode ? 'text-purple-400' : ''}`} />
+                      <span className="hidden xl:inline text-[9px] font-bold">{t.enabled_features?.fiscalMode ? 'Fiscal ON' : 'Fiscal OFF'}</span>
                     </button>
                     <button 
                       onClick={() => setTenantToEditPrices({ 
@@ -1447,6 +1485,8 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
 
               <div className="space-y-3 text-left pt-2">
                   {[
+                    { id: 'fiscalMode', label: 'Modo Fiscal (Obrigatório Emitir Notas em Vendas e OS)' },
+                    { id: 'fiscalTab', label: 'Aba Fiscal no Menu Principal' },
                     { id: 'osTab', label: 'Aba Ordem de Serviço' },
                     { id: 'customersTab', label: 'Aba Clientes' },
                     { id: 'stockTab', label: 'Aba Estoque' },

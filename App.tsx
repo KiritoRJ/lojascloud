@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, Wrench, WifiOff, Sparkles } from 'lucide-react';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, Wrench, WifiOff, Sparkles, Download, HelpCircle } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import CustomersTab from './components/CustomersTab';
@@ -15,6 +15,8 @@ import SubscriptionView from './components/SubscriptionView';
 import CustomerCatalog from './components/CustomerCatalog';
 import PublicTrackingPage from './components/PublicTrackingPage';
 import { DeviceHardwareTestPage } from './components/DeviceHardwareTestPage';
+import { InstallAppModal } from './components/InstallAppModal';
+import { SpotlightTour } from './components/SpotlightTour';
 import { OnlineDB, supabase } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { OfflineAuth } from './utils/offlineAuth';
@@ -131,6 +133,8 @@ const App: React.FC = () => {
   const [isCloudConnected, setIsCloudConnected] = useState(true);
   const [isInitializing, setIsInitializing] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isAiGloballyDisabled, setIsAiGloballyDisabled] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
@@ -322,6 +326,10 @@ const App: React.FC = () => {
       });
 
       if (res.success) {
+        try {
+          localStorage.setItem('first_access_' + tenantId, 'true');
+          localStorage.setItem('first_access_new_store', 'true');
+        } catch (e) {}
         setLoginForm({ username: registerForm.username, password: registerForm.password });
         setIsRegisterMode(false);
         setLoginError("Loja criada com sucesso! Faça login para começar seus 7 dias grátis.");
@@ -846,6 +854,25 @@ const App: React.FC = () => {
           }
 
           setSession({ ...newSession, user: finalUser });
+
+          try {
+            const hasCompletedTour = tenantId ? localStorage.getItem('tour_completed_' + tenantId) === 'true' : false;
+            const isFirstAccess = !hasCompletedTour && (
+              localStorage.getItem('first_access_new_store') === 'true' || 
+              (tenantId && localStorage.getItem('first_access_' + tenantId) === 'true')
+            );
+            if (isFirstAccess) {
+              setActiveTab('config');
+              setIsOnboardingOpen(true);
+              localStorage.removeItem('first_access_new_store');
+              if (tenantId) {
+                localStorage.removeItem('first_access_' + tenantId);
+                localStorage.setItem('tour_completed_' + tenantId, 'true');
+              }
+            } else {
+              setIsOnboardingOpen(false);
+            }
+          } catch (firstErr) {}
         }
       } else {
         // Se a chamada de login falhou por erro temporário ou conexão, tenta validação offline
@@ -1580,13 +1607,29 @@ const App: React.FC = () => {
             <X size={20} />
           </button>
         </div>
-        <nav className="flex-1 space-y-2 min-w-[240px]">
+        <nav id="tour-sidebar-nav" className="flex-1 space-y-2 min-w-[240px]">
           {visibleNavItems.map((item, idx) => (
             <button key={`nav-desktop-${item.id}-${idx}`} onClick={() => setActiveTab(item.id as Tab)} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-xl' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
               <item.icon size={20} className="shrink-0" />
               <span className="animate-in fade-in whitespace-nowrap">{item.label}</span>
             </button>
           ))}
+
+          <div className="pt-3 space-y-2">
+            <button 
+              type="button" 
+              onClick={() => setIsInstallModalOpen(true)}
+              className="w-full flex items-center gap-3.5 px-4 py-3 bg-gradient-to-r from-blue-600/30 to-indigo-600/20 hover:from-blue-600 hover:to-indigo-600 text-blue-300 hover:text-white border border-blue-500/30 hover:border-transparent rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all active:scale-95 group shadow-sm"
+            >
+              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 group-hover:bg-white group-hover:text-blue-600 transition-all">
+                <Download size={16} />
+              </div>
+              <div className="text-left min-w-0 flex-1">
+                <span className="block truncate">Instalar no PC/Celular</span>
+                <span className="text-[8px] text-blue-400 group-hover:text-blue-100 font-bold block uppercase tracking-normal">Acesso 1 Clique</span>
+              </div>
+            </button>
+          </div>
         </nav>
         <div className="mt-auto pt-4 border-t border-white/5 min-w-[240px]">
           {session?.subscriptionStatus === 'trial' && (
@@ -1634,6 +1677,7 @@ const App: React.FC = () => {
         <div className="md:hidden flex items-center justify-between bg-white border-b border-slate-100 px-3 py-2 shrink-0 z-20 shadow-sm gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <button
+              id="tour-mobile-header-menu"
               type="button"
               onClick={() => setIsSidebarOpen(true)}
               className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all overflow-hidden border-2 border-white ring-2 ring-blue-500/30 cursor-pointer shrink-0"
@@ -1658,6 +1702,16 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              id="tour-mobile-install-btn"
+              type="button"
+              onClick={() => setIsInstallModalOpen(true)}
+              className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
+              title="Instalar App no celular"
+            >
+              <Download size={10} />
+              <span>Instalar</span>
+            </button>
             {session?.subscriptionStatus === 'trial' && (
               <button
                 type="button"
@@ -1693,7 +1747,18 @@ const App: React.FC = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <button
+              id="tour-header-install"
+              type="button"
+              onClick={() => setIsInstallModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-md shadow-blue-500/20 cursor-pointer"
+              title="Instalar o aplicativo no PC ou Celular"
+            >
+              <Download size={13} />
+              <span>Instalar App</span>
+            </button>
+
             {session?.subscriptionStatus === 'trial' && (
               <button
                 type="button"
@@ -1738,7 +1803,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className={`flex-1 overflow-y-auto p-4 pt-4 pb-6 md:pt-6 md:pb-4 max-w-none mx-auto w-full animate-in fade-in duration-700 hide-scrollbar [&::-webkit-scrollbar]:hidden ${isSidebarCollapsed ? 'md:pl-6' : 'md:pl-6'}`}>
+        <div id="app-main-scroll-container" className={`flex-1 overflow-y-auto p-4 pt-4 pb-6 md:pt-6 md:pb-4 max-w-none mx-auto w-full animate-in fade-in duration-700 hide-scrollbar [&::-webkit-scrollbar]:hidden ${isSidebarCollapsed ? 'md:pl-6' : 'md:pl-6'}`}>
           {activeTab === 'os' && (
             <ServiceOrderTab 
               orders={orders} 
@@ -1792,7 +1857,30 @@ const App: React.FC = () => {
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} setOrders={saveOrders} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
           {activeTab === 'team' && <EmployeeManagementTab tenantId={session.tenantId || ''} />}
           {activeTab === 'ferramentas' && <ToolsTab settings={settings} currentUser={currentUser} tenantId={session.tenantId || ''} />}
-          {activeTab === 'config' && <SettingsTab products={products} setProducts={saveProducts} settings={settings} setSettings={saveSettings} isCloudConnected={isCloudConnected} currentUser={currentUser} onSwitchProfile={handleSwitchProfile} tenantId={session.tenantId} deferredPrompt={deferredPrompt} onInstallApp={handleInstallApp} subscriptionStatus={session.subscriptionStatus} subscriptionExpiresAt={session.subscriptionExpiresAt} lastPlanType={session.lastPlanType} enabledFeatures={session.enabledFeatures} maxUsers={session.maxUsers} maxOS={session.maxOS} maxProducts={session.maxProducts} onLogout={() => setIsLogoutModalOpen(true)} onOpenSubscription={() => setIsSubscriptionModalOpen(true)} />}
+          {activeTab === 'config' && (
+            <SettingsTab 
+              products={products} 
+              setProducts={saveProducts} 
+              settings={settings} 
+              setSettings={saveSettings} 
+              isCloudConnected={isCloudConnected} 
+              currentUser={currentUser} 
+              onSwitchProfile={handleSwitchProfile} 
+              tenantId={session.tenantId} 
+              deferredPrompt={deferredPrompt} 
+              onInstallApp={handleInstallApp} 
+              onOpenInstallModal={() => setIsInstallModalOpen(true)}
+              subscriptionStatus={session.subscriptionStatus} 
+              subscriptionExpiresAt={session.subscriptionExpiresAt} 
+              lastPlanType={session.lastPlanType} 
+              enabledFeatures={session.enabledFeatures} 
+              maxUsers={session.maxUsers} 
+              maxOS={session.maxOS} 
+              maxProducts={session.maxProducts} 
+              onLogout={() => setIsLogoutModalOpen(true)} 
+              onOpenSubscription={() => setIsSubscriptionModalOpen(true)} 
+            />
+          )}
         </div>
       </main>
 
@@ -1823,7 +1911,7 @@ const App: React.FC = () => {
               <ConnectionStatusTag className="w-full justify-center py-2" />
             </div>
 
-            <nav className="flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1">
+            <nav id="tour-mobile-nav" className="flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1">
                {visibleNavItems.map((item, idx) => (
                 <button 
                   key={`nav-mobile-sidebar-${item.id}-${idx}`} 
@@ -1838,6 +1926,20 @@ const App: React.FC = () => {
                   <span>{item.label}</span>
                 </button>
               ))}
+
+              <div className="pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setIsSidebarOpen(false);
+                    setIsInstallModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 active:scale-95 transition-all"
+                >
+                  <Download size={15} />
+                  <span>Instalar App no Celular</span>
+                </button>
+              </div>
             </nav>
 
             <div className="mt-3 pt-3 border-t border-slate-200/80 shrink-0 space-y-2">
@@ -1899,6 +2001,34 @@ const App: React.FC = () => {
            </div>
         </div>
       )}
+
+      {/* Modal Interativo de Instalação do App (PWA) no Celular/PC */}
+      <InstallAppModal 
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+        deferredPrompt={deferredPrompt}
+        onInstallSuccess={() => {
+          setIsInstallModalOpen(false);
+        }}
+      />
+
+      {/* Tour Guiado Interativo Direto no Sistema */}
+      <SpotlightTour 
+        isActive={isOnboardingOpen}
+        onComplete={() => setIsOnboardingOpen(false)}
+        onSkip={() => setIsOnboardingOpen(false)}
+        activeTab={activeTab}
+        setActiveTab={(tab) => setActiveTab(tab as Tab)}
+        onOpenInstallModal={() => setIsInstallModalOpen(true)}
+        onOpenSidebar={() => {
+          setIsSidebarOpen(true);
+          setIsSidebarCollapsed(false);
+        }}
+        onCloseSidebar={() => {
+          setIsSidebarOpen(false);
+        }}
+        tenantId={session?.tenantId}
+      />
 
       {/* Notificação Toast em Tempo Real de Queda / Retorno do Banco SQL */}
       <ConnectionStatusToast />

@@ -1440,7 +1440,7 @@ const ServiceOrderTab: React.FC<Props> = ({
       {/* CABEÇALHO DA TAB */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-black text-slate-800 tracking-tight text-custom-primary uppercase">ORDENS DE SERVIÇO</h2>
-        <button onClick={() => { resetForm(); setIsModalOpen(true); }} disabled={limitReached} className="bg-slate-900 text-white p-2.5 rounded-2xl shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"><Plus size={20} /></button>
+        <button id="tour-new-os-btn" onClick={() => { resetForm(); setIsModalOpen(true); }} disabled={limitReached} className="bg-slate-900 text-white p-2.5 rounded-2xl shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"><Plus size={20} /><span className="text-xs font-black uppercase pr-1 hidden sm:inline">Nova O.S.</span></button>
       </div>
 
       {limitReached && (

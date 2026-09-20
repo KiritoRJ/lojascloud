@@ -1,16 +1,26 @@
 {
-  "name": "Assistência Pro",
-  "short_name": "Assistência",
+  "id": "/",
+  "name": "Lojas Cloud",
+  "short_name": "Lojas Cloud",
+  "description": "Sistema de Gestão Lojas Cloud - Sua Loja nas Nuvens",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "theme_color": "#2563eb",
   "orientation": "any",
   "icons": [
     {
       "src": "/icon.svg",
       "type": "image/svg+xml",
-      "sizes": "192x192 512x512"
+      "sizes": "192x192 512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ]
 }

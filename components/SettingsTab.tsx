@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, ArrowRight, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus } from 'lucide-react';
+import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, ArrowRight, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus, Store } from 'lucide-react';
 import { AppSettings, User, ServiceOrder, Product, Sale, Transaction, Employee } from '../types';
 import { OnlineDB } from '../utils/api';
 import { OfflineSync } from '../utils/offlineSync';
@@ -21,6 +21,7 @@ interface Props {
   tenantId?: string; 
   deferredPrompt?: any;
   onInstallApp?: () => void;
+  onOpenInstallModal?: () => void;
   subscriptionStatus?: string;
   subscriptionExpiresAt?: string;
   lastPlanType?: 'monthly' | 'quarterly' | 'yearly';
@@ -40,7 +41,28 @@ interface Props {
   onOpenSubscription?: () => void;
 }
 
-const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSettings, isCloudConnected = true, currentUser, onSwitchProfile, tenantId, deferredPrompt, onInstallApp, subscriptionStatus, subscriptionExpiresAt, lastPlanType, enabledFeatures, maxUsers, maxOS, maxProducts, onLogout, onOpenSubscription }) => {
+const SettingsTab: React.FC<Props> = ({ 
+  products, 
+  setProducts, 
+  settings, 
+  setSettings, 
+  isCloudConnected = true, 
+  currentUser, 
+  onSwitchProfile, 
+  tenantId, 
+  deferredPrompt, 
+  onInstallApp, 
+  onOpenInstallModal,
+  subscriptionStatus, 
+  subscriptionExpiresAt, 
+  lastPlanType, 
+  enabledFeatures, 
+  maxUsers, 
+  maxOS, 
+  maxProducts, 
+  onLogout, 
+  onOpenSubscription 
+}) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
   const getPlanName = () => {
     if (subscriptionStatus === 'trial') return 'Período de Teste';
@@ -1850,6 +1872,11 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
               <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-100 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden animate-in zoom-in-95 origin-top-right">
+                {onOpenInstallModal && (
+                  <button onClick={() => { onOpenInstallModal(); setShowMenu(false); }} className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent">
+                    <Smartphone size={16} /> Instalar Aplicativo
+                  </button>
+                )}
                 {isAdmin && (
                   <>
                     <button onClick={() => { setIsAICreditsModalOpen(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent">
@@ -1885,14 +1912,6 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
                     <Users size={16} /> {isAdmin ? 'Gestão de Equipe' : 'Trocar de Perfil'}
                   </button>
                 )}
-                {deferredPrompt && (
-                  <button 
-                    onClick={() => { onInstallApp?.(); setShowMenu(false); }} 
-                    className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent"
-                  >
-                    <Smartphone size={16} /> Instalar Aplicativo
-                  </button>
-                )}
                 {onLogout && (
                   <button 
                     onClick={() => { onLogout(); setShowMenu(false); }} 
@@ -1908,41 +1927,86 @@ const SettingsTab: React.FC<Props> = ({ products, setProducts, settings, setSett
       </div>
 
       <div className="max-w-xl mx-auto space-y-4">
-        {/* DADOS DA LOJA (Compacto) */}
-        <div className="bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm space-y-5">
+        {/* INSTALAR APP (Banner de Destaque) */}
+        <div>
+          <button
+            type="button"
+            onClick={onOpenInstallModal || onInstallApp}
+            className="w-full p-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[2rem] text-left transition-all active:scale-98 flex items-center gap-3 shadow-md shadow-blue-500/20 cursor-pointer group"
+          >
+            <div className="w-11 h-11 bg-white/20 backdrop-blur-xs text-white rounded-2xl flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform shrink-0">
+              <Smartphone size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[9px] font-black text-blue-100 uppercase tracking-widest">Aplicativo Oficial</p>
+              <p className="text-xs font-black text-white uppercase tracking-tight truncate">Instalar no Aparelho</p>
+              <p className="text-[10px] text-blue-100 truncate">Android, iPhone e Computador</p>
+            </div>
+            <ChevronRight size={16} className="text-white/80 shrink-0" />
+          </button>
+        </div>
+
+        {/* ALERTA AMIGÁVEL SE O PERFIL ESTIVER INCOMPLETO */}
+        {(!settings.storePhone || !settings.storeName || settings.storeName === 'Minha Loja') && (
+          <div className="p-4 bg-blue-50/80 border border-blue-200 rounded-[2rem] flex items-center gap-3.5 animate-in slide-in-from-top-2">
+            <div className="w-9 h-9 bg-blue-600 text-white rounded-xl flex items-center justify-center shrink-0 shadow-sm">
+              <Sparkles size={18} />
+            </div>
+            <div className="flex-1 min-w-0 text-xs text-slate-700">
+              <span className="font-black text-blue-900 block uppercase text-[10px] tracking-wider">Complete os dados da sua Loja</span>
+              <span className="text-[11px] text-slate-600">Preencha seu <strong>WhatsApp</strong> abaixo para enviar orçamentos e comprovantes para seus clientes.</span>
+            </div>
+          </div>
+        )}
+
+        {/* DADOS DA LOJA */}
+        <div id="tour-store-profile" className="bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm space-y-5">
+           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+                  <Store size={15} />
+                </div>
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Perfil & Identidade da Loja</h3>
+              </div>
+              <span className="text-[9px] font-black px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full uppercase tracking-wider">
+                Salva Automaticamente
+              </span>
+           </div>
+
            <div className="flex items-center gap-4 mb-2">
               <div className="relative group shrink-0">
                 <div className="w-16 h-16 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center overflow-hidden">
                   {isCompressing ? <Loader2 className="animate-spin text-blue-500" size={20} /> : settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <ImageIcon size={24} className="text-slate-300" />}
                 </div>
                 {isAdmin && (
-                  <button onClick={triggerUpload} className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-2 rounded-xl shadow-lg active:scale-90 transition-all">
+                  <button onClick={triggerUpload} className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-2 rounded-xl shadow-lg active:scale-90 transition-all cursor-pointer" title="Alterar Foto/Logo">
                     <Camera size={14} />
                   </button>
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Nome da Loja</label>
-                 <input readOnly={!isAdmin} type="text" value={settings.storeName} onChange={(e) => updateSetting('storeName', e.target.value)} className={`w-full bg-transparent border-none p-0 font-black text-lg text-slate-800 outline-none truncate ${isAdmin ? 'placeholder:text-slate-300' : ''}`} placeholder="Nome da Loja" />
+                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Nome da Loja *</label>
+                 <input readOnly={!isAdmin} type="text" value={settings.storeName} onChange={(e) => updateSetting('storeName', e.target.value)} className={`w-full bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl font-black text-base text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all ${isAdmin ? 'placeholder:text-slate-300' : ''}`} placeholder="Nome da Loja" />
               </div>
            </div>
 
            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-1">
-                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={10}/> Endereço</label>
-                 <input readOnly={!isAdmin} type="text" value={settings.storeAddress || ''} onChange={(e) => updateSetting('storeAddress', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="Endereço completo" />
+                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Phone size={11} className="text-emerald-500"/> Telefone / WhatsApp da Loja *</label>
+                 <input readOnly={!isAdmin} type="text" value={settings.storePhone || ''} onChange={(e) => updateSetting('storePhone', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all" placeholder="(00) 00000-0000" />
+                 <p className="text-[9px] text-slate-400">Usado no envio automático de mensagens e recibos no WhatsApp dos seus clientes.</p>
               </div>
               <div className="space-y-1">
-                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Phone size={10}/> Telefone</label>
-                 <input readOnly={!isAdmin} type="text" value={settings.storePhone || ''} onChange={(e) => updateSetting('storePhone', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="(00) 00000-0000" />
+                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={11}/> Endereço da Loja</label>
+                 <input readOnly={!isAdmin} type="text" value={settings.storeAddress || ''} onChange={(e) => updateSetting('storeAddress', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all" placeholder="Rua, Número, Bairro, Cidade" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><FileText size={10}/> CNPJ da Empresa</label>
+                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><FileText size={11}/> CNPJ da Empresa</label>
                    <input readOnly={!isAdmin} type="text" value={settings.storeCnpj || ''} onChange={(e) => updateSetting('storeCnpj', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="00.000.000/0000-00" />
                 </div>
                 <div className="space-y-1">
-                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><FileText size={10}/> Inscrição Estadual (IE)</label>
+                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><FileText size={11}/> Inscrição Estadual (IE)</label>
                    <input readOnly={!isAdmin} type="text" value={settings.storeStateRegistration || ''} onChange={(e) => updateSetting('storeStateRegistration', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="Inscrição Estadual / Isento" />
                 </div>
               </div>

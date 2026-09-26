@@ -116,6 +116,64 @@ export const NfceNfeManager: React.FC<Props> = ({
     };
   });
 
+  // Sincroniza dinamicamente dados da empresa vindos de AppSettings para a configuração SEFAZ
+  useEffect(() => {
+    let changed = false;
+    const updatedConfig = { ...config };
+
+    if (settings.storeName && settings.storeName !== config.companyName) {
+      updatedConfig.companyName = settings.storeName;
+      updatedConfig.tradeName = settings.storeName;
+      changed = true;
+    }
+    if (settings.storeCnpj && settings.storeCnpj !== config.cnpj) {
+      updatedConfig.cnpj = settings.storeCnpj;
+      changed = true;
+    }
+    if (settings.storeStateRegistration && settings.storeStateRegistration !== config.ie) {
+      updatedConfig.ie = settings.storeStateRegistration;
+      changed = true;
+    }
+    
+    // Se o endereço da loja mudar, tentar extrair cidade / UF de forma inteligente
+    if (settings.storeAddress && settings.storeAddress.trim() !== "") {
+      const parts = settings.storeAddress.split(',').map(p => p.trim());
+      if (parts.length >= 2) {
+        const lastPart = parts[parts.length - 1].toUpperCase();
+        if (lastPart.length === 2) {
+          if (lastPart !== config.uf) {
+            updatedConfig.uf = lastPart;
+            changed = true;
+          }
+          const cityPart = parts[parts.length - 2];
+          if (cityPart && cityPart !== config.cityName) {
+            updatedConfig.cityName = cityPart;
+            changed = true;
+          }
+        } else if (lastPart.includes('-')) {
+          const subParts = lastPart.split('-').map(sp => sp.trim());
+          const stateCode = subParts[subParts.length - 1];
+          if (stateCode.length === 2) {
+            if (stateCode !== config.uf) {
+              updatedConfig.uf = stateCode;
+              changed = true;
+            }
+            const cityCode = subParts[0];
+            if (cityCode && cityCode !== config.cityName) {
+              updatedConfig.cityName = cityCode;
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      setConfig(updatedConfig);
+      localStorage.setItem(`${storagePrefix}config`, JSON.stringify(updatedConfig));
+    }
+  }, [settings, storagePrefix]);
+
   const handleSaveConfig = () => {
     try {
       localStorage.setItem(`${storagePrefix}config`, JSON.stringify(config));

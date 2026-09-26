@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, ShoppingBag, MessageCircle, ArrowLeft, Loader2, Image as ImageIcon, Tag, Share2, Star, ChevronDown, Home, FileText, User, PlayCircle, Heart, MoreVertical, Volume2, VolumeX, Plus, Music, Bookmark, Send } from 'lucide-react';
+import { Search, ShoppingBag, MessageCircle, ArrowLeft, Loader2, Image as ImageIcon, Tag, Share2, Star, ChevronDown, Home, FileText, User, PlayCircle, Heart, MoreVertical, Volume2, VolumeX, Plus, Music, Bookmark, Send, Smartphone, Download } from 'lucide-react';
 import { Product, AppSettings } from '../types';
 import { OnlineDB } from '../utils/api';
+import { InstallAppModal } from './InstallAppModal';
 
 interface CustomerCatalogProps {
   tenantId?: string | null;
   catalogSlug?: string | null;
+  deferredPrompt?: any;
 }
 
-const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug }) => {
+const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug, deferredPrompt }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -19,6 +21,59 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [playingStates, setPlayingStates] = useState<Record<string, boolean>>({});
   const [resolvedTikToks, setResolvedTikToks] = useState<Record<string, string>>({});
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [pwaPrompt, setPwaPrompt] = useState<any>(deferredPrompt || (typeof window !== 'undefined' ? (window as any).deferredPrompt : null));
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    const isStandaloneMode = 
+      window.matchMedia('(display-mode: standalone)').matches || 
+      (window.navigator as any).standalone === true ||
+      document.referrer.includes('android-app://');
+    setIsStandalone(isStandaloneMode);
+
+    const handlePrompt = (e: any) => {
+      e.preventDefault();
+      setPwaPrompt(e);
+      (window as any).deferredPrompt = e;
+    };
+
+    window.addEventListener('beforeinstallprompt', handlePrompt);
+    if (typeof window !== 'undefined' && (window as any).deferredPrompt) {
+      setPwaPrompt((window as any).deferredPrompt);
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handlePrompt);
+  }, []);
+
+  useEffect(() => {
+    if (deferredPrompt) {
+      setPwaPrompt(deferredPrompt);
+      if (typeof window !== 'undefined') {
+        (window as any).deferredPrompt = deferredPrompt;
+      }
+    }
+  }, [deferredPrompt]);
+
+  const handleInstallClick = async () => {
+    const promptToUse = pwaPrompt || (typeof window !== 'undefined' ? (window as any).deferredPrompt : null);
+    if (promptToUse) {
+      try {
+        promptToUse.prompt();
+        const { outcome } = await promptToUse.userChoice;
+        if (outcome === 'accepted') {
+          setPwaPrompt(null);
+          if (typeof window !== 'undefined') (window as any).deferredPrompt = null;
+          setIsInstallModalOpen(false);
+          setIsStandalone(true);
+          return;
+        }
+      } catch (err) {
+        console.error("Erro ao acionar instalação nativa:", err);
+      }
+    }
+    setIsInstallModalOpen(true);
+  };
 
   useEffect(() => {
     const resolveTikToks = async () => {
@@ -223,9 +278,42 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
 
   return (
     <div className="fixed inset-0 w-full bg-black text-white overflow-hidden font-sans">
+      {/* Top Banner Fixo de Instalação do App no Topo da Página da Loja */}
+      {!isStandalone && (
+        <div className="absolute top-0 left-0 right-0 z-30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white px-3 py-2 shadow-lg flex items-center justify-between gap-2 pointer-events-auto border-b border-white/10 animate-in slide-in-from-top duration-300">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center shrink-0 backdrop-blur-xs shadow-inner">
+              <Smartphone size={16} className="text-white animate-pulse" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-black uppercase tracking-tight text-white truncate">
+                  Instalar App {settings?.storeName ? `da ${settings.storeName}` : 'da Loja'}
+                </span>
+                <span className="bg-amber-400 text-slate-950 font-black text-[8px] uppercase px-1.5 py-0.5 rounded-full shrink-0 shadow-xs">
+                  Grátis
+                </span>
+              </div>
+              <p className="text-[9px] text-blue-100 font-bold truncate leading-tight">
+                Acesse a loja em 1 toque na tela inicial do seu celular
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleInstallClick}
+            className="px-3.5 py-1.5 bg-white hover:bg-blue-50 active:scale-95 text-blue-700 font-black text-[10px] uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center gap-1.5 shrink-0 cursor-pointer border border-white/30"
+            title="Instalar aplicativo oficial da loja"
+          >
+            <Download size={13} className="animate-bounce" />
+            <span>Instalar App</span>
+          </button>
+        </div>
+      )}
+
       {/* Top Bar - TikTok Style */}
       {viewMode !== 'profile' && (
-      <div className="absolute top-0 left-0 right-0 z-20 pt-8 pb-4 px-4 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
+      <div className={`absolute ${!isStandalone ? 'top-12' : 'top-0'} left-0 right-0 z-20 pt-4 pb-4 px-4 flex justify-between items-center bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none transition-all`}>
         
         {isSearchOpen ? (
           <div className="w-full flex items-center gap-2 pointer-events-auto bg-black/50 backdrop-blur-md rounded-full px-4 py-2 border border-white/10">
@@ -319,7 +407,7 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
 
       {/* Profile View */}
       {viewMode === 'profile' && settings && (
-        <div className="h-full w-full bg-black flex flex-col items-center pt-20 px-6 text-center overflow-y-auto pb-24 hide-scrollbar [&::-webkit-scrollbar]:hidden">
+        <div className={`h-full w-full bg-black flex flex-col items-center ${!isStandalone ? 'pt-28' : 'pt-20'} px-6 text-center overflow-y-auto pb-24 hide-scrollbar [&::-webkit-scrollbar]:hidden`}>
           <div className="w-32 h-32 rounded-full border-2 border-white/20 overflow-hidden mb-6 bg-zinc-900">
             {settings.logoUrl ? (
               <img src={settings.logoUrl} className="w-full h-full object-cover" />
@@ -331,9 +419,32 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
           </div>
           
           <h1 className="text-2xl font-bold text-white mb-2">{settings.storeName}</h1>
-          <p className="text-zinc-400 text-sm mb-8">@{settings.catalogSlug || catalogSlug || settings.storeName.replace(/\s+/g, '').toLowerCase()}</p>
-          
+          <p className="text-zinc-400 text-sm mb-6">@{settings.catalogSlug || catalogSlug || settings.storeName.replace(/\s+/g, '').toLowerCase()}</p>
+
           <div className="w-full max-w-xs space-y-4">
+            {/* Bloco de Instalação no Perfil */}
+            {!isStandalone && (
+              <div className="bg-gradient-to-br from-blue-600/30 to-indigo-600/20 p-4 rounded-2xl flex flex-col items-center gap-2.5 border border-blue-500/40 text-center shadow-lg">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md">
+                  <Smartphone size={20} className="animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase text-blue-200">Aplicativo da Loja</h3>
+                  <p className="text-[10px] text-zinc-300 mt-0.5">
+                    Instale no seu celular para acessar a loja com 1 toque na tela inicial.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleInstallClick}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase text-[10px] tracking-wider shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Download size={14} />
+                  <span>Instalar App no Celular</span>
+                </button>
+              </div>
+            )}
+
             {settings.storePhone && (
               <div className="bg-zinc-900/50 p-4 rounded-xl flex items-center gap-4 border border-white/5">
                 <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
@@ -363,7 +474,7 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
 
       {/* Grid View */}
       {viewMode === 'grid' && (
-        <div className="h-full w-full overflow-y-auto bg-black pt-24 pb-24 px-2 hide-scrollbar [&::-webkit-scrollbar]:hidden">
+        <div className={`h-full w-full overflow-y-auto bg-black ${!isStandalone ? 'pt-28' : 'pt-24'} pb-24 px-2 hide-scrollbar [&::-webkit-scrollbar]:hidden`}>
           {displayProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
               <Search size={48} className="mb-4 opacity-50" />
@@ -642,6 +753,17 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
           <span className="text-[10px] font-medium">Perfil</span>
         </button>
       </div>
+
+      {/* Modal Interativo de Instalação do App */}
+      <InstallAppModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+        deferredPrompt={pwaPrompt || (typeof window !== 'undefined' ? (window as any).deferredPrompt : null)}
+        onInstallSuccess={() => {
+          setIsInstallModalOpen(false);
+          setIsStandalone(true);
+        }}
+      />
     </div>
   );
 };

@@ -164,6 +164,46 @@ export interface Supplier {
   createdAt: string;
 }
 
+export interface TaxProfile {
+  id: string;
+  tenantId?: string;
+  name: string;
+  description?: string;
+  crtTaxRegime?: 'simples' | 'normal' | 'mei' | 'excesso_sublimite';
+  crtCode?: '1' | '2' | '3' | '4' | string;
+  csosnCst: string;
+  origin: string;
+  cstPis: string;
+  cstCofins: string;
+  defaultCfopInternal: string;
+  defaultCfopInterstate?: string;
+  icmsAliquota?: number;
+  pisAliquota?: number;
+  cofinsAliquota?: number;
+  isDefault?: boolean;
+  
+  // Novos campos estruturados do ERP
+  tipoOperacao?: 'saida' | 'entrada';
+  destinoOperacao?: 'interna' | 'interestadual' | 'exterior';
+  tipoDestinatario?: 'contribuinte' | 'nao_contribuinte' | 'produtor_rural';
+  modalidadeBc?: 'op' | 'pauta' | 'tabelado' | 'mva';
+  mvaPercentual?: number;
+  icmsStAliquotaDestino?: number;
+  modalidadeBcSt?: 'op' | 'pauta' | 'tabelado' | 'mva';
+  fcpAliquota?: number;
+  pisTipoCalculo?: 'percentual' | 'valor';
+  cofinsTipoCalculo?: 'percentual' | 'valor';
+  cstIpi?: string;
+  cEnqIpi?: string;
+  issExigibilidade?: 'exigivel' | 'nao_incidencia' | 'isencao' | 'exportacao' | 'suspenso';
+  issRegimeEspecial?: 'microempresa_municipal' | 'estimativa' | 'sociedade_profissionais' | 'cooperativa' | 'mei';
+  issAliquota?: number;
+  issRetencao?: boolean;
+  issResponsavelRetencao?: 'prestador' | 'tomador';
+  itemLc116?: string;
+  codigoTributacaoNacional?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -183,7 +223,72 @@ export interface Product {
   ncm?: string;
   cest?: string;
   cfop?: string;
+  csosnCst?: string;
+  origin?: string;
+  cstPis?: string;
+  cstCofins?: string;
+  crtCode?: '1' | '2' | '3' | '4' | string;
+  taxProfileId?: string;
+  taxProfileName?: string;
+  icmsAliquota?: number;
+  pisAliquota?: number;
+  cofinsAliquota?: number;
   discount?: number;
+
+  // Novos campos sincronizados com o Perfil Tributário
+  tipoOperacao?: 'saida' | 'entrada';
+  destinoOperacao?: 'interna' | 'interestadual' | 'exterior';
+  tipoDestinatario?: 'contribuinte' | 'nao_contribuinte' | 'produtor_rural';
+  modalidadeBc?: 'op' | 'pauta' | 'tabelado' | 'mva';
+  mvaPercentual?: number;
+  icmsStAliquotaDestino?: number;
+  modalidadeBcSt?: 'op' | 'pauta' | 'tabelado' | 'mva';
+  fcpAliquota?: number;
+  pisTipoCalculo?: 'percentual' | 'valor';
+  cofinsTipoCalculo?: 'percentual' | 'valor';
+  cstIpi?: string;
+  cEnqIpi?: string;
+  issExigibilidade?: 'exigivel' | 'nao_incidencia' | 'isencao' | 'exportacao' | 'suspenso';
+  issRegimeEspecial?: 'microempresa_municipal' | 'estimativa' | 'sociedade_profissionais' | 'cooperativa' | 'mei';
+  issAliquota?: number;
+  issRetencao?: boolean;
+  issResponsavelRetencao?: 'prestador' | 'tomador';
+  itemLc116?: string;
+  codigoTributacaoNacional?: string;
+}
+
+export interface FiscalNcmRecord {
+  code: string;
+  description: string;
+  cest?: string;
+  cfop?: string;
+  aliquotaNac?: number;
+  aliquotaImp?: number;
+  category?: string;
+}
+
+export interface FiscalCestRecord {
+  code: string;
+  ncm?: string;
+  description: string;
+  segment?: string;
+}
+
+export interface FiscalCfopRecord {
+  code: string;
+  description: string;
+  type: 'entrada' | 'saida';
+  application?: string;
+}
+
+export interface FiscalMatchResult {
+  ncm: string;
+  ncmDescription: string;
+  cest?: string;
+  cfop: string;
+  confidence: 'high' | 'medium' | 'low';
+  source: 'database' | 'default' | 'ai';
+  alternatives?: Array<{ code: string; description: string; score: number }>;
 }
 
 export interface Sale {
@@ -478,7 +583,7 @@ export interface NfceNfeProductItem {
   unitPrice: number;
   totalPrice: number;
   discount?: number;
-  origin?: number; // 0 - Nacional, 1 - Importação Direta, 2 - Mercado Interno
+  origin?: number | string; // 0 - Nacional, 1 - Importação Direta, 2 - Mercado Interno
   csosn?: string; // 102, 500, 101, 400
   cst?: string;
   icmsRate?: number;
@@ -581,6 +686,8 @@ export interface NfceNfeConfig {
   uf: string;
   cnae: string;
   taxRegime: 'simples_nacional' | 'mei' | 'lucro_presumido' | 'lucro_real';
+  crt?: '1' | '2' | '3' | '4' | string;
+  crtCode?: '1' | '2' | '3' | '4' | string;
   csosnDefault: string; // 102, 500, etc.
   cfopDefault: string; // 5102, 5405
   ncmDefault: string; // 8517.79.00

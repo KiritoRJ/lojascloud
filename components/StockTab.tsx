@@ -1,12 +1,21 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle, LayoutGrid, Grid, List, Maximize2, Rows, Sparkles, ChevronDown, ChevronUp, CheckCircle2, Tag, FileText, Image as ImageIcon } from 'lucide-react';
-import { Product, AppSettings } from '../types';
+import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle, LayoutGrid, Grid, List, Maximize2, Rows, Sparkles, ChevronDown, ChevronUp, CheckCircle2, Tag, FileText, Sliders, Image as ImageIcon } from 'lucide-react';
+import { Product, AppSettings, FiscalMatchResult } from '../types';
 import { formatCurrency, parseCurrencyString, playBeepSound } from '../utils';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import { analyzeProductImage } from '../utils/productAi';
 import { OnlineDB } from '../utils/api';
 import { AICreditsModal } from './AICreditsModal';
+import { findMatchingFiscalData } from '../utils/fiscalDatabase';
+import { 
+  getStoredTaxProfiles, 
+  CRT_OPTIONS,
+  ORIGIN_OPTIONS, 
+  CSOSN_SIMPLES_OPTIONS, 
+  CST_ICMS_NORMAL_OPTIONS, 
+  CST_PIS_COFINS_OPTIONS 
+} from '../utils/taxProfiles';
 
 interface Props {
   products: Product[];
@@ -37,9 +46,19 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
+  const availableTaxProfiles = getStoredTaxProfiles(tenantId);
+  const defaultProfile = availableTaxProfiles.find(p => p.isDefault) || availableTaxProfiles[0];
+
   const [formData, setFormData] = useState<Partial<Product>>({
     name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null, barcode: '',
-    description: '', category: '', brand: '', model: '', ncm: '', cest: '', cfop: '',
+    description: '', category: '', brand: '', model: '', ncm: '', cest: '', 
+    cfop: defaultProfile?.defaultCfopInternal || '5102',
+    csosnCst: defaultProfile?.csosnCst || '0102',
+    origin: defaultProfile?.origin || '0',
+    cstPis: defaultProfile?.cstPis || '49',
+    cstCofins: defaultProfile?.cstCofins || '49',
+    taxProfileId: defaultProfile?.id || '',
+    taxProfileName: defaultProfile?.name || '',
     promotionalPrice: 0, discount: 0, isPromotion: false
   });
 
@@ -50,6 +69,50 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const [aiErrorBadge, setAiErrorBadge] = useState<string | null>(null);
   const [showFiscalFields, setShowFiscalFields] = useState(false);
   const [showDiscountFields, setShowDiscountFields] = useState(false);
+  const [showAdvancedProductTaxes, setShowAdvancedProductTaxes] = useState(false);
+
+  // Sincronização Fiscal Inteligente por Nome (NCM, CEST, CFOP)
+  const [fiscalMatchSuggestion, setFiscalMatchSuggestion] = useState<FiscalMatchResult | null>(null);
+  const [isSyncingFiscal, setIsSyncingFiscal] = useState(false);
+  const fiscalDebounceRef = useRef<any>(null);
+
+  const syncFiscalByName = async (name: string, category?: string, autoApply = false) => {
+    if (!name || name.trim().length < 2) {
+      setFiscalMatchSuggestion(null);
+      return;
+    }
+    setIsSyncingFiscal(true);
+    try {
+      const match = await findMatchingFiscalData(name, category);
+      setFiscalMatchSuggestion(match);
+      if (match.ncm) {
+        if (autoApply || !formData.ncm || formData.ncm === '8517.79.00') {
+          setFormData(prev => ({
+            ...prev,
+            ncm: match.ncm,
+            cest: match.cest || prev.cest || '',
+            cfop: match.cfop || prev.cfop || '5102'
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao sincronizar fiscal pelo nome:', e);
+    } finally {
+      setIsSyncingFiscal(false);
+    }
+  };
+
+  const handleNameChange = (val: string) => {
+    setFormData(f => ({ ...f, name: val }));
+    if (fiscalDebounceRef.current) clearTimeout(fiscalDebounceRef.current);
+    if (val.trim().length >= 3) {
+      fiscalDebounceRef.current = setTimeout(() => {
+        syncFiscalByName(val, formData.category, true);
+      }, 350);
+    } else {
+      setFiscalMatchSuggestion(null);
+    }
+  };
 
   // Créditos de IA no Estoque
   const [aiCredits, setAiCredits] = useState<number>(0);
@@ -367,6 +430,21 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     }
 
     if (!formData.name) return alert('Nome é obrigatório.');
+
+    // Bloqueio de Divergência CRT vs CST/CSOSN (Motor de Amortecimento de Erros)
+    const currentCrt = formData.crtCode || '1';
+    const isSimplesOrMei = currentCrt === '1' || currentCrt === '4';
+    const isCst = (formData.csosnCst || '').length <= 2;
+
+    if (isSimplesOrMei && isCst) {
+      alert('Bloqueio de Divergência: Empresas do Simples Nacional ou MEI (CRT 1 ou 4) não podem usar CST de ICMS normal. Escolha um CSOSN (ex: 102, 500).');
+      return;
+    }
+    if (!isSimplesOrMei && !isCst) {
+      alert('Bloqueio de Divergência: Empresas de Regime Normal ou Simples com Excesso (CRT 3 ou 2) devem usar CST de ICMS (ex: 00, 60). Escolha um CST.');
+      return;
+    }
+
     setIsSaving(true);
     
     try {
@@ -398,6 +476,8 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const resetForm = () => {
     clearStockDraft();
     setEditingProduct(null);
+    setFiscalMatchSuggestion(null);
+    const defProf = availableTaxProfiles.find(p => p.isDefault) || availableTaxProfiles[0];
     setFormData({
       name: '',
       costPrice: 0,
@@ -411,7 +491,13 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
       model: '',
       ncm: '',
       cest: '',
-      cfop: '',
+      cfop: defProf?.defaultCfopInternal || '5102',
+      csosnCst: defProf?.csosnCst || '0102',
+      origin: defProf?.origin || '0',
+      cstPis: defProf?.cstPis || '49',
+      cstCofins: defProf?.cstCofins || '49',
+      taxProfileId: defProf?.id || '',
+      taxProfileName: defProf?.name || '',
       promotionalPrice: 0,
       discount: 0,
       isPromotion: false,
@@ -420,6 +506,15 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     setAiErrorBadge(null);
     setShowFiscalFields(false);
     setShowDiscountFields(false);
+  };
+
+  const handleStartEditProduct = (product: Product) => {
+    setEditingProduct(product);
+    setFormData(product);
+    if (product.name) {
+      syncFiscalByName(product.name, product.category, false);
+    }
+    setIsModalOpen(true);
   };
 
   const filtered = products.filter(p => 
@@ -547,7 +642,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                 <>
                   <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
                     <button 
-                      onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setFormData(product); setIsModalOpen(true); }} 
+                      onClick={(e) => { e.stopPropagation(); handleStartEditProduct(product); }} 
                       className="p-1.5 bg-white/90 rounded-lg text-slate-600 shadow-sm active:scale-90 transition-all"
                     >
                       <Edit3 size={12} />
@@ -586,7 +681,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                    <p className="font-black text-blue-600 text-xs sm:text-sm">{formatCurrency(product.salePrice)}</p>
                    <div className="flex gap-1.5">
                       <button 
-                        onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setFormData(product); setIsModalOpen(true); }} 
+                        onClick={(e) => { e.stopPropagation(); handleStartEditProduct(product); }} 
                         className="p-2 bg-slate-100 rounded-xl text-slate-600 active:scale-90 transition-all hover:bg-slate-200"
                       >
                         <Edit3 size={14} />
@@ -773,17 +868,68 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
 
               {/* Campos do Formulário */}
               <div className="space-y-4">
-                {/* Nome do Produto */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                    Nome do Produto <span className="text-red-500">*</span>
-                  </label>
+                {/* Nome do Produto com Sincronização Fiscal Inteligente */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between ml-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      Nome do Produto <span className="text-red-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => syncFiscalByName(formData.name || '', formData.category, true)}
+                      disabled={isSyncingFiscal || !formData.name?.trim()}
+                      className="text-[9px] font-black uppercase text-emerald-600 hover:text-emerald-700 flex items-center gap-1 transition-all disabled:opacity-40 cursor-pointer"
+                      title="Sincronizar Códigos Fiscais (NCM, CEST, CFOP) com base no nome"
+                    >
+                      {isSyncingFiscal ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                      <span>Sincronizar Fiscal</span>
+                    </button>
+                  </div>
                   <input 
                     value={formData.name || ''} 
-                    onChange={(e)=>setFormData(f=>({...f,name:e.target.value}))} 
-                    placeholder="Ex: Fone de Ouvido Bluetooth JBL Tune 510BT" 
+                    onChange={(e) => handleNameChange(e.target.value)} 
+                    onBlur={(e) => {
+                      if (e.target.value.trim().length >= 2) {
+                        syncFiscalByName(e.target.value, formData.category, true);
+                      }
+                    }}
+                    placeholder="Ex: Arroz Branco Tipo 1 5kg, Feijão Carioca, Coca-Cola 2L..." 
                     className="w-full p-3.5 bg-slate-50 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-blue-600 border border-slate-100" 
                   />
+
+                  {/* Alerta de Sincronização Fiscal Inteligente */}
+                  {fiscalMatchSuggestion && fiscalMatchSuggestion.ncm && (
+                    <div className="bg-emerald-50 border border-emerald-200/80 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs animate-in fade-in">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Sparkles size={15} className="text-emerald-600 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-bold text-[11px] text-emerald-950 truncate">
+                            Fiscal Sincronizado: <span className="font-mono font-black text-emerald-700">NCM {fiscalMatchSuggestion.ncm}</span> ({fiscalMatchSuggestion.ncmDescription})
+                          </p>
+                          <p className="text-[10px] text-emerald-700/80">
+                            CFOP: <strong>{fiscalMatchSuggestion.cfop}</strong> {fiscalMatchSuggestion.cest ? `• CEST: ${fiscalMatchSuggestion.cest}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => ({
+                              ...prev,
+                              ncm: fiscalMatchSuggestion.ncm,
+                              cest: fiscalMatchSuggestion.cest || prev.cest || '',
+                              cfop: fiscalMatchSuggestion.cfop || prev.cfop || '5102'
+                            }));
+                            setShowFiscalFields(true);
+                          }}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all shadow-sm cursor-pointer"
+                        >
+                          {formData.ncm === fiscalMatchSuggestion.ncm ? '✓ Sincronizado' : 'Aplicar'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Marca e Modelo */}
@@ -928,30 +1074,202 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                   />
                 </div>
 
-                {/* Acordeão de Informações Fiscais (Apenas se o Modo Fiscal estiver ativo para a loja) */}
-                {isFiscalModeActive && (
-                  <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowFiscalFields(!showFiscalFields)}
-                      className="w-full flex items-center justify-between text-[9px] font-black text-slate-600 uppercase tracking-wider"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <FileText size={13} className="text-blue-500" />
-                        <span>Informações Fiscais (NCM, CEST, CFOP)</span>
-                      </div>
-                      {showFiscalFields ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </button>
+                {/* Acordeão de Informações Fiscais Obrigatórias (SEFAZ / ERP) */}
+                <div className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200/80 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowFiscalFields(!showFiscalFields)}
+                    className="w-full flex items-center justify-between text-[9px] font-black text-slate-700 uppercase tracking-wider cursor-pointer"
+                  >
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <FileText size={14} className="text-emerald-600" />
+                      <span>Parâmetros Fiscais (SEFAZ / NF-e / NFC-e)</span>
+                      {formData.csosnCst && (
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono text-[8px] font-bold">
+                          {formData.csosnCst.length > 2 ? `CSOSN ${formData.csosnCst}` : `CST ${formData.csosnCst}`}
+                        </span>
+                      )}
+                      {formData.cfop && (
+                        <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-mono text-[8px] font-bold">
+                          CFOP {formData.cfop}
+                        </span>
+                      )}
+                    </div>
+                    {showFiscalFields ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
 
-                    {showFiscalFields && (
-                      <div className="grid grid-cols-3 gap-2 pt-2">
+                  {showFiscalFields && (
+                    <div className="space-y-3.5 pt-2 animate-in fade-in border-t border-slate-200/60">
+                      
+                      {/* 💡 Dica de Ouro: Perfil Tributário / Regras Fiscais */}
+                      <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-200/80 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-black text-blue-900 uppercase tracking-wider flex items-center gap-1">
+                            <Sparkles size={12} className="text-blue-600" />
+                            <span>Perfil Tributário (Regra Fiscal Automática)</span>
+                          </label>
+                          <span className="text-[8px] font-bold bg-blue-600 text-white px-1.5 py-0.2 rounded-full uppercase">
+                            Dica de Ouro
+                          </span>
+                        </div>
+
+                        <select
+                          value={formData.taxProfileId || ''}
+                          onChange={(e) => {
+                            const selectedId = e.target.value;
+                            if (!selectedId) {
+                              setFormData(f => ({ ...f, taxProfileId: '', taxProfileName: '' }));
+                              return;
+                            }
+                            const prof = availableTaxProfiles.find(p => p.id === selectedId);
+                            if (prof) {
+                              setFormData(f => ({
+                                ...f,
+                                taxProfileId: prof.id,
+                                taxProfileName: prof.name,
+                                crtCode: prof.crtCode || (prof.crtTaxRegime === 'normal' ? '3' : '1'),
+                                csosnCst: prof.csosnCst,
+                                origin: prof.origin,
+                                cstPis: prof.cstPis,
+                                cstCofins: prof.cstCofins,
+                                cfop: prof.defaultCfopInternal || '5102',
+                                icmsAliquota: prof.icmsAliquota || 0,
+                                pisAliquota: prof.pisAliquota || 0,
+                                cofinsAliquota: prof.cofinsAliquota || 0,
+                                tipoOperacao: prof.tipoOperacao,
+                                destinoOperacao: prof.destinoOperacao,
+                                tipoDestinatario: prof.tipoDestinatario,
+                                modalidadeBc: prof.modalidadeBc,
+                                mvaPercentual: prof.mvaPercentual,
+                                icmsStAliquotaDestino: prof.icmsStAliquotaDestino,
+                                modalidadeBcSt: prof.modalidadeBcSt,
+                                fcpAliquota: prof.fcpAliquota,
+                                pisTipoCalculo: prof.pisTipoCalculo,
+                                cofinsTipoCalculo: prof.cofinsTipoCalculo,
+                                cstIpi: prof.cstIpi,
+                                cEnqIpi: prof.cEnqIpi,
+                                issExigibilidade: prof.issExigibilidade,
+                                issRegimeEspecial: prof.issRegimeEspecial,
+                                issAliquota: prof.issAliquota,
+                                issRetencao: prof.issRetencao,
+                                issResponsavelRetencao: prof.issResponsavelRetencao,
+                                itemLc116: prof.itemLc116,
+                                codigoTributacaoNacional: prof.codigoTributacaoNacional
+                              }));
+                            }
+                          }}
+                          className="w-full p-2.5 bg-white rounded-xl font-black text-xs text-slate-800 outline-none border border-blue-200 focus:ring-2 focus:ring-blue-600"
+                        >
+                          <option value="">-- Selecionar Perfil Tributário (Ou Preencher Manualmente) --</option>
+                          {availableTaxProfiles.map(p => (
+                            <option key={p.id} value={p.id}>{p.name} {p.isDefault ? '★ (Padrão)' : ''}</option>
+                          ))}
+                        </select>
+
+                        {formData.taxProfileName && (
+                          <p className="text-[9px] font-bold text-emerald-700 bg-emerald-50 p-1.5 rounded-lg border border-emerald-200 flex items-center gap-1">
+                            <CheckCircle2 size={11} className="text-emerald-600 shrink-0" />
+                            <span>Regra aplicada: <strong>{formData.taxProfileName}</strong></span>
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Código de Regime Tributário (CRT) */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                          Código de Regime Tributário (CRT) <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={formData.crtCode || '1'}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setFormData(f => ({ ...f, crtCode: code }));
+                          }}
+                          className="w-full p-2.5 bg-white rounded-xl font-bold text-xs text-slate-800 outline-none border border-slate-200 focus:ring-2 focus:ring-blue-600"
+                        >
+                          {CRT_OPTIONS.map(opt => (
+                            <option key={opt.code} value={opt.code}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 4. CSOSN ou CST (Regime ICMS) */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                          4. CSOSN / CST (Regime de Tributação ICMS) <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={formData.csosnCst || '0102'}
+                          onChange={(e) => setFormData(f => ({ ...f, csosnCst: e.target.value }))}
+                          className="w-full p-2.5 bg-white rounded-xl font-bold text-xs text-slate-800 outline-none border border-slate-200 focus:ring-2 focus:ring-blue-600"
+                        >
+                          <optgroup label="Simples Nacional (CSOSN)">
+                            {CSOSN_SIMPLES_OPTIONS.map(opt => (
+                              <option key={opt.code} value={opt.code}>{opt.label}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Regime Normal (CST ICMS)">
+                            {CST_ICMS_NORMAL_OPTIONS.map(opt => (
+                              <option key={opt.code} value={opt.code}>{opt.label}</option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
+
+                      {/* 5. Origem da Mercadoria (0 a 8) */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                          5. Origem da Mercadoria (0 a 8)
+                        </label>
+                        <select
+                          value={formData.origin || '0'}
+                          onChange={(e) => setFormData(f => ({ ...f, origin: e.target.value }))}
+                          className="w-full p-2.5 bg-white rounded-xl font-bold text-xs text-slate-800 outline-none border border-slate-200 focus:ring-2 focus:ring-blue-600"
+                        >
+                          {ORIGIN_OPTIONS.map(opt => (
+                            <option key={opt.code} value={opt.code}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 6. CST de PIS e CST de COFINS */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">CST de PIS (2 dígitos)</label>
+                          <select
+                            value={formData.cstPis || '49'}
+                            onChange={(e) => setFormData(f => ({ ...f, cstPis: e.target.value }))}
+                            className="w-full p-2.5 bg-white rounded-xl font-bold text-xs text-slate-800 outline-none border border-slate-200 focus:ring-2 focus:ring-blue-600"
+                          >
+                            {CST_PIS_COFINS_OPTIONS.map(opt => (
+                              <option key={opt.code} value={opt.code}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">CST de COFINS (2 dígitos)</label>
+                          <select
+                            value={formData.cstCofins || '49'}
+                            onChange={(e) => setFormData(f => ({ ...f, cstCofins: e.target.value }))}
+                            className="w-full p-2.5 bg-white rounded-xl font-bold text-xs text-slate-800 outline-none border border-slate-200 focus:ring-2 focus:ring-blue-600"
+                          >
+                            {CST_PIS_COFINS_OPTIONS.map(opt => (
+                              <option key={opt.code} value={opt.code}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* NCM, CEST e CFOP Padrão */}
+                      <div className="grid grid-cols-3 gap-2">
                         <div>
                           <p className="text-[8px] font-black text-slate-400 uppercase mb-1">NCM (8 dígitos)</p>
                           <input 
                             value={formData.ncm || ''} 
                             onChange={(e)=>setFormData(f=>({...f,ncm:e.target.value}))} 
-                            placeholder="Ex: 85183000"
-                            className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
+                            placeholder="Ex: 1006.30.21"
+                            className="w-full p-2.5 bg-white rounded-xl font-bold font-mono text-slate-700 outline-none text-xs border border-slate-200" 
                           />
                         </div>
                         <div>
@@ -960,22 +1278,289 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                             value={formData.cest || ''} 
                             onChange={(e)=>setFormData(f=>({...f,cest:e.target.value}))} 
                             placeholder="Código CEST"
-                            className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
+                            className="w-full p-2.5 bg-white rounded-xl font-bold font-mono text-slate-700 outline-none text-xs border border-slate-200" 
                           />
                         </div>
                         <div>
-                          <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CFOP</p>
+                          <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CFOP Interno (Venda SP/Interna)</p>
                           <input 
                             value={formData.cfop || '5102'} 
                             onChange={(e)=>setFormData(f=>({...f,cfop:e.target.value}))} 
                             placeholder="5102"
-                            className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
+                            className="w-full p-2.5 bg-white rounded-xl font-bold font-mono text-blue-700 outline-none text-xs border border-blue-200" 
                           />
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      {/* Aviso de Conversão Automática de CFOP Interestadual */}
+                      <div className="bg-purple-50 border border-purple-200 p-2.5 rounded-xl text-[10px] font-bold text-purple-900 space-y-0.5">
+                        <p className="flex items-center gap-1 font-black text-purple-950">
+                          <Tag size={12} className="text-purple-600" />
+                          <span>Conversão Automática de CFOP Interestadual:</span>
+                        </p>
+                        <p className="text-purple-800 leading-normal font-medium">
+                          Ao realizar uma venda para outro estado, o ERP altera o 1º dígito do CFOP automaticamente (ex: <strong>{(formData.cfop || '5102')}</strong> ➔ <strong>{(formData.cfop?.startsWith('5') ? '6' + formData.cfop.slice(1) : '6102')}</strong>).
+                        </p>
+                      </div>
+
+                      {/* Sub-acordeão de Parâmetros Fiscais Avançados */}
+                      <div className="border border-slate-200 rounded-xl overflow-hidden mt-3 bg-white">
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvancedProductTaxes(!showAdvancedProductTaxes)}
+                          className="w-full flex items-center justify-between p-3 text-[9px] font-black uppercase text-slate-600 hover:text-blue-600 tracking-wider bg-slate-50 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <Sliders size={13} className="text-blue-500" />
+                            <span>Configurações Fiscais Avançadas (IPI / ST / ISS / PIS)</span>
+                          </div>
+                          <span>{showAdvancedProductTaxes ? 'Ocultar ▲' : 'Ver Detalhes ▼'}</span>
+                        </button>
+
+                        {showAdvancedProductTaxes && (
+                          <div className="p-3.5 space-y-4 text-xs animate-in slide-in-from-top-1 duration-150 border-t border-slate-150">
+                            {/* Operação e Destinatário */}
+                            <div className="grid grid-cols-2 gap-2.5">
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Tipo de Operação</label>
+                                <select
+                                  value={formData.tipoOperacao || 'saida'}
+                                  onChange={(e) => setFormData(f => ({ ...f, tipoOperacao: e.target.value as any }))}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                >
+                                  <option value="saida">Saída (Venda / Prestação)</option>
+                                  <option value="entrada">Entrada (Compra / Devolução)</option>
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Destino da Operação</label>
+                                <select
+                                  value={formData.destinoOperacao || 'interna'}
+                                  onChange={(e) => setFormData(f => ({ ...f, destinoOperacao: e.target.value as any }))}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                >
+                                  <option value="interna">Interna (Dentro do Estado)</option>
+                                  <option value="interestadual">Interestadual (Fora do Estado)</option>
+                                  <option value="exterior">Exterior (Exportação)</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Tipo do Destinatário</label>
+                              <select
+                                  value={formData.tipoDestinatario || 'nao_contribuinte'}
+                                  onChange={(e) => setFormData(f => ({ ...f, tipoDestinatario: e.target.value as any }))}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                              >
+                                  <option value="contribuinte">Contribuinte de ICMS</option>
+                                  <option value="nao_contribuinte">Não Contribuinte</option>
+                                  <option value="produtor_rural">Produtor Rural</option>
+                              </select>
+                            </div>
+
+                            {/* ICMS e ST */}
+                            <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100 space-y-3">
+                              <span className="text-[9px] font-black text-emerald-800 uppercase tracking-wider block">Regras de ICMS & Substituição Tributária (ST)</span>
+                              <div className="grid grid-cols-2 gap-2.5">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-emerald-700 uppercase">Det. BC ICMS</label>
+                                  <select
+                                    value={formData.modalidadeBc || 'op'}
+                                    onChange={(e) => setFormData(f => ({ ...f, modalidadeBc: e.target.value as any }))}
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-800"
+                                  >
+                                    <option value="op">Valor da Operação</option>
+                                    <option value="pauta">Pauta</option>
+                                    <option value="tabelado">Preço Tabelado</option>
+                                    <option value="mva">MVA %</option>
+                                  </select>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-emerald-700 uppercase">Percentual MVA (%)</label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={formData.mvaPercentual || 0}
+                                    onChange={(e) => setFormData(f => ({ ...f, mvaPercentual: parseFloat(e.target.value) || 0 }))}
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                  />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2.5">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-emerald-700 uppercase">Alíquota ST Dest. (%)</label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={formData.icmsStAliquotaDestino || 0}
+                                    onChange={(e) => setFormData(f => ({ ...f, icmsStAliquotaDestino: parseFloat(e.target.value) || 0 }))}
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-emerald-700 uppercase">FCP Alíquota (%)</label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={formData.fcpAliquota || 0}
+                                    onChange={(e) => setFormData(f => ({ ...f, fcpAliquota: parseFloat(e.target.value) || 0 }))}
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* PIS & COFINS Tipo de Cálculo */}
+                            <div className="grid grid-cols-2 gap-2.5">
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cálculo PIS</label>
+                                <select
+                                  value={formData.pisTipoCalculo || 'percentual'}
+                                  onChange={(e) => setFormData(f => ({ ...f, pisTipoCalculo: e.target.value as any }))}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                >
+                                  <option value="percentual">Percentual (%)</option>
+                                  <option value="valor">Em Valor (R$)</option>
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cálculo COFINS</label>
+                                <select
+                                  value={formData.cofinsTipoCalculo || 'percentual'}
+                                  onChange={(e) => setFormData(f => ({ ...f, cofinsTipoCalculo: e.target.value as any }))}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                >
+                                  <option value="percentual">Percentual (%)</option>
+                                  <option value="valor">Em Valor (R$)</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* IPI */}
+                            <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-100 space-y-3">
+                              <span className="text-[9px] font-black text-amber-800 uppercase tracking-wider block">Regras de IPI (Indústria / Importação)</span>
+                              <div className="grid grid-cols-2 gap-2.5">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-amber-700 uppercase">CST de IPI</label>
+                                  <input
+                                    type="text"
+                                    maxLength={2}
+                                    value={formData.cstIpi || '99'}
+                                    onChange={(e) => setFormData(f => ({ ...f, cstIpi: e.target.value }))}
+                                    placeholder="Ex: 99"
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-amber-700 uppercase">cEnq IPI (3 dígitos)</label>
+                                  <input
+                                    type="text"
+                                    maxLength={3}
+                                    value={formData.cEnqIpi || '999'}
+                                    onChange={(e) => setFormData(f => ({ ...f, cEnqIpi: e.target.value.replace(/\D/g, '') }))}
+                                    placeholder="Ex: 999"
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* ISS / NFS-e */}
+                            <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100 space-y-3">
+                              <span className="text-[9px] font-black text-purple-800 uppercase tracking-wider block">Configurações de ISS / NFS-e (Serviços)</span>
+                              <div className="grid grid-cols-2 gap-2.5">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-purple-700 uppercase">Exigibilidade</label>
+                                  <select
+                                    value={formData.issExigibilidade || 'exigivel'}
+                                    onChange={(e) => setFormData(f => ({ ...f, issExigibilidade: e.target.value as any }))}
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-800"
+                                  >
+                                    <option value="exigivel">Exigível</option>
+                                    <option value="nao_incidencia">Não Incidência</option>
+                                    <option value="isencao">Isenção</option>
+                                    <option value="exportacao">Exportação</option>
+                                    <option value="suspenso">Suspenso</option>
+                                  </select>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-purple-700 uppercase">Aliq. ISS (%)</label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={formData.issAliquota || 0}
+                                    onChange={(e) => setFormData(f => ({ ...f, issAliquota: parseFloat(e.target.value) || 0 }))}
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2.5">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-purple-700 uppercase">Item LC 116/03</label>
+                                  <input
+                                    type="text"
+                                    value={formData.itemLc116 || ''}
+                                    onChange={(e) => setFormData(f => ({ ...f, itemLc116: e.target.value }))}
+                                    placeholder="Ex: 07.02"
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-purple-700 uppercase">CTN (6 dígitos)</label>
+                                  <input
+                                    type="text"
+                                    maxLength={6}
+                                    value={formData.codigoTributacaoNacional || ''}
+                                    onChange={(e) => setFormData(f => ({ ...f, codigoTributacaoNacional: e.target.value.replace(/\D/g, '') }))}
+                                    placeholder="Ex: 010101"
+                                    className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="border-t border-purple-200/50 pt-2.5">
+                                {(formData.crtCode || '1') === '4' ? (
+                                  <div className="text-[10px] font-bold text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200 leading-normal">
+                                    ⚠️ <strong>Retenção de ISS Bloqueada (MEI):</strong> O ISS do MEI nunca pode ser retido na fonte pelo tomador. ERP força retido como <strong>Não</strong>.
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2.5">
+                                    <label className="flex items-center gap-1.5 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!formData.issRetencao}
+                                        onChange={(e) => setFormData(f => ({ ...f, issRetencao: e.target.checked }))}
+                                        className="w-3.5 h-3.5 rounded text-purple-600 border-slate-300"
+                                      />
+                                      <span className="text-[10px] font-black text-purple-950 uppercase">Retenção de ISS</span>
+                                    </label>
+
+                                    {formData.issRetencao && (
+                                      <div className="space-y-1 animate-in fade-in">
+                                        <label className="text-[9px] font-bold text-purple-700 uppercase">Responsável</label>
+                                        <select
+                                          value={formData.issResponsavelRetencao || 'prestador'}
+                                          onChange={(e) => setFormData(f => ({ ...f, issResponsavelRetencao: e.target.value as any }))}
+                                          className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-800"
+                                        >
+                                          <option value="prestador">Prestador (Sua Empresa)</option>
+                                          <option value="tomador">Tomador (Cliente)</option>
+                                        </select>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

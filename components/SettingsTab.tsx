@@ -72,7 +72,7 @@ const SettingsTab: React.FC<Props> = ({
   onOpenSubscription 
 }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
-  const isFiscalModeActive = !!(enabledFeatures?.fiscalMode || (settings as any)?.fiscalModeEnabled);
+  const isFiscalModeActive = !!((enabledFeatures as any)?.fiscalMode || (settings as any)?.fiscalModeEnabled);
   const getPlanName = () => {
     if (subscriptionStatus === 'trial') return 'Período de Teste';
     switch (lastPlanType) {

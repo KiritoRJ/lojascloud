@@ -10,6 +10,7 @@ import {
   AppSettings, Sale, Product, Customer, 
   NfceNfeConfig, NfceNfeItem, NfceNfeProductItem, FiscalDocType 
 } from '../../types';
+import { CRT_OPTIONS } from '../../utils/taxProfiles';
 import NfceFiscalGuide from './NfceFiscalGuide';
 import NfceTroubleshooting from './NfceTroubleshooting';
 import NfceDanfeModal from './NfceDanfeModal';
@@ -1314,6 +1315,25 @@ export const NfceNfeManager: React.FC<Props> = ({
                 onChange={(e) => setConfig(prev => ({ ...prev, cityName: e.target.value }))}
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
               />
+            </div>
+
+            <div className="sm:col-span-3 space-y-1">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                Código de Regime Tributário (CRT) da Empresa *
+              </label>
+              <select
+                value={config.crt || config.crtCode || '1'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const taxReg = val === '3' ? 'lucro_presumido' : 'simples_nacional';
+                  setConfig(prev => ({ ...prev, crt: val, crtCode: val, taxRegime: taxReg }));
+                }}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+              >
+                {CRT_OPTIONS.map(opt => (
+                  <option key={opt.code} value={opt.code}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           </div>
 

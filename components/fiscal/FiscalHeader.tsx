@@ -12,7 +12,8 @@ import {
   Layers, 
   AlertTriangle,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Tag
 } from 'lucide-react';
 import { AppSettings, CertificateA1Data } from '../../types';
 
@@ -52,6 +53,7 @@ export const FiscalHeader: React.FC<FiscalHeaderProps> = ({
     { id: 'nfe', label: 'NF-e', badge: stats.nfeCount, desc: 'Modelo 55 • Mercantil & B2B', icon: FileText },
     { id: 'nfce', label: 'NFC-e', badge: stats.nfceCount, desc: 'Modelo 65 • Cupom PDV', icon: Package },
     { id: 'nfse', label: 'NFS-e', badge: stats.nfseCount, desc: 'Serviços & O.S. • LC 116', icon: Wrench },
+    { id: 'perfis', label: 'Regras Fiscais', desc: 'Perfis Tributários • CSOSN • CST', icon: Tag },
     { id: 'eventos', label: 'Eventos', badge: stats.eventsCount, desc: 'CC-e • Cancelamentos • Inutilização', icon: Activity },
     { id: 'xml', label: 'XML', badge: stats.xmlCount, desc: 'Entrada • Estoque • ZIP Contador', icon: Layers },
     { id: 'certificado', label: 'Certificado', desc: 'Certificado Digital A1 (.pfx)', icon: ShieldCheck, isCert: true },

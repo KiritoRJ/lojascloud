@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard, Sparkles, Eye, EyeOff, Power, AlertTriangle, Cpu, FileText, Receipt } from 'lucide-react';
+import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard, Sparkles, Eye, EyeOff, Power, AlertTriangle, Cpu, FileText, Receipt, Upload, RefreshCw } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import 'react-datepicker/dist/react-datepicker.css';
 
 registerLocale('pt-BR', ptBR);
 import { OnlineDB } from '../utils/api';
+import { SuperAdminFiscalModal } from './SuperAdminFiscalModal';
 
 interface Props {
   onLogout: () => void;
@@ -27,6 +28,13 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
   const [globalPlans, setGlobalPlans] = useState<any>({});
   const [isEditingGlobal, setIsEditingGlobal] = useState(false);
   const [isAiConfigModalOpen, setIsAiConfigModalOpen] = useState(false);
+  const [isFiscalConfigModalOpen, setIsFiscalConfigModalOpen] = useState(false);
+  const [fiscalInitialTab, setFiscalInitialTab] = useState<'import' | 'records' | 'sync' | 'test'>('import');
+
+  const openFiscalModal = (tab: 'import' | 'records' | 'sync' | 'test' = 'import') => {
+    setFiscalInitialTab(tab);
+    setIsFiscalConfigModalOpen(true);
+  };
   const [showApiKey, setShowApiKey] = useState(false);
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [testKeyResult, setTestKeyResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -465,6 +473,15 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
                 <span>IA do Sistema {globalPlans.aiDisabledGlobally ? '(Desativada)' : '(Ativa)'}</span>
               </button>
               <button 
+                onClick={() => setIsFiscalConfigModalOpen(true)}
+                className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-emerald-600/10 text-emerald-400 border border-emerald-600/30 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all cursor-pointer shadow-sm"
+                title="Configurar Tabelas Fiscais Globais (NCM, CEST, CFOP)"
+              >
+                <Receipt size={12} className="sm:hidden" />
+                <Receipt size={14} className="hidden sm:block" />
+                <span>Base Fiscal (NCM/CEST/CFOP)</span>
+              </button>
+              <button 
                 onClick={() => setIsEditingGlobal(true)}
                 className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-600/20 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all"
               >
@@ -523,9 +540,61 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
             </div>
           )}
 
+          {/* Card de Destaque: Módulo de Configurações Fiscais Globais (NCM, CEST, CFOP) */}
+          <div className="bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 relative z-10">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
+                  <Receipt size={24} />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-black uppercase tracking-wider text-white">
+                      Configurações Fiscais e Base de Dados Global
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      NCM • CEST • CFOP
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                    Anexe arquivos fiscais (.xlsx, .csv, .txt, .json) para salvar no banco de dados. O sistema formata e sincroniza automaticamente os códigos tributários de qualquer produto cadastrado pelo nome (ex: <strong>Arroz</strong> → NCM 1006.30.21).
+                  </p>
+                </div>
+              </div>
 
+              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full md:w-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={() => openFiscalModal('import')}
+                  className="flex-1 md:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Upload size={14} />
+                  <span>Importar Arquivos</span>
+                </button>
 
-            <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => openFiscalModal('test')}
+                  className="flex-1 md:flex-none px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-black uppercase tracking-wider active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles size={14} className="text-amber-400" />
+                  <span>Testar Pareamento</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openFiscalModal('sync')}
+                  className="flex-1 md:flex-none px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-black uppercase tracking-wider active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw size={14} className="text-blue-400" />
+                  <span>Sincronizar Lojas</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative">
               <Search size={18} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" />
               <input 
                 type="text"
@@ -1673,6 +1742,14 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
           </div>
         </div>
       )}
+
+      {/* Modal de Gestão Fiscal Global (NCM, CEST, CFOP) */}
+      <SuperAdminFiscalModal 
+        isOpen={isFiscalConfigModalOpen} 
+        onClose={() => setIsFiscalConfigModalOpen(false)} 
+        tenants={tenants} 
+        initialTab={fiscalInitialTab}
+      />
     </div>
   );
 };

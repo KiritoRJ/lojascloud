@@ -1,6 +1,6 @@
 
 import Dexie, { Table } from 'dexie';
-import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from '../types';
+import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer, FiscalNcmRecord, FiscalCestRecord, FiscalCfopRecord } from '../types';
 
 export interface SyncItem {
   id?: number;
@@ -33,6 +33,9 @@ export class AssistenciaProDB extends Dexie {
   customers!: Table<Customer & { tenantId: string }, string>;
   syncQueue!: Table<SyncItem, number>;
   authCache!: Table<OfflineAuthCacheItem, string>;
+  fiscalNcm!: Table<FiscalNcmRecord, string>;
+  fiscalCest!: Table<FiscalCestRecord, string>;
+  fiscalCfop!: Table<FiscalCfopRecord, string>;
 
   constructor() {
     super('AssistenciaPro_OfflineDB');
@@ -50,6 +53,11 @@ export class AssistenciaProDB extends Dexie {
     });
     this.version(3).stores({
       authCache: 'username, tenantId, role, lastLogin'
+    });
+    this.version(4).stores({
+      fiscalNcm: 'code, description',
+      fiscalCest: 'code, ncm',
+      fiscalCfop: 'code'
     });
   }
 }

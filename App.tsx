@@ -276,6 +276,7 @@ const App: React.FC = () => {
       console.log('beforeinstallprompt event fired');
       e.preventDefault();
       setDeferredPrompt(e);
+      (window as any).deferredPrompt = e;
     };
     window.addEventListener('beforeinstallprompt', handler);
     
@@ -1273,7 +1274,7 @@ const App: React.FC = () => {
   }
 
   if (catalogTenantId || catalogSlug) {
-    return <CustomerCatalog tenantId={catalogTenantId} catalogSlug={catalogSlug} />;
+    return <CustomerCatalog tenantId={catalogTenantId} catalogSlug={catalogSlug} deferredPrompt={deferredPrompt} />;
   }
 
   if (isInitializing) {

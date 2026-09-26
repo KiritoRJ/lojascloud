@@ -61,8 +61,7 @@ export default defineConfig(({ mode }) => {
             ]
           },
           devOptions: {
-            enabled: false,
-            /* type: 'module', // Removed to use classic worker for compatibility */
+            enabled: true,
             navigateFallback: 'index.html',
           }
         })

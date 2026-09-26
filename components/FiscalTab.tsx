@@ -29,6 +29,7 @@ import { EventosSection } from './fiscal/EventosSection';
 import { XmlSection } from './fiscal/XmlSection';
 import { CertificadoSection } from './fiscal/CertificadoSection';
 import { AuditoriaSection } from './fiscal/AuditoriaSection';
+import { PerfisTributariosSection } from './fiscal/PerfisTributariosSection';
 
 interface FiscalTabProps {
   settings: AppSettings;
@@ -39,7 +40,7 @@ interface FiscalTabProps {
   customers?: Customer[];
   serviceOrders?: ServiceOrder[];
   tenantId?: string;
-  initialSubTab?: 'nfe' | 'nfce' | 'nfse' | 'eventos' | 'xml' | 'certificado' | 'auditoria';
+  initialSubTab?: 'nfe' | 'nfce' | 'nfse' | 'perfis' | 'eventos' | 'xml' | 'certificado' | 'auditoria';
   onBack?: () => void;
 }
 
@@ -55,7 +56,7 @@ export const FiscalTab: React.FC<FiscalTabProps> = ({
   initialSubTab = 'nfce',
   onBack
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'nfe' | 'nfce' | 'nfse' | 'eventos' | 'xml' | 'certificado' | 'auditoria'>(initialSubTab);
+  const [activeSubTab, setActiveSubTab] = useState<'nfe' | 'nfce' | 'nfse' | 'perfis' | 'eventos' | 'xml' | 'certificado' | 'auditoria'>(initialSubTab);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -215,6 +216,13 @@ export const FiscalTab: React.FC<FiscalTabProps> = ({
             customers={customers}
             tenantId={tenantId}
             onBack={() => setActiveSubTab('nfce')}
+          />
+        )}
+
+        {activeSubTab === 'perfis' && (
+          <PerfisTributariosSection
+            tenantId={tenantId}
+            showToast={showToast}
           />
         )}
 

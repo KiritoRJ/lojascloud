@@ -39,16 +39,18 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
 
   if (!isOpen) return null;
 
+  const effectivePrompt = deferredPrompt || (typeof window !== 'undefined' ? (window as any).deferredPrompt : null);
+
   const handleNativeInstall = async () => {
-    if (!deferredPrompt) {
+    if (!effectivePrompt) {
       alert("Para instalar neste navegador, use o menu de opções (3 pontinhos) e clique em 'Instalar aplicativo' ou 'Adicionar à tela inicial'.");
       return;
     }
 
     try {
       setIsInstalling(true);
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
+      effectivePrompt.prompt();
+      const { outcome } = await effectivePrompt.userChoice;
       if (outcome === 'accepted') {
         onInstallSuccess?.();
         onClose();
@@ -152,7 +154,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
             {/* Conteúdo por Plataforma */}
             {activePlatform === 'android' && (
               <div className="space-y-4">
-                {deferredPrompt ? (
+                {effectivePrompt ? (
                   <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl text-center space-y-3">
                     <p className="text-xs text-blue-900 font-bold">
                       Seu navegador suporta instalação direta com 1 clique!
@@ -234,7 +236,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
 
             {activePlatform === 'desktop' && (
               <div className="space-y-4">
-                {deferredPrompt ? (
+                {effectivePrompt ? (
                   <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl text-center space-y-3">
                     <p className="text-xs text-blue-900 font-bold">
                       Instale o Lojas Cloud no seu computador como um programa nativo!

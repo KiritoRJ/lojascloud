@@ -168,13 +168,16 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
           productId: it.product.id,
           description: it.product.name,
           ncm: it.product.ncm || '8517.79.00',
-          cfop: '5102',
-          csosn: '102',
+          cfop: it.product.cfop || '5102',
+          csosn: it.product.csosnCst || '102',
+          origin: it.product.origin || '0',
+          cstPis: it.product.cstPis || '49',
+          cstCofins: it.product.cstCofins || '49',
           unitOfMeasure: 'UN',
           quantity: it.quantity,
           unitPrice: it.unitPrice,
           totalPrice: it.quantity * it.unitPrice,
-          icmsRate: 0,
+          icmsRate: it.product.icmsAliquota || 0,
           icmsAmount: 0
         })),
         totals: {
@@ -191,7 +194,17 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
           amountPaid: totalAmount
         },
         qrCodeUrl: `https://www.nfce.fazenda.sp.gov.br/qrcode?p=${accessKey}|2|1|1|${settings.nfceNfeConfig?.cscId || '000001'}|SHA1HASH`,
-        xmlContent: `<?xml version="1.0" encoding="UTF-8"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe${accessKey}"><ide><nNF>${nextNum}</nNF><dhEmi>${new Date().toISOString()}</dhEmi></ide><emit><xNome>${settings.storeName}</xNome><CNPJ>${settings.storeCnpj || '00000000000199'}</CNPJ></emit><total><ICMSTot><vNF>${(totalAmount || 0).toFixed(2)}</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`
+        xmlContent: (() => {
+          const itemsXml = selectedProductList.map((it, idx) => {
+            const code = it.product.csosnCst || '102';
+            const isZeroRateCst = ['49', '99', '07', '08', '40', '41', '300', '400'].includes(code);
+            const icmsXml = isZeroRateCst
+              ? `<ICMS><ICMSIsento><orig>${it.product.origin || '0'}</orig><CST>${code}</CST></ICMSIsento></ICMS>`
+              : `<ICMS><ICMSTrib><orig>${it.product.origin || '0'}</orig><CST>${code}</CST><vBC>${(it.quantity * it.unitPrice).toFixed(2)}</vBC><pICMS>${(it.product.icmsAliquota || 0).toFixed(2)}</pICMS><vICMS>${((it.quantity * it.unitPrice * (it.product.icmsAliquota || 0)) / 100).toFixed(2)}</vICMS></ICMSTrib></ICMS>`;
+            return `<det nItem="${idx + 1}"><prod><cProd>${it.product.id || '999'}</cProd><xProd>${it.product.name}</xProd><NCM>${it.product.ncm || '8517.79.00'}</NCM><CFOP>${it.product.cfop || '5102'}</CFOP><uCom>UN</uCom><qCom>${it.quantity}</qCom><vUnCom>${it.unitPrice.toFixed(2)}</vUnCom><vProd>${(it.quantity * it.unitPrice).toFixed(2)}</vProd></prod><imposto>${icmsXml}</imposto></det>`;
+          }).join('');
+          return `<?xml version="1.0" encoding="UTF-8"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe${accessKey}"><ide><nNF>${nextNum}</nNF><dhEmi>${new Date().toISOString()}</dhEmi></ide><emit><xNome>${settings.storeName}</xNome><CNPJ>${settings.storeCnpj || '00000000000199'}</CNPJ></emit><detalhes>${itemsXml}</detalhes><total><ICMSTot><vNF>${(totalAmount || 0).toFixed(2)}</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
+        })()
       };
 
       const updatedNotes = [newNote, ...notes];

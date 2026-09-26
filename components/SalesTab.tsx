@@ -556,7 +556,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
     // EMISSÃO AUTOMÁTICA DE NOTA FISCAL (NFC-e / SEFAZ)
     let autoNote: NfceNfeItem | null = null;
-    if (isAutoEmitFiscalEnabled || isFiscalModeActive) {
+    if (isFiscalModeActive) {
       try {
         const nextNum = (settings.nfceNfeConfig?.nfceNextNumber || 100) + 1;
         const cleanCnpj = (settings.storeCnpj || '00000000000199').replace(/\D/g, '');
@@ -1591,26 +1591,25 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                 )}
               </div>
 
-              {/* IDENTIFICAÇÃO FISCAL NFC-e */}
-              <div className={`p-2.5 rounded-xl border space-y-2 ${isFiscalModeActive ? 'bg-purple-50/70 border-purple-200' : 'bg-slate-50 border-slate-200/60'}`}>
-                <div className="flex items-center justify-between">
-                  <label className="text-[8px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isFiscalModeActive || isAutoEmitFiscalEnabled}
-                      disabled={isFiscalModeActive}
-                      onChange={(e) => setIsAutoEmitFiscalEnabled(e.target.checked)}
-                      className="rounded text-purple-600 focus:ring-purple-500 w-3.5 h-3.5 disabled:opacity-80"
-                    />
-                    <FileText size={12} className={isFiscalModeActive ? "text-purple-600 animate-pulse" : "text-emerald-600"} />
-                    {isFiscalModeActive ? 'Modo Fiscal Ativo (Emissão Obrigatória)' : 'Emitir NFC-e Automática SEFAZ'}
-                  </label>
-                  <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded ${isFiscalModeActive ? 'bg-purple-200 text-purple-800' : 'bg-slate-200 text-slate-600'}`}>
-                    Modelo 65
-                  </span>
-                </div>
+              {/* IDENTIFICAÇÃO FISCAL NFC-e (Apenas se o Modo Fiscal estiver ativado para a loja) */}
+              {isFiscalModeActive && (
+                <div className="p-2.5 rounded-xl border space-y-2 bg-purple-50/70 border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[8px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={true}
+                        disabled={true}
+                        className="rounded text-purple-600 focus:ring-purple-500 w-3.5 h-3.5 disabled:opacity-80"
+                      />
+                      <FileText size={12} className="text-purple-600 animate-pulse" />
+                      Modo Fiscal Ativo (Emissão Obrigatória)
+                    </label>
+                    <span className="text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-200 text-purple-800">
+                      Modelo 65
+                    </span>
+                  </div>
 
-                {(isFiscalModeActive || isAutoEmitFiscalEnabled) && (
                   <div className="grid grid-cols-2 gap-1.5 pt-1">
                     <input
                       type="text"
@@ -1627,8 +1626,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                       className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-[9px] font-medium outline-none focus:border-purple-500"
                     />
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5 pt-1">

@@ -17,9 +17,11 @@ interface Props {
   maxProducts?: number;
   tenantId?: string;
   aiEnabled?: boolean;
+  enabledFeatures?: any;
 }
 
-const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings, onUpdateSettings, maxProducts, tenantId, aiEnabled = true }) => {
+const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, settings, onUpdateSettings, maxProducts, tenantId, aiEnabled = true, enabledFeatures }) => {
+  const isFiscalModeActive = !!(enabledFeatures?.fiscalMode || (settings as any)?.fiscalModeEnabled);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -926,52 +928,54 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                   />
                 </div>
 
-                {/* Acordeão de Informações Fiscais */}
-                <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100 space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowFiscalFields(!showFiscalFields)}
-                    className="w-full flex items-center justify-between text-[9px] font-black text-slate-600 uppercase tracking-wider"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <FileText size={13} className="text-blue-500" />
-                      <span>Informações Fiscais (NCM, CEST, CFOP)</span>
-                    </div>
-                    {showFiscalFields ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  </button>
+                {/* Acordeão de Informações Fiscais (Apenas se o Modo Fiscal estiver ativo para a loja) */}
+                {isFiscalModeActive && (
+                  <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowFiscalFields(!showFiscalFields)}
+                      className="w-full flex items-center justify-between text-[9px] font-black text-slate-600 uppercase tracking-wider"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <FileText size={13} className="text-blue-500" />
+                        <span>Informações Fiscais (NCM, CEST, CFOP)</span>
+                      </div>
+                      {showFiscalFields ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
 
-                  {showFiscalFields && (
-                    <div className="grid grid-cols-3 gap-2 pt-2">
-                      <div>
-                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">NCM (8 dígitos)</p>
-                        <input 
-                          value={formData.ncm || ''} 
-                          onChange={(e)=>setFormData(f=>({...f,ncm:e.target.value}))} 
-                          placeholder="Ex: 85183000"
-                          className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
-                        />
+                    {showFiscalFields && (
+                      <div className="grid grid-cols-3 gap-2 pt-2">
+                        <div>
+                          <p className="text-[8px] font-black text-slate-400 uppercase mb-1">NCM (8 dígitos)</p>
+                          <input 
+                            value={formData.ncm || ''} 
+                            onChange={(e)=>setFormData(f=>({...f,ncm:e.target.value}))} 
+                            placeholder="Ex: 85183000"
+                            className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
+                          />
+                        </div>
+                        <div>
+                          <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CEST</p>
+                          <input 
+                            value={formData.cest || ''} 
+                            onChange={(e)=>setFormData(f=>({...f,cest:e.target.value}))} 
+                            placeholder="Código CEST"
+                            className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
+                          />
+                        </div>
+                        <div>
+                          <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CFOP</p>
+                          <input 
+                            value={formData.cfop || '5102'} 
+                            onChange={(e)=>setFormData(f=>({...f,cfop:e.target.value}))} 
+                            placeholder="5102"
+                            className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CEST</p>
-                        <input 
-                          value={formData.cest || ''} 
-                          onChange={(e)=>setFormData(f=>({...f,cest:e.target.value}))} 
-                          placeholder="Código CEST"
-                          className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
-                        />
-                      </div>
-                      <div>
-                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CFOP</p>
-                        <input 
-                          value={formData.cfop || '5102'} 
-                          onChange={(e)=>setFormData(f=>({...f,cfop:e.target.value}))} 
-                          placeholder="5102"
-                          className="w-full p-2.5 bg-white rounded-xl font-bold text-slate-700 outline-none text-xs border border-slate-200" 
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

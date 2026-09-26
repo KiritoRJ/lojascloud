@@ -72,6 +72,7 @@ const SettingsTab: React.FC<Props> = ({
   onOpenSubscription 
 }) => {
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
+  const isFiscalModeActive = !!(enabledFeatures?.fiscalMode || (settings as any)?.fiscalModeEnabled);
   const getPlanName = () => {
     if (subscriptionStatus === 'trial') return 'Período de Teste';
     switch (lastPlanType) {
@@ -1861,7 +1862,7 @@ const SettingsTab: React.FC<Props> = ({
     );
   }
 
-  if (view === 'nfse') {
+  if (view === 'nfse' && isFiscalModeActive) {
     return (
       <NfseManager
         settings={settings}
@@ -1874,7 +1875,7 @@ const SettingsTab: React.FC<Props> = ({
     );
   }
 
-  if (view === 'nfce') {
+  if (view === 'nfce' && isFiscalModeActive) {
     return (
       <NfceNfeManager
         settings={settings}
@@ -1923,12 +1924,16 @@ const SettingsTab: React.FC<Props> = ({
                     <button onClick={() => { setIsAICreditsModalOpen(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent">
                       <Sparkles size={16} className="text-blue-600 animate-pulse" /> Créditos de IA ({aiCredits})
                     </button>
-                    <button onClick={() => { setView('nfce'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'nfce' ? 'border-emerald-500 bg-emerald-50' : 'border-transparent'}`}>
-                      <Package size={16} className="text-emerald-600" /> Módulo NFC-e / NF-e Vendas
-                    </button>
-                    <button onClick={() => { setView('nfse'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'nfse' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
-                      <FileText size={16} className="text-blue-600" /> Módulo NFS-e Serviços
-                    </button>
+                    {isFiscalModeActive && (
+                      <>
+                        <button onClick={() => { setView('nfce'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'nfce' ? 'border-emerald-500 bg-emerald-50' : 'border-transparent'}`}>
+                          <Package size={16} className="text-emerald-600" /> Módulo NFC-e / NF-e Vendas
+                        </button>
+                        <button onClick={() => { setView('nfse'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'nfse' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
+                          <FileText size={16} className="text-blue-600" /> Módulo NFS-e Serviços
+                        </button>
+                      </>
+                    )}
                     <button onClick={() => { setView('subscription'); setShowMenu(false); }} className={`w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'subscription' ? 'border-blue-500 bg-blue-50' : 'border-transparent'}`}>
                       <Shield size={16} /> Plano e Limites
                     </button>
@@ -1974,8 +1979,8 @@ const SettingsTab: React.FC<Props> = ({
       </div>
 
       <div className="max-w-xl mx-auto space-y-4">
-        {/* MÓDULOS FISCAIS */}
-        {isAdmin && (
+        {/* MÓDULOS FISCAIS (Apenas se o Modo Fiscal estiver ativado para a loja) */}
+        {isAdmin && isFiscalModeActive && (
           <div className="space-y-3">
             {/* NFC-e / NF-e VENDAS DE PRODUTOS */}
             <button

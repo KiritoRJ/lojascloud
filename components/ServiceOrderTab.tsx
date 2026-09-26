@@ -1801,25 +1801,27 @@ const ServiceOrderTab: React.FC<Props> = ({
                          </button>
                        );
                      })()}
-                     {order.fiscalNoteEmitted ? (
-                       <span className={`font-black text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}`} title={`NFS-e emitida: Nº ${order.fiscalNoteNumber}`}>
-                         <FileText size={osLayout === 'small' ? 8 : 10} className="text-purple-600" />
-                         NFS-e #{order.fiscalNoteNumber}
-                       </span>
-                     ) : isFiscalModeActive ? (
-                       <button
-                         type="button"
-                         onClick={(e) => {
-                           e.stopPropagation();
-                           handleEmitNfseForOrder(order);
-                         }}
-                         className={`font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 transition-all cursor-pointer ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}`}
-                         title="Modo Fiscal Ativo: Clique para emitir a NFS-e desta O.S."
-                       >
-                         <FileText size={osLayout === 'small' ? 8 : 10} className="text-amber-600" />
-                         Emitir NFS-e
-                       </button>
-                     ) : null}
+                     {isFiscalModeActive && (
+                       order.fiscalNoteEmitted ? (
+                         <span className={`font-black text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}`} title={`NFS-e emitida: Nº ${order.fiscalNoteNumber}`}>
+                           <FileText size={osLayout === 'small' ? 8 : 10} className="text-purple-600" />
+                           NFS-e #{order.fiscalNoteNumber}
+                         </span>
+                       ) : (
+                         <button
+                           type="button"
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             handleEmitNfseForOrder(order);
+                           }}
+                           className={`font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 transition-all cursor-pointer ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}`}
+                           title="Modo Fiscal Ativo: Clique para emitir a NFS-e desta O.S."
+                         >
+                           <FileText size={osLayout === 'small' ? 8 : 10} className="text-amber-600" />
+                           Emitir NFS-e
+                         </button>
+                       )
+                     )}
                      {expired && (
                        <span className={`font-black px-2 py-0.5 rounded-full bg-red-600 text-white uppercase animate-pulse shrink-0
                          ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}
@@ -1845,14 +1847,16 @@ const ServiceOrderTab: React.FC<Props> = ({
                 `} title="Testes de Hardware (QR Code)">
                   <QrCode size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />
                 </button>
-                <button onClick={(e) => { 
-                  e.stopPropagation(); 
-                  handleEmitNfseForOrder(order);
-                }} className={`rounded-lg sm:rounded-xl shadow-md active:scale-90 flex items-center justify-center transition-colors ${order.fiscalNoteEmitted ? 'bg-purple-600 text-white hover:bg-purple-500' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'}
-                  ${osLayout === 'small' ? 'p-1 sm:p-1.5' : osLayout === 'medium' ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-3.5'}
-                `} title={order.fiscalNoteEmitted ? `NFS-e Emitida: Nº ${order.fiscalNoteNumber} (Clique para reemitir/ver)` : "Emitir Nota Fiscal de Serviço (NFS-e)"}>
-                  <FileText size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />
-                </button>
+                {isFiscalModeActive && (
+                  <button onClick={(e) => { 
+                    e.stopPropagation(); 
+                    handleEmitNfseForOrder(order);
+                  }} className={`rounded-lg sm:rounded-xl shadow-md active:scale-90 flex items-center justify-center transition-colors ${order.fiscalNoteEmitted ? 'bg-purple-600 text-white hover:bg-purple-500' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'}
+                    ${osLayout === 'small' ? 'p-1 sm:p-1.5' : osLayout === 'medium' ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-3.5'}
+                  `} title={order.fiscalNoteEmitted ? `NFS-e Emitida: Nº ${order.fiscalNoteNumber} (Clique para reemitir/ver)` : "Emitir Nota Fiscal de Serviço (NFS-e)"}>
+                    <FileText size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />
+                  </button>
+                )}
                 <button onClick={(e) => { 
                   e.stopPropagation(); 
                   setOrderToPrint(order);

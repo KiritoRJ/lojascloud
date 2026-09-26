@@ -173,8 +173,9 @@ const App: React.FC = () => {
     if (!currentUser) return [];
     return navItems.filter(item => {
       const roleAllowed = item.roles.includes(currentUser.role);
+      const isFiscalEnabled = !!(session?.enabledFeatures?.fiscalMode || (session?.enabledFeatures as any)?.fiscalModeEnabled);
       const featureAllowed = item.id === 'fiscal'
-        ? (session?.enabledFeatures?.fiscalMode || (session?.enabledFeatures as any)?.fiscalTab !== false)
+        ? (isFiscalEnabled && (session?.enabledFeatures as any)?.fiscalTab !== false)
         : (!item.feature || (session?.enabledFeatures as any)?.[item.feature] !== false);
       return roleAllowed && featureAllowed;
     });
@@ -1853,6 +1854,7 @@ const App: React.FC = () => {
               maxProducts={session.maxProducts} 
               tenantId={session.tenantId || ''} 
               aiEnabled={!isAiGloballyDisabled && session.enabledFeatures?.aiFeature !== false}
+              enabledFeatures={session.enabledFeatures}
             />
           )}
           {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} enabledFeatures={session?.enabledFeatures} />}

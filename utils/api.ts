@@ -258,7 +258,7 @@ export class OnlineDB {
       const updatedFeatures = {
         ...currentFeatures,
         fiscalMode: enabled,
-        fiscalTab: enabled ? true : currentFeatures.fiscalTab
+        fiscalTab: enabled
       };
 
       const { error: updateErr } = await supabase

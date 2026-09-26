@@ -312,10 +312,11 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
 
   const handleToggleFiscalMode = async (tenant: any) => {
     const current = !!tenant.enabled_features?.fiscalMode;
+    const willBeEnabled = !current;
     const newFeatures = {
       ...tenant.enabled_features,
-      fiscalMode: !current,
-      fiscalTab: true
+      fiscalMode: willBeEnabled,
+      fiscalTab: willBeEnabled
     };
     setIsSaving(true);
     const res = await OnlineDB.updateTenantFeatures(
@@ -1512,10 +1513,17 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
                             ? tenantToEditFeatures.features.aiFeature !== false
                             : !!tenantToEditFeatures.features[feature.id]
                         } 
-                        onChange={e => setTenantToEditFeatures({
-                          ...tenantToEditFeatures,
-                          features: { ...tenantToEditFeatures.features, [feature.id]: e.target.checked }
-                        })}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          const nextFeatures = { ...tenantToEditFeatures.features, [feature.id]: checked };
+                          if (feature.id === 'fiscalMode') {
+                            nextFeatures.fiscalTab = checked;
+                          }
+                          setTenantToEditFeatures({
+                            ...tenantToEditFeatures,
+                            features: nextFeatures
+                          });
+                        }}
                         className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
                     </label>

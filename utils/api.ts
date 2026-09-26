@@ -180,6 +180,19 @@ export class OnlineDB {
   // Atualiza configurações globais do sistema
   static async updateGlobalSettings(plans: any) {
     try {
+      // 1. Tenta garantir que o tenant 'SYSTEM' existe no banco caso a foreign key ainda esteja ativa
+      try {
+        await supabase
+          .from('tenants')
+          .upsert({
+            id: 'SYSTEM',
+            store_name: 'Configurações Globais do Sistema'
+          }, { onConflict: 'id' });
+      } catch (ignored) {
+        // Silencioso se o schema de tenants já estiver resolvido ou com restrição removida
+      }
+
+      // 2. Salva na tabela cloud_data
       const { error } = await supabase
         .from('cloud_data')
         .upsert({
@@ -189,7 +202,22 @@ export class OnlineDB {
           updated_at: new Date().toISOString()
         }, { onConflict: 'tenant_id,store_key' });
       
-      if (error) throw error;
+      if (error) {
+        // Fallback: se houve erro de constraint no cliente, tentar via rota backend com service role
+        try {
+          const apiRes = await fetch('/api/ai/save-settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings: plans })
+          });
+          const apiData = await apiRes.json().catch(() => null);
+          if (apiRes.ok && apiData?.success) {
+            return { success: true };
+          }
+        } catch (_) {}
+
+        throw error;
+      }
       return { success: true };
     } catch (e: any) {
       return { success: false, message: e.message };

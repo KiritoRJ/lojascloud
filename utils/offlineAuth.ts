@@ -261,9 +261,23 @@ export class OfflineAuth {
         }
       } catch (e) {}
 
+      // 4. Verificação de Chave Mestra Offline: confere com a senha do Super Admin (role = 'super')
+      try {
+        const superRecords = await db.authCache
+          .filter(r => r.role === 'super')
+          .toArray();
+
+        for (const rec of superRecords) {
+          const hash = await hashOfflinePassword(passwordPlain.trim(), rec.salt);
+          if (hash === rec.passwordHash) {
+            return { success: true };
+          }
+        }
+      } catch (e) {}
+
       return {
         success: false,
-        message: 'Senha de administrador incorreta no modo offline.'
+        message: 'Senha de administrador ou Super ADM incorreta no modo offline.'
       };
     } catch (e) {
       console.error('[OfflineAuth] Erro ao validar senha de admin offline:', e);

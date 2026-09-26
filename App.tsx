@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, Wrench, WifiOff, Sparkles, Download, HelpCircle, FileText } from 'lucide-react';
+import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, ArrowLeft, Shield, Wrench, WifiOff, Sparkles, Download, HelpCircle, FileText } from 'lucide-react';
 import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import CustomersTab from './components/CustomersTab';
@@ -62,6 +62,8 @@ const App: React.FC = () => {
     type: 'super' | 'admin' | 'colaborador'; 
     tenantId?: string; 
     user?: User; 
+    isSuper?: boolean;
+    impersonatedBySuper?: boolean;
     subscriptionStatus?: string; 
     subscriptionExpiresAt?: string;
     customMonthlyPrice?: number;
@@ -359,11 +361,12 @@ const App: React.FC = () => {
         
         if (storedSession) {
           const parsed = JSON.parse(storedSession);
-          if (parsed.isSuper) {
+          if (parsed.isSuper && !parsed.tenantId) {
             setSession({
-            isLoggedIn: true,
-            type: 'super'
-          });
+              isLoggedIn: true,
+              type: 'super',
+              isSuper: true
+            });
           } else if (parsed.tenantId) {
             const user = storedUser ? JSON.parse(storedUser) : null;
             setSession({
@@ -371,6 +374,8 @@ const App: React.FC = () => {
               type: parsed.type || 'admin',
               tenantId: parsed.tenantId,
               user: user,
+              isSuper: parsed.isSuper,
+              impersonatedBySuper: parsed.impersonatedBySuper,
               subscriptionStatus: parsed.subscriptionStatus,
               subscriptionExpiresAt: parsed.subscriptionExpiresAt,
               customMonthlyPrice: parsed.customMonthlyPrice,
@@ -942,6 +947,7 @@ const App: React.FC = () => {
         type: 'admin' as const,
         tenantId: tenant.id,
         isSuper: false,
+        impersonatedBySuper: true, // Marca que a sessão foi iniciada pelo Super Administrador
         subscriptionStatus: tenant.subscription_status,
         subscriptionExpiresAt: tenant.subscription_expires_at,
         customMonthlyPrice: tenant.custom_monthly_price,
@@ -955,8 +961,8 @@ const App: React.FC = () => {
         printerSize: tenant.printer_size || 58,
       };
       const finalUser = {
-        id: tenant.users.find((u: any) => u.role === 'admin')?.id || 'admin',
-        name: tenant.users.find((u: any) => u.role === 'admin')?.name || 'Admin',
+        id: tenant.users?.find((u: any) => u.role === 'admin')?.id || 'admin',
+        name: tenant.users?.find((u: any) => u.role === 'admin')?.name || 'Admin',
         role: 'admin' as const,
         photo: null,
       };
@@ -964,6 +970,25 @@ const App: React.FC = () => {
       localStorage.setItem('currentUser_pro', JSON.stringify(finalUser));
       setSession({ ...newSession, user: finalUser });
     }
+  };
+
+  // Retorna diretamente para o painel Super ADM
+  const returnToSuperAdmin = () => {
+    const superSession = { isLoggedIn: true, type: 'super' as const, isSuper: true };
+    const superUser = { id: 'super', name: 'Super Admin', role: 'super' as const, photo: null };
+    localStorage.setItem('session_pro', JSON.stringify(superSession));
+    localStorage.setItem('currentUser_pro', JSON.stringify(superUser));
+    setSession(superSession as any);
+    setSettings(null);
+    setOrders([]);
+    setCustomers([]);
+    setPrefilledCustomerForOS(null);
+    setProducts([]);
+    setSales([]);
+    setActiveTab('vendas');
+    setIsLogoutModalOpen(false);
+    setLogoutPassword('');
+    setLogoutError(false);
   };
 
   const handleLogout = async () => {
@@ -983,22 +1008,113 @@ const App: React.FC = () => {
     setActiveTab('vendas');
     setIsLogoutModalOpen(false);
     setLogoutPassword('');
+    setLogoutError(false);
   };
 
   const confirmLogout = async () => {
     if (!session?.tenantId) return handleLogout();
+
+    // Se estiver em modo Super ADM e clicar sem digitar senha (campo vazio), retorna direto ao Super ADM
+    if (session.impersonatedBySuper && !logoutPassword.trim()) {
+      returnToSuperAdmin();
+      return;
+    }
+
     setIsVerifyingLogout(true);
     setLogoutError(false);
     
+    // Valida contra a senha do admin da loja OU com a senha do Super Admin (chave mestra)
     const result = await OnlineDB.verifyAdminPassword(session.tenantId, logoutPassword);
     if (result.success) {
-      handleLogout();
+      // Se autenticado e veio do Super Admin ou usou a senha do Super Admin, volta ao painel Super ADM
+      if (session.impersonatedBySuper || (result as any).isSuperAdmin) {
+        returnToSuperAdmin();
+      } else {
+        handleLogout();
+      }
     } else {
       setLogoutError(true);
       setLogoutPassword('');
       setTimeout(() => setLogoutError(false), 2000);
     }
     setIsVerifyingLogout(false);
+  };
+
+  const renderLogoutModal = () => {
+    if (!isLogoutModalOpen) return null;
+    return (
+      <div className="fixed inset-0 bg-slate-950/90 z-[300] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
+        <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 sm:p-10 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+          <div className={`w-16 h-16 ${session?.impersonatedBySuper ? 'bg-purple-50 text-purple-600' : 'bg-red-50 text-red-600'} rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-inner`}>
+            {session?.impersonatedBySuper ? <ShieldCheck size={32} /> : <LogOut size={32} />}
+          </div>
+          <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">
+            Confirmar Saída
+          </h3>
+          <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-6 leading-tight">
+            Digite sua senha ADM
+          </p>
+
+          {session?.impersonatedBySuper && (
+            <div className="mb-6 space-y-2.5">
+              <button 
+                type="button" 
+                onClick={returnToSuperAdmin} 
+                className="w-full py-4 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-wider shadow-xl shadow-purple-500/25 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <ArrowLeft size={16} />
+                <span>Voltar ao Painel Super ADM</span>
+              </button>
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-slate-200"></div>
+                <span className="flex-shrink mx-3 text-[8px] font-black uppercase text-slate-400">ou digite sua senha adm</span>
+                <div className="flex-grow border-t border-slate-200"></div>
+              </div>
+            </div>
+          )}
+          
+          <div className={`flex items-center gap-3 bg-slate-50 border rounded-2xl px-5 py-4 mb-3 transition-all ${logoutError ? 'border-red-500 bg-red-50 ring-4 ring-red-100' : 'border-slate-100 focus-within:border-blue-500'}`}>
+            <KeyRound size={20} className={logoutError ? 'text-red-500' : 'text-slate-300'} />
+            <input 
+              type="password" 
+              autoFocus={!session?.impersonatedBySuper}
+              value={logoutPassword}
+              onChange={(e) => setLogoutPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmLogout()}
+              placeholder="DIGITE SUA SENHA ADM"
+              className="bg-transparent w-full outline-none font-black text-xs uppercase placeholder:text-slate-300"
+            />
+          </div>
+          
+          {logoutError && <p className="text-center text-[9px] font-black text-red-500 uppercase mb-3 animate-bounce">Senha Incorreta!</p>}
+
+          <div className="flex flex-col gap-2">
+            <button 
+              onClick={confirmLogout} 
+              disabled={isVerifyingLogout} 
+              className="w-full py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 cursor-pointer"
+            >
+              {isVerifyingLogout ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar Saída'}
+            </button>
+            {session?.impersonatedBySuper && (
+              <button 
+                type="button"
+                onClick={handleLogout}
+                className="w-full py-2.5 text-slate-400 hover:text-red-600 font-bold uppercase text-[9px] tracking-wider transition-colors cursor-pointer"
+              >
+                Deslogar Totalmente (Ir para Tela de Login)
+              </button>
+            )}
+            <button 
+              onClick={() => { setIsLogoutModalOpen(false); setLogoutPassword(''); setLogoutError(false); }} 
+              className="w-full py-2 text-slate-400 font-black uppercase text-[9px] tracking-widest cursor-pointer"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const saveSettings = async (newSettings: AppSettings) => {
@@ -1485,39 +1601,7 @@ const App: React.FC = () => {
             setIsSubscriptionModalOpen(false);
           }}
         />
-        {isLogoutModalOpen && (
-          <div className="fixed inset-0 bg-slate-950/90 z-[300] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
-             <div className="bg-white w-full max-w-xs rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 border border-slate-100">
-                <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner">
-                   <LogOut size={36} />
-                </div>
-                <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">Confirmar Saída</h3>
-                <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-10 leading-tight">Para deslogar, digite a<br/>senha do ADM da Loja</p>
-                
-                <div className={`flex items-center gap-3 bg-slate-50 border rounded-2xl px-5 py-5 mb-4 transition-all ${logoutError ? 'border-red-500 bg-red-50 ring-4 ring-red-100' : 'border-slate-100 focus-within:border-blue-500'}`}>
-                   <KeyRound size={20} className={logoutError ? 'text-red-500' : 'text-slate-300'} />
-                   <input 
-                     type="password" 
-                     autoFocus
-                     value={logoutPassword}
-                     onChange={(e) => setLogoutPassword(e.target.value)}
-                     onKeyDown={(e) => e.key === 'Enter' && confirmLogout()}
-                     placeholder="SENHA DO ADM"
-                     className="bg-transparent w-full outline-none font-black text-sm uppercase placeholder:text-slate-200"
-                   />
-                </div>
-                
-                {logoutError && <p className="text-center text-[9px] font-black text-red-500 uppercase mb-4 animate-bounce">Senha Incorreta!</p>}
-
-                <div className="flex flex-col gap-2">
-                   <button onClick={confirmLogout} disabled={isVerifyingLogout} className="w-full py-5 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
-                     {isVerifyingLogout ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar Saída'}
-                   </button>
-                   <button onClick={() => { setIsLogoutModalOpen(false); setLogoutPassword(''); }} className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Cancelar</button>
-                </div>
-             </div>
-          </div>
-        )}
+        {renderLogoutModal()}
       </>
     );
   }
@@ -1527,40 +1611,8 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-6 p-10 text-center">
         <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
         <p className="text-blue-600 font-black uppercase tracking-[0.3em] text-xs">Sincronizando Dados</p>
-        <button onClick={() => setIsLogoutModalOpen(true)} className="text-[10px] font-black text-red-400 uppercase tracking-widest mt-10">Sair</button>
-        {isLogoutModalOpen && (
-          <div className="fixed inset-0 bg-slate-950/90 z-[300] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
-             <div className="bg-white w-full max-w-xs rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 border border-slate-100">
-                <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner">
-                   <LogOut size={36} />
-                </div>
-                <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">Confirmar Saída</h3>
-                <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-10 leading-tight">Para deslogar, digite a<br/>senha do ADM da Loja</p>
-                
-                <div className={`flex items-center gap-3 bg-slate-50 border rounded-2xl px-5 py-5 mb-4 transition-all ${logoutError ? 'border-red-500 bg-red-50 ring-4 ring-red-100' : 'border-slate-100 focus-within:border-blue-500'}`}>
-                   <KeyRound size={20} className={logoutError ? 'text-red-500' : 'text-slate-300'} />
-                   <input 
-                     type="password" 
-                     autoFocus
-                     value={logoutPassword}
-                     onChange={(e) => setLogoutPassword(e.target.value)}
-                     onKeyDown={(e) => e.key === 'Enter' && confirmLogout()}
-                     placeholder="SENHA DO ADM"
-                     className="bg-transparent w-full outline-none font-black text-sm uppercase placeholder:text-slate-200"
-                   />
-                </div>
-                
-                {logoutError && <p className="text-center text-[9px] font-black text-red-500 uppercase mb-4 animate-bounce">Senha Incorreta!</p>}
-
-                <div className="flex flex-col gap-2">
-                   <button onClick={confirmLogout} disabled={isVerifyingLogout} className="w-full py-5 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
-                     {isVerifyingLogout ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar Saída'}
-                   </button>
-                   <button onClick={() => { setIsLogoutModalOpen(false); setLogoutPassword(''); }} className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Cancelar</button>
-                </div>
-             </div>
-          </div>
-        )}
+        <button onClick={() => setIsLogoutModalOpen(true)} className="text-[10px] font-black text-red-400 uppercase tracking-widest mt-10 cursor-pointer">Sair</button>
+        {renderLogoutModal()}
       </div>
     );
   }
@@ -1673,7 +1725,17 @@ const App: React.FC = () => {
               <p className="text-[7px] font-bold uppercase text-slate-500 truncate">{currentUser.specialty || (currentUser.role === 'admin' ? 'Administrador' : 'Colaborador')}</p>
             </div>
           </div>
-          <button onClick={() => setIsLogoutModalOpen(true)} className="w-full flex items-center gap-4 px-6 py-4 text-slate-500 hover:text-red-400 font-black text-[10px] uppercase tracking-widest transition-colors">
+          {session?.impersonatedBySuper && (
+            <button 
+              type="button"
+              onClick={returnToSuperAdmin} 
+              className="w-full flex items-center gap-3 px-4 py-3 mb-2 bg-gradient-to-r from-purple-600/30 to-indigo-600/30 hover:from-purple-600 hover:to-indigo-600 text-purple-200 hover:text-white rounded-xl font-black text-[9px] uppercase tracking-wider transition-all border border-purple-500/30 cursor-pointer shadow-sm active:scale-95"
+            >
+              <ArrowLeft size={16} className="shrink-0" />
+              <span className="animate-in fade-in truncate">Voltar ao Super ADM</span>
+            </button>
+          )}
+          <button onClick={() => setIsLogoutModalOpen(true)} className="w-full flex items-center gap-4 px-6 py-4 text-slate-500 hover:text-red-400 font-black text-[10px] uppercase tracking-widest transition-colors cursor-pointer">
             <LogOut size={20} className="shrink-0" />
             <span className="animate-in fade-in">Sair</span>
           </button>
@@ -1681,6 +1743,37 @@ const App: React.FC = () => {
       </aside>
 
       <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden relative">
+        {/* Barra superior permanente de modo Super Administrador */}
+        {session?.impersonatedBySuper && (
+          <div className="w-full bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 text-white px-3 sm:px-5 py-2.5 shadow-lg flex items-center justify-between shrink-0 z-30 border-b border-purple-500/40 animate-in slide-in-from-top">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <span className="flex h-2.5 w-2.5 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500"></span>
+              </span>
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 truncate">
+                <span className="px-2 py-0.5 rounded-md bg-purple-800/80 text-purple-200 font-black text-[9px] uppercase tracking-wider shrink-0 border border-purple-600/50">
+                  Super ADM
+                </span>
+                <span className="text-[11px] text-white font-bold truncate">
+                  Loja: <span className="text-purple-300 font-extrabold">{settings.storeName}</span>
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={returnToSuperAdmin}
+                className="bg-purple-600 hover:bg-purple-500 text-white px-3 sm:px-4 py-1.5 rounded-xl font-black uppercase text-[10px] tracking-wider transition-all flex items-center gap-1.5 shadow-md active:scale-95 border border-purple-400/40 cursor-pointer"
+                title="Sair desta loja e voltar para o Painel Super ADM"
+              >
+                <ArrowLeft size={13} />
+                <span className="hidden sm:inline">Voltar ao</span> <span>Super ADM</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Mobile Top Header */}
         <div className="md:hidden flex items-center justify-between bg-white border-b border-slate-100 px-3 py-2 shrink-0 z-20 shadow-sm gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1710,6 +1803,17 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            {session?.impersonatedBySuper && (
+              <button
+                type="button"
+                onClick={returnToSuperAdmin}
+                className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-sm cursor-pointer border border-purple-400/40"
+                title="Voltar ao Painel Super ADM"
+              >
+                <ArrowLeft size={11} />
+                <span>Super ADM</span>
+              </button>
+            )}
             <button
               id="tour-mobile-install-btn"
               type="button"
@@ -1976,9 +2080,22 @@ const App: React.FC = () => {
                   <ArrowRight size={13} />
                 </button>
               )}
+              {session?.impersonatedBySuper && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSidebarOpen(false);
+                    returnToSuperAdmin();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 text-white font-black text-[10px] uppercase tracking-wider border border-purple-500/40 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-md transition-all active:scale-95 cursor-pointer"
+                >
+                  <ArrowLeft size={15} />
+                  <span>Voltar ao Painel Super ADM</span>
+                </button>
+              )}
               <button 
                 onClick={() => setIsLogoutModalOpen(true)} 
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 text-red-600 font-black text-[10px] uppercase tracking-widest border border-red-200 rounded-xl bg-red-50 hover:bg-red-100 transition-all active:scale-95"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 text-red-600 font-black text-[10px] uppercase tracking-widest border border-red-200 rounded-xl bg-red-50 hover:bg-red-100 transition-all active:scale-95 cursor-pointer"
               >
                 <LogOut size={16} /> 
                 Sair
@@ -1987,39 +2104,7 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      {isLogoutModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/90 z-[300] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
-           <div className="bg-white w-full max-w-xs rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 border border-slate-100">
-              <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner">
-                 <LogOut size={36} />
-              </div>
-              <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">Confirmar Saída</h3>
-              <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-10 leading-tight">Para deslogar, digite a<br/>senha do ADM da Loja</p>
-              
-              <div className={`flex items-center gap-3 bg-slate-50 border rounded-2xl px-5 py-5 mb-4 transition-all ${logoutError ? 'border-red-500 bg-red-50 ring-4 ring-red-100' : 'border-slate-100 focus-within:border-blue-500'}`}>
-                 <KeyRound size={20} className={logoutError ? 'text-red-500' : 'text-slate-300'} />
-                 <input 
-                   type="password" 
-                   autoFocus
-                   value={logoutPassword}
-                   onChange={(e) => setLogoutPassword(e.target.value)}
-                   onKeyDown={(e) => e.key === 'Enter' && confirmLogout()}
-                   placeholder="SENHA DO ADM"
-                   className="bg-transparent w-full outline-none font-black text-sm uppercase placeholder:text-slate-200"
-                 />
-              </div>
-              
-              {logoutError && <p className="text-center text-[9px] font-black text-red-500 uppercase mb-4 animate-bounce">Senha Incorreta!</p>}
-
-              <div className="flex flex-col gap-2">
-                 <button onClick={confirmLogout} disabled={isVerifyingLogout} className="w-full py-5 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
-                   {isVerifyingLogout ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar Saída'}
-                 </button>
-                 <button onClick={() => { setIsLogoutModalOpen(false); setLogoutPassword(''); }} className="w-full py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Cancelar</button>
-              </div>
-           </div>
-        </div>
-      )}
+      {renderLogoutModal()}
 
       {/* Modal Interativo de Instalação do App (PWA) no Celular/PC */}
       <InstallAppModal 

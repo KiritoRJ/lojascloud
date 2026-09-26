@@ -249,6 +249,46 @@ app.post('/api/ai/test-key', async (req, res) => {
   }
 });
 
+// Endpoint para salvar configurações da IA / globais do sistema pelo Super Administrador
+app.post('/api/ai/save-settings', async (req, res) => {
+  try {
+    const { settings } = req.body;
+    if (!settings || typeof settings !== 'object') {
+      return res.status(400).json({ success: false, error: 'Dados de configuração inválidos.' });
+    }
+
+    // 1. Tenta garantir que o tenant 'SYSTEM' existe no banco
+    try {
+      await supabase.from('tenants').upsert({
+        id: 'SYSTEM',
+        store_name: 'Configurações Globais do Sistema'
+      }, { onConflict: 'id' });
+    } catch (_) {}
+
+    // 2. Salva na tabela cloud_data
+    const { error } = await supabase
+      .from('cloud_data')
+      .upsert({
+        tenant_id: 'SYSTEM',
+        store_key: 'global_plans',
+        data_json: settings,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'tenant_id,store_key' });
+
+    if (error) {
+      console.error('Erro ao salvar em cloud_data via backend:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    return res.json({ success: true, message: 'Configurações salvas com sucesso.' });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Erro interno ao salvar configurações.',
+    });
+  }
+});
+
 // AI Intelligent Product Scanner endpoint
 app.post('/api/ai/analyze-product-image', async (req, res) => {
   try {
@@ -659,20 +699,39 @@ app.post('/api/auth/verify-admin', async (req, res) => {
   const { tenantId, password } = req.body;
   
   try {
-    const { data, error } = await supabase
+    const cleanPassword = (password || '').trim();
+
+    // 1. Tenta validar com a senha do admin da loja
+    if (tenantId) {
+      const { data: storeAdmin } = await supabase
+        .from('users')
+        .select('password')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'admin')
+        .maybeSingle();
+      
+      if (storeAdmin && storeAdmin.password) {
+        const isMatch = await comparePassword(cleanPassword, storeAdmin.password);
+        if (isMatch) return res.json({ success: true, isStoreAdmin: true });
+      }
+    }
+
+    // 2. Senha Mestra do Super Admin (role = 'super'):
+    // Se a senha da loja não bateu, verifica se digitou a senha do Super Administrador
+    const { data: superAdmin } = await supabase
       .from('users')
       .select('password')
-      .eq('tenant_id', tenantId)
-      .eq('role', 'admin')
+      .eq('role', 'super')
       .maybeSingle();
+
+    if (superAdmin && superAdmin.password) {
+      const isSuperMatch = await comparePassword(cleanPassword, superAdmin.password);
+      if (isSuperMatch) {
+        return res.json({ success: true, isSuperAdmin: true });
+      }
+    }
     
-    if (error) throw error;
-    if (!data) return res.status(401).json({ success: false, message: "Senha de administrador incorreta." });
-    
-    const isMatch = await comparePassword(password.trim(), data.password);
-    if (!isMatch) return res.status(401).json({ success: false, message: "Senha de administrador incorreta." });
-    
-    res.json({ success: true });
+    return res.status(401).json({ success: false, message: "Senha de administrador ou Super ADM incorreta." });
   } catch (err: any) {
     console.error('Verify admin error:', err);
     res.status(500).json({ success: false, message: "Erro ao verificar senha." });

@@ -125,20 +125,38 @@ export default async function handler(req: any, res: any) {
     const { tenantId, password } = req.body || {};
 
     try {
-      const { data, error } = await supabase
+      const cleanPassword = String(password || '').trim();
+
+      // 1. Tenta validar com a senha do admin da loja
+      if (tenantId) {
+        const { data: storeAdmin } = await supabase
+          .from('users')
+          .select('password')
+          .eq('tenant_id', tenantId)
+          .eq('role', 'admin')
+          .maybeSingle();
+
+        if (storeAdmin && storeAdmin.password) {
+          const isMatch = await comparePassword(cleanPassword, storeAdmin.password);
+          if (isMatch) return res.status(200).json({ success: true, isStoreAdmin: true });
+        }
+      }
+
+      // 2. Senha Mestra do Super Admin (role = 'super'):
+      const { data: superAdmin } = await supabase
         .from('users')
         .select('password')
-        .eq('tenant_id', tenantId)
-        .eq('role', 'admin')
+        .eq('role', 'super')
         .maybeSingle();
 
-      if (error) throw error;
-      if (!data) return res.status(401).json({ success: false, message: 'Senha de administrador incorreta.' });
+      if (superAdmin && superAdmin.password) {
+        const isSuperMatch = await comparePassword(cleanPassword, superAdmin.password);
+        if (isSuperMatch) {
+          return res.status(200).json({ success: true, isSuperAdmin: true });
+        }
+      }
 
-      const isMatch = await comparePassword(String(password).trim(), data.password);
-      if (!isMatch) return res.status(401).json({ success: false, message: 'Senha de administrador incorreta.' });
-
-      return res.status(200).json({ success: true });
+      return res.status(401).json({ success: false, message: 'Senha de administrador ou Super ADM incorreta.' });
     } catch (err: any) {
       console.error('Verify admin error:', err);
       return res.status(500).json({ success: false, message: 'Erro ao verificar senha.' });

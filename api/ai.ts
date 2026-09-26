@@ -109,6 +109,7 @@ export default async function handler(req: any, res: any) {
   if (!action) {
     if (url.includes('system-status')) action = 'system-status';
     else if (url.includes('test-key')) action = 'test-key';
+    else if (url.includes('save-settings')) action = 'save-settings';
     else if (url.includes('analyze-product-image')) action = 'analyze-product-image';
     else if (req.method === 'GET') action = 'system-status';
     else action = 'analyze-product-image';
@@ -129,6 +130,45 @@ export default async function handler(req: any, res: any) {
       return res.status(500).json({
         success: false,
         error: err?.message || 'Erro ao consultar status da IA.',
+      });
+    }
+  }
+
+  // 1.5. ACTION: SAVE-SETTINGS
+  if (action === 'save-settings') {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ success: false, error: 'Método não permitido.' });
+    }
+    try {
+      const body = parseBody(req);
+      const settings = body?.settings || body;
+
+      // Garante tenant SYSTEM
+      try {
+        await supabase.from('tenants').upsert({
+          id: 'SYSTEM',
+          store_name: 'Configurações Globais do Sistema'
+        }, { onConflict: 'id' });
+      } catch (_) {}
+
+      const { error } = await supabase
+        .from('cloud_data')
+        .upsert({
+          tenant_id: 'SYSTEM',
+          store_key: 'global_plans',
+          data_json: settings,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'tenant_id,store_key' });
+
+      if (error) {
+        return res.status(500).json({ success: false, error: error.message });
+      }
+
+      return res.status(200).json({ success: true, message: 'Configurações salvas com sucesso.' });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Erro ao processar salvamento de configurações.',
       });
     }
   }

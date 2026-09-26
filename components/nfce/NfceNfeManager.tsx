@@ -89,10 +89,10 @@ export const NfceNfeManager: React.FC<Props> = ({
       environment: 'homologacao',
       provider: 'sefaz_direta',
       apiKey: '',
-      companyName: settings.storeName || 'Loja de Eletrônicos e Acessórios',
-      tradeName: settings.storeName || '',
-      cnpj: settings.storeCnpj || '00.000.000/0001-00',
-      ie: settings.storeStateRegistration || 'ISENTO',
+      companyName: settings?.storeName || 'Loja de Eletrônicos e Acessórios',
+      tradeName: settings?.storeName || '',
+      cnpj: settings?.storeCnpj || '00.000.000/0001-00',
+      ie: settings?.storeStateRegistration || 'ISENTO',
       cityIbgeCode: '3550308',
       cityName: 'São Paulo',
       uf: 'SP',
@@ -118,6 +118,7 @@ export const NfceNfeManager: React.FC<Props> = ({
 
   // Sincroniza dinamicamente dados da empresa vindos de AppSettings para a configuração SEFAZ
   useEffect(() => {
+    if (!settings) return;
     let changed = false;
     const updatedConfig = { ...config };
 

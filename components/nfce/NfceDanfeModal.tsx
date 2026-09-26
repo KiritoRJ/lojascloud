@@ -26,7 +26,27 @@ export const NfceDanfeModal: React.FC<Props> = ({
   onShowToast
 }) => {
   const item = propItem || propNote;
-  const config = propConfig || settings?.nfceNfeConfig || {
+
+  // Recupera dinamicamente a configuração da empresa do localStorage com base no tenantId do item
+  const getStoredConfig = () => {
+    if (item?.tenantId) {
+      const saved = localStorage.getItem(`nfce_nfe_${item.tenantId}_config`);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+    const globalSaved = localStorage.getItem(`nfce_nfe_global_config`);
+    if (globalSaved) {
+      try {
+        return JSON.parse(globalSaved);
+      } catch (e) {}
+    }
+    return null;
+  };
+
+  const config = propConfig || getStoredConfig() || settings?.nfceNfeConfig || {
     environment: 'homologacao',
     provider: 'sefaz_direta',
     apiKey: '',

@@ -1277,7 +1277,7 @@ const App: React.FC = () => {
     return <CustomerCatalog tenantId={catalogTenantId} catalogSlug={catalogSlug} deferredPrompt={deferredPrompt} />;
   }
 
-  if (isInitializing) {
+  if (isInitializing || (session?.isLoggedIn && !settings && session.type !== 'super')) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4">
         <Loader2 className="animate-spin text-blue-500" size={40} />

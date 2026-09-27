@@ -25,11 +25,14 @@ import {
   Product, 
   Customer, 
   NfceNfeItem, 
+  NfceNfeProductItem,
   NfceNfeConfig, 
   FiscalDocType,
   Sale
 } from '../../types';
 import NfceDanfeModal from '../nfce/NfceDanfeModal';
+
+import { FiscalEmissionService } from '../../utils/fiscalEmissionService';
 
 interface NfceSectionProps {
   settings: AppSettings;
@@ -55,10 +58,12 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
   onShowToast
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'authorized' | 'canceled' | 'rejected'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'authorized' | 'contingencia_offline' | 'rejected' | 'canceled'>('all');
   const [viewingDanfeNote, setViewingDanfeNote] = useState<NfceNfeItem | null>(null);
   const [showNewNfceModal, setShowNewNfceModal] = useState(false);
   const [isEmitting, setIsEmitting] = useState(false);
+  const [isBatchTransmitting, setIsBatchTransmitting] = useState(false);
+  const [retransmittingNoteId, setRetransmittingNoteId] = useState<string | null>(null);
 
   // Formulário Nova NFC-e
   const [selectedSaleId, setSelectedSaleId] = useState('');
@@ -73,6 +78,7 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
 
   // Filtra apenas NFC-e (Modelo 65)
   const nfceList = notes.filter(n => n.docType === 'nfce');
+  const pendingNotes = nfceList.filter(n => n.status === 'contingencia_offline' || n.status === 'rejected' || n.tpEmis === '9');
 
   const filteredNotes = nfceList.filter(n => {
     const matchesStatus = statusFilter === 'all' || n.status === statusFilter;
@@ -85,6 +91,59 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
 
     return matchesStatus && matchesSearch;
   });
+
+  const handleRetransmitSingle = async (note: NfceNfeItem) => {
+    setRetransmittingNoteId(note.id);
+    try {
+      const res = await FiscalEmissionService.retransmitNote(note, settings, tenantId);
+      if (res.success && res.noteItem) {
+        const updated = notes.map(n => n.id === note.id ? res.noteItem! : n);
+        setNotes(updated);
+        onShowToast(res.message, 'success');
+      } else {
+        onShowToast(`${res.message} ${res.suggestion ? `(${res.suggestion})` : ''}`, 'error');
+      }
+    } catch (e: any) {
+      onShowToast(`Erro ao retransmitir: ${e?.message || 'Falha de conexão'}`, 'error');
+    } finally {
+      setRetransmittingNoteId(null);
+    }
+  };
+
+  const handleBatchRetransmitAll = async () => {
+    if (pendingNotes.length === 0) return;
+    setIsBatchTransmitting(true);
+    try {
+      const { authorized, failed, results } = await FiscalEmissionService.retransmitPendingBatch(
+        pendingNotes,
+        settings,
+        tenantId
+      );
+
+      // Atualiza a lista com as notas autorizadas
+      const authorizedIds = new Set(results.filter(r => r.success && r.noteItem).map(r => r.noteItem!.id));
+      const updatedNotes = notes.map(n => {
+        if (authorizedIds.has(n.id)) {
+          const match = results.find(r => r.noteItem?.id === n.id);
+          return match?.noteItem || n;
+        }
+        return n;
+      });
+
+      setNotes(updatedNotes);
+
+      if (authorized > 0) {
+        onShowToast(`⚡ Transmissão concluída: ${authorized} cupom(ns) autorizados na SEFAZ!`, 'success');
+      }
+      if (failed > 0) {
+        onShowToast(`⚠️ ${failed} nota(s) não foram autorizadas. Verifique o certificado ou a conexão.`, 'error');
+      }
+    } catch (e: any) {
+      onShowToast(`Erro ao transmitir lote: ${e?.message || 'Falha de conexão'}`, 'error');
+    } finally {
+      setIsBatchTransmitting(false);
+    }
+  };
 
   const handleSelectSale = (saleId: string) => {
     setSelectedSaleId(saleId);
@@ -134,6 +193,7 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
 
   const handleEmitNfce = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isEmitting) return;
     if (selectedProductList.length === 0) {
       onShowToast('Adicione ao menos um item ao cupom fiscal', 'error');
       return;
@@ -141,95 +201,81 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
 
     setIsEmitting(true);
     try {
-      await new Promise(r => setTimeout(r, 1200));
-
-      const nextNum = (settings.nfceNfeConfig?.nfceNextNumber || 200) + 1;
       const totalAmount = selectedProductList.reduce((acc, it) => acc + (it.unitPrice * it.quantity), 0);
-      const accessKey = `352609${(settings.storeCnpj || '00000000000199').replace(/\D/g, '')}65001${String(nextNum).padStart(9, '0')}10000005678`;
 
-      const newNote: NfceNfeItem = {
-        id: `nfce_${Date.now()}`,
-        tenantId,
+      const items: NfceNfeProductItem[] = selectedProductList.map((it, idx) => ({
+        itemNumber: idx + 1,
+        productId: it.product.id,
+        description: it.product.name,
+        ncm: it.product.ncm || '8517.79.00',
+        cfop: it.product.cfop || '5102',
+        csosn: it.product.csosnCst || '102',
+        origin: it.product.origin || '0',
+        cstPis: it.product.cstPis || '49',
+        cstCofins: it.product.cstCofins || '49',
+        unitOfMeasure: 'UN',
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        totalPrice: it.quantity * it.unitPrice,
+        icmsRate: it.product.icmsAliquota || 0,
+        icmsAmount: 0
+      }));
+
+      const result = await FiscalEmissionService.emit({
         docType: 'nfce',
-        environment: settings.nfceNfeConfig?.environment || 'homologacao',
-        status: 'authorized',
-        number: String(nextNum).padStart(6, '0'),
-        series: settings.nfceNfeConfig?.nfceSeries || '1',
-        accessKey,
-        protocol: `13526${Math.floor(100000000 + Math.random() * 900000000)}`,
-        issuedAt: new Date().toISOString(),
-        saleId: selectedSaleId || undefined,
+        settings,
+        items,
         customer: {
           name: nomeConsumidor.trim() || 'CONSUMIDOR FINAL',
           cpfCnpj: cpfCnpjConsumidor.trim() || undefined
         },
-        items: selectedProductList.map((it, idx) => ({
-          itemNumber: idx + 1,
-          productId: it.product.id,
-          description: it.product.name,
-          ncm: it.product.ncm || '8517.79.00',
-          cfop: it.product.cfop || '5102',
-          csosn: it.product.csosnCst || '102',
-          origin: it.product.origin || '0',
-          cstPis: it.product.cstPis || '49',
-          cstCofins: it.product.cstCofins || '49',
-          unitOfMeasure: 'UN',
-          quantity: it.quantity,
-          unitPrice: it.unitPrice,
-          totalPrice: it.quantity * it.unitPrice,
-          icmsRate: it.product.icmsAliquota || 0,
-          icmsAmount: 0
-        })),
+        payment: {
+          method: 'dinheiro',
+          amountPaid: totalAmount,
+          change: 0
+        },
         totals: {
           productsAmount: totalAmount,
           discountAmount: 0,
-          icmsAmount: 0,
-          pisAmount: 0,
-          cofinsAmount: 0,
           totalAmount
         },
-        payment: {
-          paymentType: '01',
-          paymentMethodName: 'Dinheiro / PIX / Cartão',
-          amountPaid: totalAmount
-        },
-        qrCodeUrl: `https://www.nfce.fazenda.sp.gov.br/qrcode?p=${accessKey}|2|1|1|${settings.nfceNfeConfig?.cscId || '000001'}|SHA1HASH`,
-        xmlContent: (() => {
-          const itemsXml = selectedProductList.map((it, idx) => {
-            const code = it.product.csosnCst || '102';
-            const isZeroRateCst = ['49', '99', '07', '08', '40', '41', '300', '400'].includes(code);
-            const icmsXml = isZeroRateCst
-              ? `<ICMS><ICMSIsento><orig>${it.product.origin || '0'}</orig><CST>${code}</CST></ICMSIsento></ICMS>`
-              : `<ICMS><ICMSTrib><orig>${it.product.origin || '0'}</orig><CST>${code}</CST><vBC>${(it.quantity * it.unitPrice).toFixed(2)}</vBC><pICMS>${(it.product.icmsAliquota || 0).toFixed(2)}</pICMS><vICMS>${((it.quantity * it.unitPrice * (it.product.icmsAliquota || 0)) / 100).toFixed(2)}</vICMS></ICMSTrib></ICMS>`;
-            return `<det nItem="${idx + 1}"><prod><cProd>${it.product.id || '999'}</cProd><xProd>${it.product.name}</xProd><NCM>${it.product.ncm || '8517.79.00'}</NCM><CFOP>${it.product.cfop || '5102'}</CFOP><uCom>UN</uCom><qCom>${it.quantity}</qCom><vUnCom>${it.unitPrice.toFixed(2)}</vUnCom><vProd>${(it.quantity * it.unitPrice).toFixed(2)}</vProd></prod><imposto>${icmsXml}</imposto></det>`;
-          }).join('');
-          return `<?xml version="1.0" encoding="UTF-8"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe${accessKey}"><ide><nNF>${nextNum}</nNF><dhEmi>${new Date().toISOString()}</dhEmi></ide><emit><xNome>${settings.storeName}</xNome><CNPJ>${settings.storeCnpj || '00000000000199'}</CNPJ></emit><detalhes>${itemsXml}</detalhes><total><ICMSTot><vNF>${(totalAmount || 0).toFixed(2)}</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
-        })()
-      };
+        tenantId
+      }, { timeoutMs: 20000 });
 
-      const updatedNotes = [newNote, ...notes];
-      setNotes(updatedNotes);
-      localStorage.setItem(`fiscal_notes_${tenantId || 'global'}`, JSON.stringify(updatedNotes));
-
-      if (settings.nfceNfeConfig) {
-        setSettings({
-          ...settings,
-          nfceNfeConfig: {
-            ...settings.nfceNfeConfig,
-            nfceNextNumber: nextNum
-          }
-        });
+      if (!result.success) {
+        onShowToast(`${result.message} ${result.suggestion ? `(${result.suggestion})` : ''}`, 'error');
+        return;
       }
 
-      setShowNewNfceModal(false);
-      setSelectedProductList([]);
-      setSelectedSaleId('');
-      setNomeConsumidor('');
-      setCpfCnpjConsumidor('');
-      onShowToast(`Cupom NFC-e Nº ${newNote.number} emitido com sucesso!`, 'success');
-      setViewingDanfeNote(newNote);
-    } catch (e) {
-      onShowToast('Erro ao transmitir NFC-e.', 'error');
+      if (result.noteItem) {
+        const updatedNotes = [result.noteItem, ...notes.filter(n => n.id !== result.noteItem?.id)];
+        setNotes(updatedNotes);
+
+        if (settings.nfceNfeConfig) {
+          setSettings({
+            ...settings,
+            nfceNfeConfig: {
+              ...settings.nfceNfeConfig,
+              nfceNextNumber: (settings.nfceNfeConfig.nfceNextNumber || 100) + 1
+            }
+          });
+        }
+
+        setShowNewNfceModal(false);
+        setSelectedProductList([]);
+        setSelectedSaleId('');
+        setNomeConsumidor('');
+        setCpfCnpjConsumidor('');
+
+        if (result.status === 'contingencia_offline') {
+          onShowToast(result.message, 'info');
+        } else {
+          onShowToast(`Cupom NFC-e Nº ${result.noteItem.number} emitido com sucesso!`, 'success');
+        }
+        setViewingDanfeNote(result.noteItem);
+      }
+    } catch (e: any) {
+      onShowToast(`Erro ao transmitir NFC-e: ${e?.message || 'Falha desconhecida'}`, 'error');
     } finally {
       setIsEmitting(false);
     }
@@ -330,6 +376,44 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
         </div>
       </div>
 
+      {/* ALERTA DE NOTAS PENDENTES EM CONTINGÊNCIA OU COM REJEIÇÃO */}
+      {pendingNotes.length > 0 && (
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-amber-500 to-orange-500 rounded-3xl text-slate-950 shadow-lg shadow-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-slate-950/10 flex items-center justify-center shrink-0 mt-0.5">
+              <AlertTriangle size={22} className="text-slate-950" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-tight">
+                {pendingNotes.length} Cupom(ns) NFC-e Pendente(s) de Transmissão na SEFAZ
+              </h3>
+              <p className="text-xs text-slate-900/80 font-medium mt-0.5">
+                Notas emitidas em contingência offline ou bloqueadas por certificado. Transmita o lote para regularizar o fisco.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleBatchRetransmitAll}
+            disabled={isBatchTransmitting}
+            className="px-5 py-3 bg-slate-950 text-amber-400 hover:bg-slate-900 active:scale-95 rounded-2xl text-xs font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+          >
+            {isBatchTransmitting ? (
+              <>
+                <RefreshCw size={15} className="animate-spin text-amber-400" />
+                <span>Transmitindo Lote...</span>
+              </>
+            ) : (
+              <>
+                <Send size={15} />
+                <span>Transmitir {pendingNotes.length} Nota(s) Agora</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* FILTROS E BUSCA */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -343,10 +427,12 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-1.5 bg-white p-1 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="flex items-center gap-1.5 bg-white p-1 rounded-2xl border border-slate-200 shadow-xs flex-wrap">
           {[
             { id: 'all', label: 'Todos' },
             { id: 'authorized', label: 'Autorizados' },
+            { id: 'contingencia_offline', label: 'Contingência' },
+            { id: 'rejected', label: 'Rejeitados' },
             { id: 'canceled', label: 'Cancelados' }
           ].map(f => (
             <button
@@ -390,9 +476,19 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
                     <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
                       note.status === 'authorized'
                         ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-red-100 text-red-800'
+                        : note.status === 'contingencia_offline' || note.tpEmis === '9'
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        : note.status === 'rejected'
+                        ? 'bg-red-100 text-red-900 border border-red-300'
+                        : 'bg-slate-100 text-slate-800'
                     }`}>
-                      {note.status === 'authorized' ? 'Cupom Autorizado' : 'Cancelado'}
+                      {note.status === 'authorized'
+                        ? 'Cupom Autorizado'
+                        : note.status === 'contingencia_offline' || note.tpEmis === '9'
+                        ? 'Contingência Offline (Pendente)'
+                        : note.status === 'rejected'
+                        ? `Rejeitada (${note.rejectionCode || 'SEFAZ'})`
+                        : 'Cancelado'}
                     </span>
 
                     {isNoteTest ? (
@@ -414,6 +510,28 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
                     <span className="text-xs font-black text-slate-900">
                       R$ {(note.totals?.totalAmount ?? (note as any).total ?? 0).toFixed(2)}
                     </span>
+
+                    {(note.status === 'contingencia_offline' || note.status === 'rejected' || note.tpEmis === '9') && (
+                      <button
+                        type="button"
+                        onClick={() => handleRetransmitSingle(note)}
+                        disabled={retransmittingNoteId === note.id}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 cursor-pointer shadow-xs transition-all disabled:opacity-50"
+                        title="Transmitir para SEFAZ agora"
+                      >
+                        {retransmittingNoteId === note.id ? (
+                          <>
+                            <RefreshCw size={13} className="animate-spin text-slate-950" />
+                            <span>Enviando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send size={13} />
+                            <span>Transmitir</span>
+                          </>
+                        )}
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -678,6 +796,11 @@ export const NfceSection: React.FC<NfceSectionProps> = ({
           settings={settings}
           onClose={() => setViewingDanfeNote(null)}
           onShowToast={onShowToast}
+          onNoteUpdated={(updated) => {
+            const up = notes.map(n => n.id === updated.id ? updated : n);
+            setNotes(up);
+            setViewingDanfeNote(updated);
+          }}
         />
       )}
     </div>

@@ -4,8 +4,9 @@ import { createPortal } from 'react-dom';
 import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer, LayoutGrid, Grid, List, Rows, CreditCard, Camera, Image as ImageIcon, AlertTriangle, Sparkles, TrendingUp, ShieldAlert, MessageCircle, FileText, Send, QrCode } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
-import { Product, Sale, AppSettings, User, NfceNfeItem } from '../types';
+import { Product, Sale, AppSettings, User, NfceNfeItem, NfceNfeProductItem } from '../types';
 import NfceDanfeModal from './nfce/NfceDanfeModal';
+import { FiscalEmissionService } from '../utils/fiscalEmissionService';
 import { formatCurrency, parseCurrencyString, formatDate, formatDateTime, playBeepSound, generateRandomNumericCode, getProductEffectivePrice } from '../utils';
 import { OnlineDB } from '../utils/api';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -78,6 +79,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [paymentEntries, setPaymentEntries] = useState<PaymentEntry[]>([{ method: 'Dinheiro', amount: 0 }]);
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
   const [isCompressingBanner, setIsCompressingBanner] = useState(false);
+  const [isSubmittingSale, setIsSubmittingSale] = useState(false);
+  const isSubmittingSaleRef = useRef(false);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
   // Recupera carrinho do PDV caso o app seja minimizado ou recarregado no celular
@@ -472,7 +475,9 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     }));
   };
 
-  const handleFinalizeSale = () => {
+  const handleFinalizeSale = async () => {
+    // Prevenção imediata de cliques rápidos duplicados (Debounce / Concurrency Lock)
+    if (isSubmittingSaleRef.current || isSubmittingSale) return;
     if (cart.length === 0) return;
 
     // Trava de Margem de Lucro / Alerta de Prejuízo no PDV
@@ -484,103 +489,84 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       if (!confirmed) return;
     }
 
-    const uniqueTransactions = new Set(sales.map(s => s.transactionId).filter(Boolean));
-    const nextTransactionNumber = uniqueTransactions.size + 1;
-    const transactionId = generateRandomNumericCode();
-    const date = new Date().toISOString();
-    
-    const totalPaid = paymentEntries.reduce((acc, curr) => acc + curr.amount, 0);
-    const totalCash = paymentEntries.filter(p => p.method === 'Dinheiro').reduce((acc, curr) => acc + curr.amount, 0);
-    const change = paymentEntries.length < 2 ? Math.min(Math.max(0, totalPaid - finalTotal), totalCash) : 0;
+    // Ativa trava atômica e estado de carregamento
+    isSubmittingSaleRef.current = true;
+    setIsSubmittingSale(true);
 
-
-
-    const discountedTotal = Math.max(0, cartTotal - totalDiscount);
-    const surchargeAmount = discountedTotal * (totalSurcharge / 100);
-
-    const newSales: Sale[] = cart.map((item, index) => {
-      const effectiveUnit = getProductEffectivePrice(item.product);
-      const itemTotal = effectiveUnit * item.quantity;
-      // Distribui o desconto proporcionalmente se houver mais de um item
-      const itemDiscount = cartTotal > 0 ? (itemTotal / cartTotal) * totalDiscount : 0;
-      const itemSurcharge = cartTotal > 0 ? (itemTotal / cartTotal) * surchargeAmount : 0;
+    try {
+      const uniqueTransactions = new Set(sales.map(s => s.transactionId).filter(Boolean));
+      const nextTransactionNumber = uniqueTransactions.size + 1;
+      const transactionId = generateRandomNumericCode();
+      const date = new Date().toISOString();
       
-      const formattedId = generateRandomNumericCode();
+      const totalPaid = paymentEntries.reduce((acc, curr) => acc + curr.amount, 0);
+      const totalCash = paymentEntries.filter(p => p.method === 'Dinheiro').reduce((acc, curr) => acc + curr.amount, 0);
+      const change = paymentEntries.length < 2 ? Math.min(Math.max(0, totalPaid - finalTotal), totalCash) : 0;
 
-      const newSale: Sale = {
-        id: formattedId,
-        productId: item.product.id,
-        productName: item.product.name,
-        category: item.product.category,
-        date,
-        quantity: item.quantity,
-        originalPrice: effectiveUnit,
-        discount: itemDiscount,
-        surcharge: itemSurcharge,
-        finalPrice: itemTotal - itemDiscount + itemSurcharge,
-        costAtSale: item.product.costPrice * item.quantity,
-        costPerUnitAtSale: item.product.costPrice,
-        salePricePerUnitAtSale: effectiveUnit,
-        paymentMethod: paymentEntries.map(p => p.method === 'Cartão' && p.installments && p.installments > 1 ? `${p.method} (${p.installments}x)` : p.method).join(', '),
-        paymentEntriesJson: JSON.stringify(paymentEntries),
-        change: change,
-        sellerName: currentUser?.name || 'Sistema',
-        sellerId: currentUser?.id,
-        transactionId
-      };
+      const discountedTotal = Math.max(0, cartTotal - totalDiscount);
+      const surchargeAmount = discountedTotal * (totalSurcharge / 100);
 
-      // Calcula comissão em background
-      if (tenantId && currentUser?.id) {
-        OnlineDB.calculateAndLogCommission(tenantId, newSale, 'sale', currentUser.id);
-      }
+      const newSales: Sale[] = cart.map((item, index) => {
+        const effectiveUnit = getProductEffectivePrice(item.product);
+        const itemTotal = effectiveUnit * item.quantity;
+        // Distribui o desconto proporcionalmente se houver mais de um item
+        const itemDiscount = cartTotal > 0 ? (itemTotal / cartTotal) * totalDiscount : 0;
+        const itemSurcharge = cartTotal > 0 ? (itemTotal / cartTotal) * surchargeAmount : 0;
+        
+        const formattedId = generateRandomNumericCode();
 
-      return newSale;
-    });
+        const newSale: Sale = {
+          id: formattedId,
+          productId: item.product.id,
+          productName: item.product.name,
+          category: item.product.category,
+          date,
+          quantity: item.quantity,
+          originalPrice: effectiveUnit,
+          discount: itemDiscount,
+          surcharge: itemSurcharge,
+          finalPrice: itemTotal - itemDiscount + itemSurcharge,
+          costAtSale: item.product.costPrice * item.quantity,
+          costPerUnitAtSale: item.product.costPrice,
+          salePricePerUnitAtSale: effectiveUnit,
+          paymentMethod: paymentEntries.map(p => p.method === 'Cartão' && p.installments && p.installments > 1 ? `${p.method} (${p.installments}x)` : p.method).join(', '),
+          paymentEntriesJson: JSON.stringify(paymentEntries),
+          change: change,
+          sellerName: currentUser?.name || 'Sistema',
+          sellerId: currentUser?.id,
+          transactionId
+        };
 
-    const updatedProducts = products.map(p => {
-      const cartItem = cart.find(item => item.product.id === p.id);
-      if (cartItem) return { ...p, quantity: p.quantity - cartItem.quantity };
-      return p;
-    });
-    setProducts(updatedProducts);
-    setSales([...newSales, ...sales]);
-    setLastSaleAmount(finalTotal); // Record the actual sale amount, not the received amount
-    setLastSurcharge(surchargeAmount);
-    setLastDiscount(totalDiscount);
-    setLastChange(change);
-    setLastPaymentEntries([...paymentEntries]);
-    setLastTransactionItems([...cart]);
-    setLastPaymentMethod(paymentEntries.map(p => p.method === 'Cartão' && p.installments && p.installments > 1 ? `${p.method} (${p.installments}x)` : p.method).join(', '));
-    setLastTransactionId(transactionId);
-    setLastSaleDate(date);
+        // Calcula comissão em background
+        if (tenantId && currentUser?.id) {
+          OnlineDB.calculateAndLogCommission(tenantId, newSale, 'sale', currentUser.id);
+        }
 
-    // EMISSÃO AUTOMÁTICA DE NOTA FISCAL (NFC-e / SEFAZ)
-    let autoNote: NfceNfeItem | null = null;
-    if (isFiscalModeActive) {
-      try {
-        const nextNum = (settings.nfceNfeConfig?.nfceNextNumber || 100) + 1;
-        const cleanCnpj = (settings.storeCnpj || '00000000000199').replace(/\D/g, '');
-        const accessKey = `352609${cleanCnpj.padStart(14, '0')}65001${String(nextNum).padStart(9, '0')}1000000${Math.floor(1000 + Math.random() * 9000)}`;
-        const protocol = `13526${Math.floor(100000000 + Math.random() * 900000000)}`;
+        return newSale;
+      });
 
-        autoNote = {
-          id: `nfce_${Date.now()}`,
-          tenantId,
-          docType: 'nfce',
-          environment: settings.nfceNfeConfig?.environment || 'homologacao',
-          status: 'authorized',
-          number: String(nextNum).padStart(6, '0'),
-          series: settings.nfceNfeConfig?.nfceSeries || '1',
-          accessKey,
-          protocol,
-          issuedAt: date,
-          saleId: transactionId,
-          customer: {
-            name: customerFiscalName.trim() || 'CONSUMIDOR FINAL',
-            cpfCnpj: customerFiscalCpf.trim() || undefined,
-            phone: customerFiscalPhone.trim() || undefined
-          },
-          items: cart.map((it, idx) => ({
+      const updatedProducts = products.map(p => {
+        const cartItem = cart.find(item => item.product.id === p.id);
+        if (cartItem) return { ...p, quantity: p.quantity - cartItem.quantity };
+        return p;
+      });
+      setProducts(updatedProducts);
+      setSales([...newSales, ...sales]);
+      setLastSaleAmount(finalTotal); // Record the actual sale amount, not the received amount
+      setLastSurcharge(surchargeAmount);
+      setLastDiscount(totalDiscount);
+      setLastChange(change);
+      setLastPaymentEntries([...paymentEntries]);
+      setLastTransactionItems([...cart]);
+      setLastPaymentMethod(paymentEntries.map(p => p.method === 'Cartão' && p.installments && p.installments > 1 ? `${p.method} (${p.installments}x)` : p.method).join(', '));
+      setLastTransactionId(transactionId);
+      setLastSaleDate(date);
+
+      // EMISSÃO AUTOMÁTICA DE NOTA FISCAL (NFC-e / SEFAZ)
+      let autoNote: NfceNfeItem | null = null;
+      if (isFiscalModeActive) {
+        try {
+          const items: NfceNfeProductItem[] = cart.map((it, idx) => ({
             itemNumber: idx + 1,
             productId: it.product.id,
             description: it.product.name,
@@ -593,56 +579,71 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             totalPrice: it.quantity * it.product.salePrice,
             icmsRate: settings.nfceNfeConfig?.icmsDefaultRate || 0,
             icmsAmount: 0
-          })),
-          totals: {
-            productsAmount: finalTotal + totalDiscount - surchargeAmount,
-            discountAmount: totalDiscount,
-            icmsAmount: 0,
-            pisAmount: 0,
-            cofinsAmount: 0,
-            totalAmount: finalTotal
-          },
-          payment: {
-            paymentType: '01',
-            paymentMethodName: paymentEntries.map(p => p.method).join(', '),
-            amountPaid: finalTotal
-          },
-          qrCodeUrl: `https://www.nfce.fazenda.sp.gov.br/qrcode?p=${accessKey}|2|1|1|${settings.nfceNfeConfig?.cscId || '000001'}|SEFAZ`,
-          xmlContent: `<?xml version="1.0" encoding="UTF-8"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe${accessKey}"><ide><nNF>${nextNum}</nNF><dhEmi>${date}</dhEmi></ide><emit><xNome>${settings.storeName}</xNome><CNPJ>${cleanCnpj}</CNPJ></emit><total><ICMSTot><vNF>${finalTotal.toFixed(2)}</vNF></ICMSTot></total></infNFe></nfeProc>`
-        };
+          }));
 
-        const existingNotesStr = localStorage.getItem(`fiscal_notes_${tenantId || 'global'}`);
-        const existingNotes: NfceNfeItem[] = existingNotesStr ? JSON.parse(existingNotesStr) : [];
-        const updatedFiscalList = [autoNote, ...existingNotes];
-        localStorage.setItem(`fiscal_notes_${tenantId || 'global'}`, JSON.stringify(updatedFiscalList));
+          const primaryPayment = paymentEntries[0]?.method || 'Dinheiro';
+          const methodMap: Record<string, string> = {
+            'Dinheiro': 'dinheiro',
+            'Cartão': 'cartao_credito',
+            'PIX': 'pix'
+          };
 
-        if (settings.nfceNfeConfig) {
-          onUpdateSettings({
-            ...settings,
-            nfceNfeConfig: {
-              ...settings.nfceNfeConfig,
-              nfceNextNumber: nextNum
+          const result = await FiscalEmissionService.emit({
+            docType: 'nfce',
+            settings,
+            items,
+            customer: {
+              name: customerFiscalName.trim() || 'CONSUMIDOR FINAL',
+              cpfCnpj: customerFiscalCpf.trim() || undefined,
+              phone: customerFiscalPhone.trim() || undefined
+            },
+            payment: {
+              method: methodMap[primaryPayment] || 'dinheiro',
+              amountPaid: finalTotal,
+              change: change || 0
+            },
+            totals: {
+              productsAmount: finalTotal + totalDiscount - surchargeAmount,
+              discountAmount: totalDiscount,
+              totalAmount: finalTotal
+            },
+            tenantId
+          }, { timeoutMs: 15000 });
+
+          if (result.noteItem) {
+            autoNote = result.noteItem;
+            if (settings.nfceNfeConfig) {
+              onUpdateSettings({
+                ...settings,
+                nfceNfeConfig: {
+                  ...settings.nfceNfeConfig,
+                  nfceNextNumber: (settings.nfceNfeConfig.nfceNextNumber || 100) + 1
+                }
+              });
             }
-          });
+          }
+        } catch (e) {
+          console.error('Erro na emissão automática da NFC-e:', e);
         }
-      } catch (e) {
-        console.error('Erro na emissão automática da NFC-e:', e);
       }
-    }
-    setEmittedFiscalNote(autoNote);
+      setEmittedFiscalNote(autoNote);
 
-    setCart([]);
-    setTotalDiscount(0);
-    setTotalSurcharge(0);
-    setPaymentEntries([{ method: 'Dinheiro', amount: 0 }]);
-    setCustomerFiscalCpf('');
-    setCustomerFiscalName('');
-    setCustomerFiscalPhone('');
-    setShowCheckoutModal(false);
-    setShowCartDrawer(false);
-    
-    // Abre popup de confirmação para impressão na impressora e envio da nota
-    setShowPrintConfirmModal(true);
+      setCart([]);
+      setTotalDiscount(0);
+      setTotalSurcharge(0);
+      setPaymentEntries([{ method: 'Dinheiro', amount: 0 }]);
+      setCustomerFiscalCpf('');
+      setCustomerFiscalName('');
+      setCustomerFiscalPhone('');
+      setShowCheckoutModal(false);
+      setShowCartDrawer(false);
+      
+      // Abre popup de confirmação para impressão na impressora e envio da nota
+      setShowPrintConfirmModal(true);
+    } finally {
+      isSubmittingSaleRef.current = false;
+      setIsSubmittingSale(false);
+    }
   };
 
   const handleConfirmPrint = () => {
@@ -1632,13 +1633,31 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
             <div className="space-y-1.5 pt-1">
               <button 
+                type="button"
                 onClick={handleFinalizeSale} 
-                disabled={paymentEntries.reduce((acc, curr) => acc + curr.amount, 0) < finalTotal - 0.001} 
-                className="w-full py-3 bg-emerald-600 text-white rounded-lg font-black uppercase text-[9px] shadow-lg disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-2"
+                disabled={isSubmittingSale || paymentEntries.reduce((acc, curr) => acc + curr.amount, 0) < finalTotal - 0.001} 
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase text-[10px] tracking-wider shadow-lg shadow-emerald-600/20 disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
               >
-                <CheckCircle2 size={16} /> FINALIZAR VENDA
+                {isSubmittingSale ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin text-white" />
+                    <span>PROCESSANDO VENDA E NFC-E...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} />
+                    <span>FINALIZAR VENDA</span>
+                  </>
+                )}
               </button>
-              <button onClick={() => setShowCheckoutModal(false)} className="w-full py-1.5 text-slate-400 font-black uppercase text-[7px] tracking-widest">Cancelar</button>
+              <button 
+                type="button"
+                disabled={isSubmittingSale}
+                onClick={() => setShowCheckoutModal(false)} 
+                className="w-full py-2 text-slate-400 hover:text-slate-600 font-black uppercase text-[8px] tracking-widest cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>

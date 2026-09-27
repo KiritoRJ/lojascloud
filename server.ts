@@ -16,7 +16,14 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
-const PORT = parseInt(process.env.PORT || "3000", 10);
+const getPort = () => {
+  const portIndex = process.argv.indexOf('--port');
+  if (portIndex !== -1 && process.argv[portIndex + 1]) {
+    return parseInt(process.argv[portIndex + 1], 10);
+  }
+  return parseInt(process.env.PORT || "3000", 10);
+};
+const PORT = getPort();
 
 // Helper to hash password
 const hashPassword = async (password: string) => {
@@ -1360,6 +1367,7 @@ async function startServer() {
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
+        hmr: false,
         proxy: {}
       },
       appType: 'spa',

@@ -71,12 +71,13 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const [showDiscountFields, setShowDiscountFields] = useState(false);
   const [showAdvancedProductTaxes, setShowAdvancedProductTaxes] = useState(false);
 
-  // Sincronização Fiscal Inteligente por Nome (NCM, CEST, CFOP)
+  // Sincronização Fiscal Inteligente por Sugestão (NCM, CEST, CFOP) - O usuário escolhe usar ou não
   const [fiscalMatchSuggestion, setFiscalMatchSuggestion] = useState<FiscalMatchResult | null>(null);
   const [isSyncingFiscal, setIsSyncingFiscal] = useState(false);
+  const [isSuggestionDismissed, setIsSuggestionDismissed] = useState(false);
   const fiscalDebounceRef = useRef<any>(null);
 
-  const syncFiscalByName = async (name: string, category?: string, autoApply = false) => {
+  const syncFiscalByName = async (name: string, category?: string) => {
     if (!name || name.trim().length < 2) {
       setFiscalMatchSuggestion(null);
       return;
@@ -84,19 +85,14 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     setIsSyncingFiscal(true);
     try {
       const match = await findMatchingFiscalData(name, category);
-      setFiscalMatchSuggestion(match);
-      if (match.ncm) {
-        if (autoApply || !formData.ncm || formData.ncm === '8517.79.00') {
-          setFormData(prev => ({
-            ...prev,
-            ncm: match.ncm,
-            cest: match.cest || prev.cest || '',
-            cfop: match.cfop || prev.cfop || '5102'
-          }));
-        }
+      if (match && match.ncm) {
+        setFiscalMatchSuggestion(match);
+        setIsSuggestionDismissed(false);
+      } else {
+        setFiscalMatchSuggestion(null);
       }
     } catch (e) {
-      console.warn('Erro ao sincronizar fiscal pelo nome:', e);
+      console.warn('Erro ao buscar sugestão fiscal:', e);
     } finally {
       setIsSyncingFiscal(false);
     }
@@ -107,8 +103,8 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     if (fiscalDebounceRef.current) clearTimeout(fiscalDebounceRef.current);
     if (val.trim().length >= 3) {
       fiscalDebounceRef.current = setTimeout(() => {
-        syncFiscalByName(val, formData.category, true);
-      }, 350);
+        syncFiscalByName(val, formData.category);
+      }, 400);
     } else {
       setFiscalMatchSuggestion(null);
     }
@@ -268,8 +264,18 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
       if (hasDiscount) {
         setShowDiscountFields(true);
       }
+
+      // Se a IA identificou códigos fiscais, disponibiliza como SUGESTÃO para o usuário escolher usar ou não
       if (result.ncm || result.cest || result.cfop) {
-        setShowFiscalFields(true);
+        setFiscalMatchSuggestion({
+          ncm: result.ncm || '',
+          cest: result.cest || '',
+          cfop: result.cfop || '5102',
+          ncmDescription: result.name || 'Identificado na foto por IA',
+          confidence: 'high',
+          source: 'ai'
+        });
+        setIsSuggestionDismissed(false);
       }
 
       setFormData(prev => ({
@@ -285,9 +291,9 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
         discount: result.discount || (prev.discount || 0),
         isPromotion: !!hasDiscount,
         description: result.description || prev.description || '',
-        ncm: result.ncm || prev.ncm || '',
-        cest: result.cest || prev.cest || '',
-        cfop: result.cfop || prev.cfop || '5102',
+        ncm: prev.ncm || '',
+        cest: prev.cest || '',
+        cfop: prev.cfop || '5102',
         quantity: (result.quantity !== undefined && result.quantity > 0) ? result.quantity : (prev.quantity && prev.quantity > 0 ? prev.quantity : 1),
         photo: compressed,
       }));
@@ -477,6 +483,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     clearStockDraft();
     setEditingProduct(null);
     setFiscalMatchSuggestion(null);
+    setIsSuggestionDismissed(false);
     const defProf = availableTaxProfiles.find(p => p.isDefault) || availableTaxProfiles[0];
     setFormData({
       name: '',
@@ -511,8 +518,9 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const handleStartEditProduct = (product: Product) => {
     setEditingProduct(product);
     setFormData(product);
+    setIsSuggestionDismissed(false);
     if (product.name) {
-      syncFiscalByName(product.name, product.category, false);
+      syncFiscalByName(product.name, product.category);
     }
     setIsModalOpen(true);
   };
@@ -876,13 +884,13 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                     </label>
                     <button
                       type="button"
-                      onClick={() => syncFiscalByName(formData.name || '', formData.category, true)}
+                      onClick={() => syncFiscalByName(formData.name || '', formData.category)}
                       disabled={isSyncingFiscal || !formData.name?.trim()}
                       className="text-[9px] font-black uppercase text-emerald-600 hover:text-emerald-700 flex items-center gap-1 transition-all disabled:opacity-40 cursor-pointer"
-                      title="Sincronizar Códigos Fiscais (NCM, CEST, CFOP) com base no nome"
+                      title="Buscar Sugestão Fiscal (NCM, CEST, CFOP) com base no nome"
                     >
                       {isSyncingFiscal ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                      <span>Sincronizar Fiscal</span>
+                      <span>Sugerir Fiscal</span>
                     </button>
                   </div>
                   <input 
@@ -890,42 +898,67 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                     onChange={(e) => handleNameChange(e.target.value)} 
                     onBlur={(e) => {
                       if (e.target.value.trim().length >= 2) {
-                        syncFiscalByName(e.target.value, formData.category, true);
+                        syncFiscalByName(e.target.value, formData.category);
                       }
                     }}
                     placeholder="Ex: Arroz Branco Tipo 1 5kg, Feijão Carioca, Coca-Cola 2L..." 
                     className="w-full p-3.5 bg-slate-50 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-blue-600 border border-slate-100" 
                   />
 
-                  {/* Alerta de Sincronização Fiscal Inteligente */}
-                  {fiscalMatchSuggestion && fiscalMatchSuggestion.ncm && (
-                    <div className="bg-emerald-50 border border-emerald-200/80 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs animate-in fade-in">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Sparkles size={15} className="text-emerald-600 shrink-0" />
-                        <div className="min-w-0">
-                          <p className="font-bold text-[11px] text-emerald-950 truncate">
-                            Fiscal Sincronizado: <span className="font-mono font-black text-emerald-700">NCM {fiscalMatchSuggestion.ncm}</span> ({fiscalMatchSuggestion.ncmDescription})
+                  {/* Card de Sugestão Fiscal (100% Opcional - O usuário escolhe usar ou não) */}
+                  {fiscalMatchSuggestion && fiscalMatchSuggestion.ncm && !isSuggestionDismissed && (
+                    <div className="bg-emerald-50/90 border border-emerald-200 p-3 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in shadow-xs">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-600/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <Sparkles size={16} className="text-emerald-700" />
+                        </div>
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-200/60 text-emerald-900">
+                              Sugestão Fiscal Opcional
+                            </span>
+                            <span className="font-mono font-black text-xs text-emerald-900">
+                              NCM {fiscalMatchSuggestion.ncm}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-emerald-950 font-medium truncate">
+                            {fiscalMatchSuggestion.ncmDescription || 'Classificação Fiscal Sugerida'}
                           </p>
-                          <p className="text-[10px] text-emerald-700/80">
-                            CFOP: <strong>{fiscalMatchSuggestion.cfop}</strong> {fiscalMatchSuggestion.cest ? `• CEST: ${fiscalMatchSuggestion.cest}` : ''}
+                          <p className="text-[10px] text-emerald-700 font-bold">
+                            CFOP sugerido: <strong>{fiscalMatchSuggestion.cfop || '5102'}</strong>
+                            {fiscalMatchSuggestion.cest ? ` • CEST: ${fiscalMatchSuggestion.cest}` : ' • Sem CEST (Tributação normal)'}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
+
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                         <button
                           type="button"
                           onClick={() => {
                             setFormData(prev => ({
                               ...prev,
                               ncm: fiscalMatchSuggestion.ncm,
-                              cest: fiscalMatchSuggestion.cest || prev.cest || '',
-                              cfop: fiscalMatchSuggestion.cfop || prev.cfop || '5102'
+                              cest: fiscalMatchSuggestion.cest || '',
+                              cfop: fiscalMatchSuggestion.cfop || '5102'
                             }));
                             setShowFiscalFields(true);
                           }}
-                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all shadow-sm cursor-pointer"
+                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
+                            formData.ncm === fiscalMatchSuggestion.ncm
+                              ? 'bg-emerald-700 text-white'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+                          }`}
                         >
-                          {formData.ncm === fiscalMatchSuggestion.ncm ? '✓ Sincronizado' : 'Aplicar'}
+                          <CheckCircle2 size={13} />
+                          <span>{formData.ncm === fiscalMatchSuggestion.ncm ? 'Sugestão em Uso' : 'Usar Sugestão'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsSuggestionDismissed(true)}
+                          className="px-2.5 py-1.5 text-slate-400 hover:text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all hover:bg-slate-100 cursor-pointer"
+                          title="Dispensar sugestão e preencher manualmente"
+                        >
+                          Dispensar
                         </button>
                       </div>
                     </div>
@@ -1261,33 +1294,68 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                         </div>
                       </div>
 
+                      {/* Banner de Recomendação Fiscal dentro da seção tributária */}
+                      {fiscalMatchSuggestion && fiscalMatchSuggestion.ncm && (
+                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <Sparkles size={14} className="text-blue-600 shrink-0" />
+                              <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider">
+                                Sugestão Fiscal do Sistema (Opcional):
+                              </span>
+                            </div>
+                            {formData.ncm === fiscalMatchSuggestion.ncm ? (
+                              <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
+                                ✓ Sugestão Aplicada
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setFormData(prev => ({
+                                  ...prev,
+                                  ncm: fiscalMatchSuggestion.ncm,
+                                  cest: fiscalMatchSuggestion.cest || '',
+                                  cfop: fiscalMatchSuggestion.cfop || '5102'
+                                }))}
+                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+                              >
+                                Preencher com Sugestão
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-600 font-medium">
+                            <span className="font-mono font-bold text-slate-900">NCM {fiscalMatchSuggestion.ncm}</span> ({fiscalMatchSuggestion.ncmDescription}) • CFOP: <strong>{fiscalMatchSuggestion.cfop || '5102'}</strong> {fiscalMatchSuggestion.cest ? `• CEST: ${fiscalMatchSuggestion.cest}` : ''}
+                          </div>
+                        </div>
+                      )}
+
                       {/* NCM, CEST e CFOP Padrão */}
                       <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <p className="text-[8px] font-black text-slate-400 uppercase mb-1">NCM (8 dígitos)</p>
+                          <p className="text-[8px] font-black text-slate-500 uppercase mb-1">NCM (8 dígitos)</p>
                           <input 
                             value={formData.ncm || ''} 
                             onChange={(e)=>setFormData(f=>({...f,ncm:e.target.value}))} 
                             placeholder="Ex: 1006.30.21"
-                            className="w-full p-2.5 bg-white rounded-xl font-bold font-mono text-slate-700 outline-none text-xs border border-slate-200" 
+                            className="w-full p-2.5 bg-white rounded-xl font-bold font-mono text-slate-700 outline-none text-xs border border-slate-200 focus:border-blue-500" 
                           />
                         </div>
                         <div>
-                          <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CEST</p>
+                          <p className="text-[8px] font-black text-slate-500 uppercase mb-1">CEST (Opcional)</p>
                           <input 
                             value={formData.cest || ''} 
                             onChange={(e)=>setFormData(f=>({...f,cest:e.target.value}))} 
                             placeholder="Código CEST"
-                            className="w-full p-2.5 bg-white rounded-xl font-bold font-mono text-slate-700 outline-none text-xs border border-slate-200" 
+                            className="w-full p-2.5 bg-white rounded-xl font-bold font-mono text-slate-700 outline-none text-xs border border-slate-200 focus:border-blue-500" 
                           />
                         </div>
                         <div>
-                          <p className="text-[8px] font-black text-slate-400 uppercase mb-1">CFOP Interno (Venda SP/Interna)</p>
+                          <p className="text-[8px] font-black text-slate-500 uppercase mb-1">CFOP Interno</p>
                           <input 
                             value={formData.cfop || '5102'} 
                             onChange={(e)=>setFormData(f=>({...f,cfop:e.target.value}))} 
                             placeholder="5102"
-                            className="w-full p-2.5 bg-white rounded-xl font-bold font-mono text-blue-700 outline-none text-xs border border-blue-200" 
+                            className="w-full p-2.5 bg-white rounded-xl font-bold font-mono text-blue-700 outline-none text-xs border border-blue-200 focus:border-blue-500" 
                           />
                         </div>
                       </div>

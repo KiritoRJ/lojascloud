@@ -276,3 +276,34 @@ export const saveTaxProfiles = (tenantId: string | undefined, profiles: TaxProfi
     localStorage.setItem(key, JSON.stringify(profiles));
   } catch (e) {}
 };
+
+// Estados e Códigos IBGE das 27 UFs do Brasil
+export const BRAZIL_STATES = [
+  { uf: 'AC', name: 'Acre', ibge: '12' },
+  { uf: 'AL', name: 'Alagoas', ibge: '27' },
+  { uf: 'AM', name: 'Amazonas', ibge: '13' },
+  { uf: 'AP', name: 'Amapá', ibge: '16' },
+  { uf: 'BA', name: 'Bahia', ibge: '29' },
+  { uf: 'CE', name: 'Ceará', ibge: '23' },
+  { uf: 'DF', name: 'Distrito Federal', ibge: '53' },
+  { uf: 'ES', name: 'Espírito Santo', ibge: '32' },
+  { uf: 'GO', name: 'Goiás', ibge: '52' },
+  { uf: 'MA', name: 'Maranhão', ibge: '21' },
+  { uf: 'MG', name: 'Minas Gerais', ibge: '31' },
+  { uf: 'MS', name: 'Mato Grosso do Sul', ibge: '50' },
+  { uf: 'MT', name: 'Mato Grosso', ibge: '51' },
+  { uf: 'PA', name: 'Pará', ibge: '15' },
+  { uf: 'PB', name: 'Paraíba', ibge: '25' },
+  { uf: 'PE', name: 'Pernambuco', ibge: '26' },
+  { uf: 'PI', name: 'Piauí', ibge: '22' },
+  { uf: 'PR', name: 'Paraná', ibge: '41' },
+  { uf: 'RJ', name: 'Rio de Janeiro', ibge: '33' },
+  { uf: 'RN', name: 'Rio Grande do Norte', ibge: '24' },
+  { uf: 'RO', name: 'Rondônia', ibge: '11' },
+  { uf: 'RR', name: 'Roraima', ibge: '14' },
+  { uf: 'RS', name: 'Rio Grande do Sul', ibge: '43' },
+  { uf: 'SC', name: 'Santa Catarina', ibge: '42' },
+  { uf: 'SE', name: 'Sergipe', ibge: '28' },
+  { uf: 'SP', name: 'São Paulo', ibge: '35' },
+  { uf: 'TO', name: 'Tocantins', ibge: '17' }
+];

@@ -319,6 +319,11 @@ export interface Sale {
   fiscalNoteNumber?: string;
   fiscalNoteEmitted?: boolean;
   fiscalNoteAccessKey?: string;
+  fiscalAccessKey?: string;
+  fiscalStatus?: 'authorized' | 'pending_contingency' | 'rejected' | 'canceled';
+  fiscalProtocol?: string;
+  fiscalQrCodeUrl?: string;
+  fiscalIssuedAt?: string;
 }
 
 export interface Transaction {
@@ -341,8 +346,12 @@ export interface Transaction {
 
 export interface AppSettings {
   storeName: string;
+  storeCorporateName?: string;
+  storeTradeName?: string;
   storeAddress?: string;
   storePhone?: string;
+  storeCity?: string;
+  storeState?: string;
   logoUrl: string | null;
   users: User[];
   isConfigured: boolean;
@@ -603,7 +612,7 @@ export interface NfceNfeItem {
   accessKey: string;
   qrCodeUrl?: string;
   issuedAt: string;
-  status: 'authorized' | 'processing' | 'rejected' | 'canceled' | 'inutilized' | 'draft';
+  status: 'authorized' | 'processing' | 'rejected' | 'canceled' | 'inutilized' | 'draft' | 'contingencia_offline' | 'pending_contingency';
   environment: 'homologacao' | 'producao';
   saleId?: string;
   items: NfceNfeProductItem[];
@@ -660,6 +669,13 @@ export interface NfceNfeItem {
   xmlContent?: string;
   pdfUrl?: string;
   errorMessage?: string;
+  rejectionCode?: string;
+  rejectionReason?: string;
+  rejectionSuggestion?: string;
+  tpEmis?: '1' | '9';
+  contingencyReason?: string;
+  contingencyRegisteredAt?: string;
+  digestValue?: string;
   cancelReason?: string;
   canceledAt?: string;
   cancelProtocol?: string;
@@ -716,6 +732,12 @@ export interface CertificateA1Data {
   daysRemaining?: number;
   certBase64?: string;
   certPassword?: string;
+  certTypeProfile?: 'long_term' | 'expired' | 'fixed_date' | 'standard';
+  thumbprint?: string;
+  validationErrors?: string[];
+  validationWarnings?: string[];
+  cnpjMatch?: boolean;
+  diagnosticNotes?: string[];
 }
 
 export interface FiscalEventItem {

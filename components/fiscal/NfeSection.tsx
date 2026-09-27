@@ -29,12 +29,14 @@ import {
   Product, 
   Customer, 
   NfceNfeItem, 
+  NfceNfeProductItem,
   NfceNfeConfig, 
   FiscalDocType,
   Sale
 } from '../../types';
 import NfceDanfeModal from '../nfce/NfceDanfeModal';
 import { getEffectiveCfop } from '../../utils/taxProfiles';
+import { FiscalEmissionService } from '../../utils/fiscalEmissionService';
 
 interface NfeSectionProps {
   settings: AppSettings;
@@ -75,9 +77,28 @@ export const NfeSection: React.FC<NfeSectionProps> = ({
   // Cancelamento
   const [cancelModalNote, setCancelModalNote] = useState<NfceNfeItem | null>(null);
   const [cancelJustification, setCancelJustification] = useState('');
+  const [retransmittingNoteId, setRetransmittingNoteId] = useState<string | null>(null);
 
   // Filtra apenas NF-e (Modelo 55)
   const nfeList = notes.filter(n => n.docType === 'nfe');
+
+  const handleRetransmitSingle = async (note: NfceNfeItem) => {
+    setRetransmittingNoteId(note.id);
+    try {
+      const res = await FiscalEmissionService.retransmitNote(note, settings, tenantId);
+      if (res.success && res.noteItem) {
+        const updated = notes.map(n => n.id === note.id ? res.noteItem! : n);
+        setNotes(updated);
+        onShowToast(res.message, 'success');
+      } else {
+        onShowToast(`${res.message} ${res.suggestion ? `(${res.suggestion})` : ''}`, 'error');
+      }
+    } catch (e: any) {
+      onShowToast(`Erro ao retransmitir: ${e?.message || 'Falha de conexão'}`, 'error');
+    } finally {
+      setRetransmittingNoteId(null);
+    }
+  };
 
   const filteredNotes = nfeList.filter(n => {
     const matchesStatus = statusFilter === 'all' || n.status === statusFilter;
@@ -109,6 +130,7 @@ export const NfeSection: React.FC<NfeSectionProps> = ({
 
   const handleEmitNfe = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isEmitting) return;
     if (selectedProductList.length === 0) {
       onShowToast('Adicione ao menos um produto à NF-e', 'error');
       return;
@@ -122,23 +144,41 @@ export const NfeSection: React.FC<NfeSectionProps> = ({
 
     setIsEmitting(true);
     try {
-      await new Promise(r => setTimeout(r, 1400));
-
-      const nextNum = (settings.nfceNfeConfig?.nfeNextNumber || 100) + 1;
       const totalAmount = selectedProductList.reduce((acc, it) => acc + (it.unitPrice * it.quantity), 0);
-      const accessKey = `352609${(settings.storeCnpj || '00000000000199').replace(/\D/g, '')}55001${String(nextNum).padStart(9, '0')}10000001234`;
 
-      const newNote: NfceNfeItem = {
-        id: `nfe_${Date.now()}`,
-        tenantId,
+      const items: NfceNfeProductItem[] = selectedProductList.map((it, idx) => {
+        const storeUf = settings.nfceNfeConfig?.uf || (settings.storeAddress?.match(/\b([A-Z]{2})\b/)?.[1]) || 'SP';
+        let customerUf = 'SP';
+        if (customer.address) {
+          const matchUf = customer.address.match(/\b(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b/i);
+          if (matchUf) customerUf = matchUf[1].toUpperCase();
+        }
+
+        const effective = getEffectiveCfop(it.product.cfop || '5102', storeUf, customerUf);
+
+        return {
+          itemNumber: idx + 1,
+          productId: it.product.id,
+          description: it.product.name,
+          ncm: it.product.ncm || '8517.79.00',
+          cfop: effective.cfop,
+          csosn: it.product.csosnCst || '102',
+          origin: it.product.origin || '0',
+          cstPis: it.product.cstPis || '49',
+          cstCofins: it.product.cstCofins || '49',
+          unitOfMeasure: 'UN',
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+          totalPrice: it.quantity * it.unitPrice,
+          icmsRate: it.product.icmsAliquota || 0,
+          icmsAmount: 0
+        };
+      });
+
+      const result = await FiscalEmissionService.emit({
         docType: 'nfe',
-        environment: settings.nfceNfeConfig?.environment || 'homologacao',
-        status: 'authorized',
-        number: String(nextNum).padStart(6, '0'),
-        series: settings.nfceNfeConfig?.nfeSeries || '1',
-        accessKey,
-        protocol: `13526${Math.floor(100000000 + Math.random() * 900000000)}`,
-        issuedAt: new Date().toISOString(),
+        settings,
+        items,
         customer: {
           name: customer.name,
           cpfCnpj: customer.cpf || customer.phone || '000.000.000-00',
@@ -153,81 +193,46 @@ export const NfeSection: React.FC<NfeSectionProps> = ({
             zipCode: '01001-000'
           } : undefined
         },
-        items: selectedProductList.map((it, idx) => {
-          const storeUf = settings.nfceNfeConfig?.uf || (settings.storeAddress?.match(/\b([A-Z]{2})\b/)?.[1]) || 'SP';
-          let customerUf = 'SP';
-          if (customer.address) {
-            const matchUf = customer.address.match(/\b(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b/i);
-            if (matchUf) customerUf = matchUf[1].toUpperCase();
-          }
-
-          const effective = getEffectiveCfop(it.product.cfop || '5102', storeUf, customerUf);
-
-          return {
-            itemNumber: idx + 1,
-            productId: it.product.id,
-            description: it.product.name,
-            ncm: it.product.ncm || '8517.79.00',
-            cfop: effective.cfop,
-            csosn: it.product.csosnCst || '102',
-            origin: it.product.origin || '0',
-            cstPis: it.product.cstPis || '49',
-            cstCofins: it.product.cstCofins || '49',
-            unitOfMeasure: 'UN',
-            quantity: it.quantity,
-            unitPrice: it.unitPrice,
-            totalPrice: it.quantity * it.unitPrice,
-            icmsRate: it.product.icmsAliquota || 0,
-            icmsAmount: 0
-          };
-        }),
+        payment: {
+          method: 'dinheiro',
+          amountPaid: totalAmount,
+          change: 0
+        },
         totals: {
           productsAmount: totalAmount,
           discountAmount: 0,
-          icmsAmount: 0,
-          pisAmount: 0,
-          cofinsAmount: 0,
           totalAmount
         },
-        payment: {
-          paymentType: '01',
-          paymentMethodName: 'Dinheiro / PIX',
-          amountPaid: totalAmount
-        },
-        xmlContent: (() => {
-          const itemsXml = selectedProductList.map((it, idx) => {
-            const code = it.product.csosnCst || '102';
-            const isZeroRateCst = ['49', '99', '07', '08', '40', '41', '300', '400'].includes(code);
-            const icmsXml = isZeroRateCst
-              ? `<ICMS><ICMSIsento><orig>${it.product.origin || '0'}</orig><CST>${code}</CST></ICMSIsento></ICMS>`
-              : `<ICMS><ICMSTrib><orig>${it.product.origin || '0'}</orig><CST>${code}</CST><vBC>${(it.quantity * it.unitPrice).toFixed(2)}</vBC><pICMS>${(it.product.icmsAliquota || 0).toFixed(2)}</pICMS><vICMS>${((it.quantity * it.unitPrice * (it.product.icmsAliquota || 0)) / 100).toFixed(2)}</vICMS></ICMSTrib></ICMS>`;
-            return `<det nItem="${idx + 1}"><prod><cProd>${it.product.id || '999'}</cProd><xProd>${it.product.name}</xProd><NCM>${it.product.ncm || '8517.79.00'}</NCM><CFOP>${it.product.cfop || '5102'}</CFOP><uCom>UN</uCom><qCom>${it.quantity}</qCom><vUnCom>${it.unitPrice.toFixed(2)}</vUnCom><vProd>${(it.quantity * it.unitPrice).toFixed(2)}</vProd></prod><imposto>${icmsXml}</imposto></det>`;
-          }).join('');
-          return `<?xml version="1.0" encoding="UTF-8"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe${accessKey}"><ide><nNF>${nextNum}</nNF><dhEmi>${new Date().toISOString()}</dhEmi></ide><emit><xNome>${settings.storeName}</xNome><CNPJ>${settings.storeCnpj || '00000000000199'}</CNPJ></emit><dest><xNome>${customer.name}</xNome></dest><detalhes>${itemsXml}</detalhes><total><ICMSTot><vNF>${(totalAmount || 0).toFixed(2)}</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
-        })()
-      };
+        tenantId
+      }, { timeoutMs: 25000 });
 
-      const updatedNotes = [newNote, ...notes];
-      setNotes(updatedNotes);
-      localStorage.setItem(`fiscal_notes_${tenantId || 'global'}`, JSON.stringify(updatedNotes));
-
-      if (settings.nfceNfeConfig) {
-        setSettings({
-          ...settings,
-          nfceNfeConfig: {
-            ...settings.nfceNfeConfig,
-            nfeNextNumber: nextNum
-          }
-        });
+      if (!result.success) {
+        onShowToast(`${result.message} ${result.suggestion ? `(${result.suggestion})` : ''}`, 'error');
+        return;
       }
 
-      setShowNewNfeModal(false);
-      setSelectedProductList([]);
-      setSelectedCustomerId('');
-      onShowToast(`NF-e Nº ${newNote.number} autorizada com sucesso na SEFAZ!`, 'success');
-      setViewingDanfeNote(newNote);
-    } catch (e) {
-      onShowToast('Erro ao transmitir NF-e à SEFAZ.', 'error');
+      if (result.noteItem) {
+        const updatedNotes = [result.noteItem, ...notes.filter(n => n.id !== result.noteItem?.id)];
+        setNotes(updatedNotes);
+
+        if (settings.nfceNfeConfig) {
+          setSettings({
+            ...settings,
+            nfceNfeConfig: {
+              ...settings.nfceNfeConfig,
+              nfeNextNumber: (settings.nfceNfeConfig.nfeNextNumber || 100) + 1
+            }
+          });
+        }
+
+        setShowNewNfeModal(false);
+        setSelectedProductList([]);
+        setSelectedCustomerId('');
+        onShowToast(`NF-e Modelo 55 Nº ${result.noteItem.number} emitida com sucesso!`, 'success');
+        setViewingDanfeNote(result.noteItem);
+      }
+    } catch (e: any) {
+      onShowToast(`Erro ao emitir NF-e: ${e?.message || 'Falha desconhecida'}`, 'error');
     } finally {
       setIsEmitting(false);
     }
@@ -492,11 +497,25 @@ export const NfeSection: React.FC<NfeSectionProps> = ({
               <button
                 type="button"
                 onClick={() => setShowNewNfeModal(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-800 flex items-center justify-center text-sm font-black"
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-800 flex items-center justify-center text-sm font-black cursor-pointer"
               >
                 ✕
               </button>
             </div>
+
+            {settings.certificateA1?.hasCertificate && (settings.certificateA1.isExpired || settings.certificateA1.status === 'expired') && (
+              <div className="p-4 bg-red-50 border-2 border-red-500/40 rounded-2xl flex items-start gap-3">
+                <AlertTriangle size={20} className="text-red-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="text-xs font-black text-red-950 uppercase">
+                    ❌ Certificado Digital Expirado ({settings.certificateA1.expiresAt ? new Date(settings.certificateA1.expiresAt).toLocaleDateString('pt-BR') : 'Data recente'})
+                  </p>
+                  <p className="text-[11px] text-red-800 font-medium leading-relaxed">
+                    A emissão de NF-e (Modelo 55) não permite contingência offline imediata sem validação prévia. Acione o setor administrativo para renovar o arquivo do certificado.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleEmitNfe} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -661,6 +680,11 @@ export const NfeSection: React.FC<NfeSectionProps> = ({
           settings={settings}
           onClose={() => setViewingDanfeNote(null)}
           onShowToast={onShowToast}
+          onNoteUpdated={(updated) => {
+            const up = notes.map(n => n.id === updated.id ? updated : n);
+            setNotes(up);
+            setViewingDanfeNote(updated);
+          }}
         />
       )}
     </div>

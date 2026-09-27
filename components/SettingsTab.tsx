@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, ArrowRight, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus, Store, Key } from 'lucide-react';
+import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, ArrowRight, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus, Store, Key, Building } from 'lucide-react';
 import { AppSettings, User, ServiceOrder, Product, Sale, Transaction, Employee, Customer } from '../types';
+import { BRAZIL_STATES } from '../utils/taxProfiles';
 import { OnlineDB } from '../utils/api';
 import { OfflineSync } from '../utils/offlineSync';
 import { db } from '../utils/localDb';
@@ -265,6 +266,86 @@ const SettingsTab: React.FC<Props> = ({
   const updateSetting = async (key: keyof AppSettings, value: any) => {
     if (!isAdmin) return;
     const updated = { ...settings, [key]: value };
+
+    // Sincroniza dinamicamente as alterações da empresa para o módulo fiscal (NFC-e / NF-e e DANFE)
+    try {
+      const storageKey = tenantId ? `nfce_nfe_${tenantId}_config` : 'nfce_nfe_global_config';
+      const saved = localStorage.getItem(storageKey);
+      let cfg = saved ? JSON.parse(saved) : (settings.nfceNfeConfig ? { ...settings.nfceNfeConfig } : null);
+      
+      if (cfg) {
+        let changed = false;
+        if (key === 'storeCorporateName' && value) {
+          cfg.companyName = value;
+          changed = true;
+        } else if (key === 'storeTradeName' && value) {
+          cfg.tradeName = value;
+          changed = true;
+        } else if (key === 'storeName' && value) {
+          if (!cfg.tradeName) cfg.tradeName = value;
+          if (!cfg.companyName) cfg.companyName = value;
+          changed = true;
+        } else if (key === 'storeCnpj' && value) {
+          cfg.cnpj = value;
+          changed = true;
+        } else if (key === 'storeStateRegistration' && value) {
+          cfg.ie = value;
+          changed = true;
+        } else if (key === 'storeCity' && value) {
+          cfg.cityName = value;
+          changed = true;
+        } else if (key === 'storeState' && value) {
+          cfg.uf = value.toUpperCase();
+          const stateObj = BRAZIL_STATES.find(s => s.uf.toUpperCase() === value.toUpperCase());
+          if (stateObj) {
+            cfg.cityIbgeCode = `${stateObj.ibge}00000`;
+          }
+          changed = true;
+        }
+
+        if (changed) {
+          localStorage.setItem(storageKey, JSON.stringify(cfg));
+          localStorage.setItem('nfce_nfe_global_config', JSON.stringify(cfg));
+          updated.nfceNfeConfig = cfg;
+        }
+      }
+    } catch (e) {
+      console.warn("Aviso ao sincronizar dados fiscais da loja:", e);
+    }
+
+    setSettings(updated);
+    triggerSaveFeedback();
+  };
+
+  const updateMultipleSettings = async (changes: Partial<AppSettings>) => {
+    if (!isAdmin) return;
+    const updated = { ...settings, ...changes };
+
+    try {
+      const storageKey = tenantId ? `nfce_nfe_${tenantId}_config` : 'nfce_nfe_global_config';
+      const saved = localStorage.getItem(storageKey);
+      let cfg = saved ? JSON.parse(saved) : (settings.nfceNfeConfig ? { ...settings.nfceNfeConfig } : null);
+
+      if (cfg) {
+        if (changes.storeCorporateName) cfg.companyName = changes.storeCorporateName;
+        if (changes.storeTradeName) cfg.tradeName = changes.storeTradeName;
+        if (changes.storeName && !cfg.tradeName) cfg.tradeName = changes.storeName;
+        if (changes.storeCnpj) cfg.cnpj = changes.storeCnpj;
+        if (changes.storeStateRegistration) cfg.ie = changes.storeStateRegistration;
+        if (changes.storeCity) cfg.cityName = changes.storeCity;
+        if (changes.storeState) {
+          cfg.uf = changes.storeState.toUpperCase();
+          const stateObj = BRAZIL_STATES.find(s => s.uf.toUpperCase() === changes.storeState?.toUpperCase());
+          if (stateObj) cfg.cityIbgeCode = `${stateObj.ibge}00000`;
+        }
+        localStorage.setItem(storageKey, JSON.stringify(cfg));
+        localStorage.setItem('nfce_nfe_global_config', JSON.stringify(cfg));
+        updated.nfceNfeConfig = cfg;
+      }
+    } catch (e) {
+      console.warn("Aviso ao sincronizar múltiplos dados fiscais da loja:", e);
+    }
+
     setSettings(updated);
     triggerSaveFeedback();
   };
@@ -2061,20 +2142,24 @@ const SettingsTab: React.FC<Props> = ({
         )}
 
         {/* DADOS DA LOJA */}
-        <div id="tour-store-profile" className="bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm space-y-5">
+        <div id="tour-store-profile" className="bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm space-y-6">
            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
                   <Store size={15} />
                 </div>
-                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Perfil & Identidade da Loja</h3>
+                <div>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Perfil & Identidade da Loja</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">Dados cadastrais da empresa e sincronização com emissão fiscal</p>
+                </div>
               </div>
               <span className="text-[9px] font-black px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full uppercase tracking-wider">
                 Salva Automaticamente
               </span>
            </div>
 
-           <div className="flex items-center gap-4 mb-2">
+           {/* LOGO E NOME FANTASIA */}
+           <div className="flex items-center gap-4">
               <div className="relative group shrink-0">
                 <div className="w-16 h-16 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center overflow-hidden">
                   {isCompressing ? <Loader2 className="animate-spin text-blue-500" size={20} /> : settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover" /> : <ImageIcon size={24} className="text-slate-300" />}
@@ -2085,31 +2170,148 @@ const SettingsTab: React.FC<Props> = ({
                   </button>
                 )}
               </div>
-              <div className="flex-1 min-w-0">
-                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Nome da Loja *</label>
-                 <input readOnly={!isAdmin} type="text" value={settings.storeName} onChange={(e) => updateSetting('storeName', e.target.value)} className={`w-full bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl font-black text-base text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all ${isAdmin ? 'placeholder:text-slate-300' : ''}`} placeholder="Nome da Loja" />
+              <div className="flex-1 min-w-0 space-y-1">
+                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">
+                   Nome Fantasia (Marca da Loja) *
+                 </label>
+                 <input 
+                   readOnly={!isAdmin} 
+                   type="text" 
+                   value={settings.storeTradeName ?? settings.storeName ?? ''} 
+                   onChange={(e) => updateMultipleSettings({ storeTradeName: e.target.value, storeName: e.target.value })} 
+                   className={`w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl font-black text-sm text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all ${isAdmin ? 'placeholder:text-slate-300' : ''}`} 
+                   placeholder="Ex: TechAssist Informática & Celulares" 
+                 />
+                 <p className="text-[9px] text-slate-400">Nome exibido no topo do sistema, cabeçalhos de comprovantes e catálogo.</p>
               </div>
            </div>
 
-           <div className="grid grid-cols-1 gap-4">
-              <div className="space-y-1">
-                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Phone size={11} className="text-emerald-500"/> Telefone / WhatsApp da Loja *</label>
-                 <input readOnly={!isAdmin} type="text" value={settings.storePhone || ''} onChange={(e) => updateSetting('storePhone', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all" placeholder="(00) 00000-0000" />
-                 <p className="text-[9px] text-slate-400">Usado no envio automático de mensagens e recibos no WhatsApp dos seus clientes.</p>
+           {/* DADOS FISCAIS E CADASTRAIS (RAZÃO SOCIAL, CNPJ, IE, CIDADE/UF) */}
+           <div className="pt-2 border-t border-slate-100 space-y-4">
+              <div className="flex items-center gap-2">
+                <Building size={14} className="text-indigo-600" />
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                  Dados Fiscais & Jurídicos da Empresa (DANFE & SEFAZ)
+                </span>
               </div>
+
+              {/* RAZÃO SOCIAL */}
               <div className="space-y-1">
-                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={11}/> Endereço da Loja</label>
-                 <input readOnly={!isAdmin} type="text" value={settings.storeAddress || ''} onChange={(e) => updateSetting('storeAddress', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all" placeholder="Rua, Número, Bairro, Cidade" />
+                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                   <Building size={11} className="text-indigo-500" /> Razão Social (Nome Empresarial Oficial)
+                 </label>
+                 <input 
+                   readOnly={!isAdmin} 
+                   type="text" 
+                   value={settings.storeCorporateName || ''} 
+                   onChange={(e) => updateSetting('storeCorporateName', e.target.value)} 
+                   className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all uppercase placeholder:normal-case" 
+                   placeholder="Ex: Silva & Santos Serviços e Comércio de Informática LTDA" 
+                 />
+                 <p className="text-[9px] text-slate-400">Nome jurídico oficial registrado na Receita Federal. Aparece em destaque no cabeçalho da DANFE e notas fiscais.</p>
               </div>
+
+              {/* CNPJ E INSCRIÇÃO ESTADUAL */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><FileText size={11}/> CNPJ da Empresa</label>
-                   <input readOnly={!isAdmin} type="text" value={settings.storeCnpj || ''} onChange={(e) => updateSetting('storeCnpj', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="00.000.000/0000-00" />
+                   <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                     <FileText size={11} className="text-blue-500" /> CNPJ da Empresa
+                   </label>
+                   <input 
+                     readOnly={!isAdmin} 
+                     type="text" 
+                     value={settings.storeCnpj || ''} 
+                     onChange={(e) => updateSetting('storeCnpj', e.target.value)} 
+                     className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold font-mono text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all" 
+                     placeholder="00.000.000/0000-00" 
+                   />
                 </div>
                 <div className="space-y-1">
-                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><FileText size={11}/> Inscrição Estadual (IE)</label>
-                   <input readOnly={!isAdmin} type="text" value={settings.storeStateRegistration || ''} onChange={(e) => updateSetting('storeStateRegistration', e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="Inscrição Estadual / Isento" />
+                   <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                     <FileText size={11} className="text-blue-500" /> Inscrição Estadual (IE)
+                   </label>
+                   <input 
+                     readOnly={!isAdmin} 
+                     type="text" 
+                     value={settings.storeStateRegistration || ''} 
+                     onChange={(e) => updateSetting('storeStateRegistration', e.target.value)} 
+                     className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all uppercase placeholder:normal-case" 
+                     placeholder="Inscrição Estadual ou ISENTO" 
+                   />
                 </div>
+              </div>
+
+              {/* CIDADE E ESTADO / UF */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-2 space-y-1">
+                   <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                     <MapPin size={11} className="text-amber-500" /> Cidade
+                   </label>
+                   <input 
+                     readOnly={!isAdmin} 
+                     type="text" 
+                     value={settings.storeCity || ''} 
+                     onChange={(e) => updateSetting('storeCity', e.target.value)} 
+                     className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all" 
+                     placeholder="Ex: São Paulo" 
+                   />
+                </div>
+                <div className="space-y-1">
+                   <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                     <MapPin size={11} className="text-amber-500" /> UF / Estado
+                   </label>
+                   <select 
+                     disabled={!isAdmin} 
+                     value={settings.storeState ? settings.storeState.toUpperCase() : 'SP'} 
+                     onChange={(e) => updateSetting('storeState', e.target.value)} 
+                     className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all cursor-pointer"
+                   >
+                     {BRAZIL_STATES.map(s => (
+                       <option key={s.uf} value={s.uf}>
+                         {s.uf} - {s.name}
+                       </option>
+                     ))}
+                   </select>
+                </div>
+              </div>
+
+              {/* ENDEREÇO COMPLETO */}
+              <div className="space-y-1">
+                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                   <MapPin size={11} className="text-slate-400" /> Endereço da Loja (Rua, Número, Bairro)
+                 </label>
+                 <input 
+                   readOnly={!isAdmin} 
+                   type="text" 
+                   value={settings.storeAddress || ''} 
+                   onChange={(e) => updateSetting('storeAddress', e.target.value)} 
+                   className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all" 
+                   placeholder="Ex: Av. Principal, 1234, Centro" 
+                 />
+              </div>
+
+              {/* TELEFONE / WHATSAPP */}
+              <div className="space-y-1">
+                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                   <Phone size={11} className="text-emerald-500"/> Telefone / WhatsApp da Loja *
+                 </label>
+                 <input 
+                   readOnly={!isAdmin} 
+                   type="text" 
+                   value={settings.storePhone || ''} 
+                   onChange={(e) => updateSetting('storePhone', e.target.value)} 
+                   className="w-full px-4 py-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white border border-transparent focus:border-blue-300 transition-all" 
+                   placeholder="(00) 00000-0000" 
+                 />
+                 <p className="text-[9px] text-slate-400">Usado no envio automático de mensagens e recibos no WhatsApp dos seus clientes.</p>
+              </div>
+
+              {/* NOTA DE SINCRONIZAÇÃO */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl flex items-center gap-2.5">
+                <Check size={14} className="text-emerald-600 shrink-0" />
+                <p className="text-[10px] text-emerald-800 font-bold leading-tight">
+                  Todas as alterações em Razão Social, Nome Fantasia, CNPJ, IE e Cidade/UF são sincronizadas automaticamente com as emissões fiscais NFC-e/NF-e e o layout de impressão da DANFE.
+                </p>
               </div>
            </div>
 

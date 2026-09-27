@@ -114,9 +114,11 @@ export const FiscalHeader: React.FC<FiscalHeaderProps> = ({
                 <AlertTriangle size={14} className="text-amber-400" />
               )}
               <span>
-                {certificate?.hasCertificate 
-                  ? `A1: ${certificate.daysRemaining ?? 0}d restantes` 
-                  : 'Certificado A1: Pendente'}
+                {!certificate?.hasCertificate 
+                  ? 'Certificado A1: Pendente'
+                  : isCertExpired
+                  ? `A1: Vencido (${Math.abs(certificate.daysRemaining || 0)}d)`
+                  : `A1: ${certificate.daysRemaining ?? 0}d restantes`}
               </span>
             </button>
 

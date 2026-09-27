@@ -44,7 +44,8 @@
         #app-loader {
             position: fixed; inset: 0; background: #ffffff;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            z-index: 9999; transition: opacity 0.5s;
+            z-index: 9999; transition: opacity 0.4s ease-out;
+            pointer-events: none;
         }
         .spinner {
             width: 50px; height: 50px; border: 5px solid rgba(0,0,0,0.05);
@@ -74,20 +75,6 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: transparent; }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "recharts": "https://esm.sh/recharts@^3.7.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
-    "jspdf": "https://esm.sh/jspdf@2.5.1",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.7",
-    "html5-qrcode": "https://esm.sh/html5-qrcode@2.3.8"
-  }
-}
-</script>
 <link rel="stylesheet" href="/index.css">
 </head>
 <body class="bg-white text-slate-900 overflow-x-hidden">
@@ -106,13 +93,27 @@
             window.deferredPrompt = e;
         });
         
-        window.addEventListener('load', () => {
-            setTimeout(() => {
-                const loader = document.getElementById('app-loader');
-                if(loader) loader.style.opacity = '0';
-                setTimeout(() => loader?.remove(), 500);
-            }, 1000);
-        });
+        function removeAppLoader() {
+            var loader = document.getElementById('app-loader');
+            if (loader) {
+                loader.style.opacity = '0';
+                setTimeout(function() {
+                    try {
+                        if (loader && loader.parentNode) {
+                            loader.parentNode.removeChild(loader);
+                        }
+                    } catch(e) {}
+                }, 400);
+            }
+        }
+
+        if (document.readyState === 'complete') {
+            setTimeout(removeAppLoader, 400);
+        } else {
+            window.addEventListener('load', function() { setTimeout(removeAppLoader, 400); });
+        }
+        // Fallback garantido: esconde o loader após no máximo 1.8 segundos
+        setTimeout(removeAppLoader, 1800);
     </script>
 <script type="module" src="/index.tsx"></script>
 </body>

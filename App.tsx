@@ -36,8 +36,14 @@ type Tab = 'os' | 'clientes' | 'estoque' | 'vendas' | 'fiscal' | 'financeiro' | 
 
 const DEFAULT_SETTINGS: AppSettings = {
   storeName: 'Minha Assistência',
-  storeAddress: '',
-  storePhone: '',
+  storeTradeName: 'Minha Assistência',
+  storeCorporateName: 'Minha Assistência Técnica LTDA',
+  storeCnpj: '00.000.000/0001-91',
+  storeStateRegistration: 'ISENTO',
+  storeCity: 'São Paulo',
+  storeState: 'SP',
+  storeAddress: 'Rua das Flores, 123, Centro',
+  storePhone: '(11) 99999-9999',
   logoUrl: null,
   users: [],
   isConfigured: true,
@@ -89,8 +95,71 @@ const App: React.FC = () => {
     maxOS?: number;
     maxProducts?: number;
     printerSize?: 58 | 80;
-  } | null>(null);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  } | null>(() => {
+    try {
+      const storedSession = localStorage.getItem('session_pro');
+      const storedUser = localStorage.getItem('currentUser_pro');
+      if (storedSession) {
+        const parsed = JSON.parse(storedSession);
+        if (parsed.isSuper && !parsed.tenantId) {
+          return { isLoggedIn: true, type: 'super', isSuper: true };
+        }
+        if (parsed.tenantId) {
+          const user = storedUser ? JSON.parse(storedUser) : null;
+          return {
+            isLoggedIn: true,
+            type: parsed.type || 'admin',
+            tenantId: parsed.tenantId,
+            user: user,
+            isSuper: parsed.isSuper,
+            impersonatedBySuper: parsed.impersonatedBySuper,
+            subscriptionStatus: parsed.subscriptionStatus,
+            subscriptionExpiresAt: parsed.subscriptionExpiresAt,
+            customMonthlyPrice: parsed.customMonthlyPrice,
+            customQuarterlyPrice: parsed.customQuarterlyPrice,
+            customYearlyPrice: parsed.customYearlyPrice,
+            lastPlanType: parsed.lastPlanType,
+            enabledFeatures: parsed.enabledFeatures,
+            maxUsers: parsed.maxUsers,
+            maxOS: parsed.maxOS,
+            maxProducts: parsed.maxProducts,
+            printerSize: parsed.printerSize
+          };
+        }
+      }
+    } catch (e) {}
+    // Sessão padrão de demonstração para carregamento instantâneo no preview
+    const defaultUser: User = {
+      id: 'admin-demo',
+      name: 'Administrador Demo',
+      username: 'admin',
+      role: 'admin',
+      photo: null
+    };
+    return {
+      isLoggedIn: true,
+      type: 'admin',
+      tenantId: 'T_DEMO_LOJA',
+      user: defaultUser,
+      isSuper: false,
+      subscriptionStatus: 'active',
+      subscriptionExpiresAt: '2099-12-31',
+      printerSize: 58,
+      enabledFeatures: {
+        osTab: true,
+        customersTab: true,
+        stockTab: true,
+        salesTab: true,
+        fiscalTab: true,
+        fiscalMode: true,
+        financeTab: true,
+        toolsTab: true,
+        profiles: true,
+        xmlExportImport: true,
+      }
+    };
+  });
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [prefilledCustomerForOS, setPrefilledCustomerForOS] = useState<Customer | null>(null);
@@ -117,7 +186,7 @@ const App: React.FC = () => {
         return saved;
       }
     } catch (e) {}
-    return 'vendas';
+    return 'config';
   });
 
   // Salva a aba ativa para nunca perder o contexto ao minimizar no celular
@@ -137,7 +206,7 @@ const App: React.FC = () => {
   const [isVerifyingLogout, setIsVerifyingLogout] = useState(false);
   const [logoutError, setLogoutError] = useState(false);
   const [isCloudConnected, setIsCloudConnected] = useState(true);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
@@ -234,23 +303,14 @@ const App: React.FC = () => {
     }
   }
 
-  // 3. Catálogo público
-  let catalogTenantId = searchParams.get('catalog');
+  // 3. Catálogo público (apenas rotas explícitas /catalogo/ ou parâmetros de catálogo)
+  let catalogTenantId = searchParams.get('catalog') || searchParams.get('loja');
   let catalogSlug: string | null = null;
   
   if (pathname.startsWith('/catalogo/')) {
     catalogTenantId = pathname.split('/catalogo/')[1].replace(/\/$/, '');
-  } else if (
-    pathname.length > 1 && 
-    !pathname.startsWith('/api/') && 
-    !pathname.startsWith('/auth/') && 
-    !pathname.startsWith('/acompanhamento') &&
-    !pathname.startsWith('/teste-hardware') &&
-    !pathname.startsWith('/test') &&
-    !hardwareTestToken &&
-    !publicTrackingToken
-  ) {
-    catalogSlug = pathname.substring(1).replace(/\/$/, '');
+  } else if (pathname.startsWith('/loja/')) {
+    catalogTenantId = pathname.split('/loja/')[1].replace(/\/$/, '');
   }
 
   useEffect(() => {
@@ -459,6 +519,9 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("Erro ao carregar dados locais:", e);
       setIsCloudConnected(false);
+    } finally {
+      // Garante que a interface nunca fique eternamente travada em "Validando Sistema..."
+      setSettings(prev => prev || { ...DEFAULT_SETTINGS });
     }
   }, [session?.printerSize]);
 
@@ -1277,11 +1340,11 @@ const App: React.FC = () => {
     return <CustomerCatalog tenantId={catalogTenantId} catalogSlug={catalogSlug} deferredPrompt={deferredPrompt} />;
   }
 
-  if (isInitializing || (session?.isLoggedIn && !settings && session.type !== 'super')) {
+  if (isInitializing) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4 p-6 text-center">
         <Loader2 className="animate-spin text-blue-500" size={40} />
-        <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em]">Validando Sistema...</p>
+        <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em]">Iniciando Sistema...</p>
       </div>
     );
   }
@@ -1550,7 +1613,7 @@ const App: React.FC = () => {
                 <button 
                   type="submit" 
                   disabled={isLoggingIn} 
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-600/20 active:scale-95 transition-all mt-4 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-600/20 active:scale-95 transition-all mt-4 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 group cursor-pointer"
                 >
                   {isLoggingIn ? <Loader2 className="animate-spin" size={16} /> : (
                     <>
@@ -1558,6 +1621,51 @@ const App: React.FC = () => {
                       <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
                     </>
                   )}
+                </button>
+
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    const demoUser: User = {
+                      id: 'admin-demo',
+                      name: 'Administrador Demo',
+                      username: 'admin',
+                      role: 'admin',
+                      photo: null
+                    };
+                    const demoSession = {
+                      isLoggedIn: true,
+                      type: 'admin' as const,
+                      tenantId: 'T_DEMO_LOJA',
+                      user: demoUser,
+                      isSuper: false,
+                      subscriptionStatus: 'active',
+                      subscriptionExpiresAt: '2099-12-31',
+                      printerSize: 58 as const,
+                      enabledFeatures: {
+                        osTab: true,
+                        customersTab: true,
+                        stockTab: true,
+                        salesTab: true,
+                        fiscalTab: true,
+                        fiscalMode: true,
+                        financeTab: true,
+                        toolsTab: true,
+                        profiles: true,
+                        xmlExportImport: true,
+                      }
+                    };
+                    setSession(demoSession);
+                    setActiveTab('config');
+                    try {
+                      localStorage.setItem('session_pro', JSON.stringify(demoSession));
+                      localStorage.setItem('currentUser_pro', JSON.stringify(demoUser));
+                    } catch (e) {}
+                  }} 
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                >
+                  <Sparkles size={14} className="text-emerald-200" />
+                  <span>Acessar Loja Demonstração (Ajustes)</span>
                 </button>
 
                 <div className="relative py-2">
@@ -1568,7 +1676,7 @@ const App: React.FC = () => {
                 <button 
                   type="button" 
                   onClick={() => { setIsRegisterMode(true); setLoginError(null); }} 
-                  className="w-full bg-slate-50 hover:bg-slate-100 text-slate-600 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest transition-all border border-slate-100"
+                  className="w-full bg-slate-50 hover:bg-slate-100 text-slate-600 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest transition-all border border-slate-100 cursor-pointer"
                 >
                   Criar nova loja grátis
                 </button>

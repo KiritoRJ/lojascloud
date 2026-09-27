@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Printer, Download, MessageCircle, XCircle, Trash2, ShieldCheck, FileText, CheckCircle2, AlertTriangle, QrCode } from 'lucide-react';
+import { Printer, Download, MessageCircle, XCircle, Trash2, ShieldCheck, FileText, CheckCircle2, AlertTriangle, QrCode, RefreshCw, Loader2 } from 'lucide-react';
 import { NfceNfeItem, NfceNfeConfig, AppSettings } from '../../types';
+import { FiscalEmissionService } from '../../utils/fiscalEmissionService';
 
 interface Props {
   item?: NfceNfeItem;
@@ -12,6 +13,7 @@ interface Props {
   onDownloadXml?: (item: NfceNfeItem) => void;
   onShareWhatsapp?: (item: NfceNfeItem) => void;
   onShowToast?: (text: string, type?: 'success' | 'error' | 'info') => void;
+  onNoteUpdated?: (updatedNote: NfceNfeItem) => void;
 }
 
 export const NfceDanfeModal: React.FC<Props> = ({
@@ -23,9 +25,12 @@ export const NfceDanfeModal: React.FC<Props> = ({
   onDelete,
   onDownloadXml,
   onShareWhatsapp,
-  onShowToast
+  onShowToast,
+  onNoteUpdated
 }) => {
-  const item = propItem || propNote;
+  const initialItem = propItem || propNote;
+  const [item, setItem] = useState<NfceNfeItem | undefined>(initialItem);
+  const [isRetransmitting, setIsRetransmitting] = useState(false);
 
   // Recupera dinamicamente a configuração da empresa do localStorage com base no tenantId do item
   const getStoredConfig = () => {
@@ -44,6 +49,31 @@ export const NfceDanfeModal: React.FC<Props> = ({
       } catch (e) {}
     }
     return null;
+  };
+
+  const handleRetransmit = async () => {
+    if (!item || !settings) return;
+    setIsRetransmitting(true);
+    try {
+      const res = await FiscalEmissionService.retransmitNote(item, settings, item.tenantId);
+      if (res.success && res.noteItem) {
+        setItem(res.noteItem);
+        if (onNoteUpdated) onNoteUpdated(res.noteItem);
+        if (onShowToast) {
+          onShowToast(res.message, 'success');
+        }
+      } else {
+        if (onShowToast) {
+          onShowToast(`${res.message} ${res.suggestion ? `(${res.suggestion})` : ''}`, 'error');
+        }
+      }
+    } catch (e: any) {
+      if (onShowToast) {
+        onShowToast(`Erro ao retransmitir: ${e?.message || 'Falha de conexão'}`, 'error');
+      }
+    } finally {
+      setIsRetransmitting(false);
+    }
   };
 
   const config = propConfig || getStoredConfig() || settings?.nfceNfeConfig || {
@@ -73,6 +103,45 @@ export const NfceDanfeModal: React.FC<Props> = ({
   const [printFormat, setPrintFormat] = useState<'cupom' | 'a4'>('cupom');
 
   if (!item) return null;
+
+  // Dados inteligentes da empresa (prioriza os dados reais cadastrados nos ajustes da loja)
+  const companyName = 
+    (settings?.storeCorporateName && settings.storeCorporateName.trim()) ||
+    (config.companyName && config.companyName !== 'Loja de Eletrônicos e Acessórios' && config.companyName !== 'Empresa Teste' ? config.companyName : '') ||
+    (settings?.storeName && settings.storeName.trim()) ||
+    config.companyName ||
+    'LOJA COMERCIAL';
+
+  const tradeName = 
+    (settings?.storeTradeName && settings.storeTradeName.trim()) ||
+    (settings?.storeName && settings.storeName.trim() !== companyName ? settings.storeName : '') ||
+    config.tradeName ||
+    '';
+
+  const cnpj = 
+    (settings?.storeCnpj && settings.storeCnpj.trim()) ||
+    (config.cnpj && config.cnpj !== '00.000.000/0001-00' && config.cnpj !== '00.000.000/0001-99' ? config.cnpj : '') ||
+    config.cnpj ||
+    '00.000.000/0000-00';
+
+  const ie = 
+    (settings?.storeStateRegistration && settings.storeStateRegistration.trim()) ||
+    config.ie ||
+    'ISENTO';
+
+  const cityName = 
+    (settings?.storeCity && settings.storeCity.trim()) ||
+    config.cityName ||
+    '';
+
+  const uf = 
+    (settings?.storeState && settings.storeState.trim()) ||
+    config.uf ||
+    '';
+
+  const storeAddress = 
+    (settings?.storeAddress && settings.storeAddress.trim()) ||
+    '';
 
   const totalAmount = Number(item.totals?.totalAmount ?? (item as any).total ?? 0);
   const discountAmount = Number(item.totals?.discountAmount ?? 0);
@@ -196,7 +265,7 @@ export const NfceDanfeModal: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* STATUS / MARCA D'ÁGUA SE ESTIVER CANCELADA OU REJEITADA */}
+        {/* STATUS / MARCA D'ÁGUA SE ESTIVER CANCELADA OU REJEITADA OU CONTINGÊNCIA */}
         {item.status === 'canceled' && (
           <div className="p-3.5 bg-rose-600 text-white rounded-2xl flex items-center justify-between text-xs font-black uppercase tracking-wider shadow-md shadow-rose-600/20">
             <div className="flex items-center gap-2">
@@ -210,12 +279,68 @@ export const NfceDanfeModal: React.FC<Props> = ({
         )}
 
         {item.status === 'rejected' && (
-          <div className="p-3.5 bg-amber-600 text-white rounded-2xl flex items-center justify-between text-xs font-black uppercase tracking-wider">
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={18} />
-              <span>TRANSMISSÃO REJEITADA PELA SEFAZ</span>
+          <div className="p-4 bg-red-600 text-white rounded-2xl space-y-2.5 shadow-lg shadow-red-600/20">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={20} className="text-white shrink-0 animate-pulse" />
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wide">
+                    {item.rejectionCode ? `Rejeição ${item.rejectionCode}: ${item.rejectionReason || 'Falha na autorização'}` : 'TRANSMISSÃO REJEITADA PELA SEFAZ'}
+                  </p>
+                  <p className="text-[11px] text-red-100 font-normal">
+                    {item.rejectionSuggestion || item.errorMessage || 'Verifique o cadastro, certificado ou dados da empresa.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRetransmit}
+                disabled={isRetransmitting}
+                className="px-3.5 py-1.5 bg-white text-red-700 hover:bg-red-50 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all shadow-sm shrink-0 disabled:opacity-50"
+              >
+                {isRetransmitting ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Transmitindo...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw size={14} />
+                    Retransmitir para SEFAZ
+                  </>
+                )}
+              </button>
             </div>
-            <span className="text-[10px]">{item.errorMessage || 'Erro nos dados'}</span>
+          </div>
+        )}
+
+        {(item.status === 'contingencia_offline' || item.tpEmis === '9') && (
+          <div className="p-3.5 bg-amber-500 text-slate-950 rounded-2xl flex items-center justify-between text-xs font-black uppercase tracking-wider shadow-md gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={18} className="text-slate-950 shrink-0" />
+              <div>
+                <span>EMITIDA EM CONTINGÊNCIA OFFLINE (TPEMIS 9)</span>
+                <p className="text-[10px] font-medium text-amber-950 lowercase">Transmissão legal obrigatória em até 24h</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleRetransmit}
+              disabled={isRetransmitting}
+              className="px-3.5 py-1.5 bg-slate-950 text-amber-400 hover:bg-slate-900 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all shadow-sm shrink-0 disabled:opacity-50"
+            >
+              {isRetransmitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin text-amber-400" />
+                  Transmitindo...
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={13} />
+                  Transmitir para SEFAZ Agora
+                </>
+              )}
+            </button>
           </div>
         )}
 
@@ -223,7 +348,7 @@ export const NfceDanfeModal: React.FC<Props> = ({
         {/* CORPO DO DANFE IMPRIMÍVEL                                                */}
         {/* ========================================================================= */}
         <div id="danfe-printable-area" className="bg-white border border-slate-300 rounded-2xl p-5 sm:p-6 text-slate-900 font-mono text-xs space-y-4 shadow-xs relative">
-          {/* MARCA D'ÁGUA DIAGONAL SE CANCELADA */}
+          {/* MARCA D'ÁGUA DIAGONAL CONFORME STATUS */}
           {item.status === 'canceled' && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 select-none">
               <span className="text-4xl sm:text-6xl font-black text-rose-500/20 -rotate-24 uppercase border-4 sm:border-8 border-rose-500/20 p-4 rounded-3xl">
@@ -232,18 +357,35 @@ export const NfceDanfeModal: React.FC<Props> = ({
             </div>
           )}
 
+          {item.status === 'rejected' && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 select-none">
+              <span className="text-3xl sm:text-5xl font-black text-red-500/25 -rotate-24 uppercase border-4 sm:border-8 border-red-500/25 p-4 rounded-3xl text-center leading-tight">
+                REJEITADA SEFAZ
+              </span>
+            </div>
+          )}
+
+          {(item.status === 'contingencia_offline' || item.tpEmis === '9') && (
+            <div className="text-center p-2 bg-amber-50 rounded-xl border border-amber-300 space-y-0.5">
+              <p className="font-black text-xs text-amber-900 uppercase tracking-tight">EMITIDA EM CONTINGÊNCIA OFFLINE</p>
+              <p className="text-[9px] text-amber-700 font-medium">Pendente de autorização SEFAZ • Prazo legal de envio: até 24 horas</p>
+            </div>
+          )}
+
           {/* CABEÇALHO DA EMPRESA */}
           <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-300">
             <h4 className="font-black text-sm uppercase text-slate-900 tracking-tight font-sans">
-              {config.companyName || 'LOJA DE ELETRÔNICOS E ASSISTÊNCIA TÉCNICA'}
+              {companyName}
             </h4>
-            {config.tradeName && <p className="text-[11px] text-slate-600 font-bold">{config.tradeName}</p>}
+            {tradeName && <p className="text-[11px] text-slate-600 font-bold">{tradeName}</p>}
             <p className="text-[10px] text-slate-600">
-              CNPJ: {config.cnpj} • IE: {config.ie || 'ISENTO'}
+              CNPJ: {cnpj} • IE: {ie}
             </p>
-            <p className="text-[10px] text-slate-500">
-              {config.cityName} / {config.uf}
-            </p>
+            {(storeAddress || cityName || uf) && (
+              <p className="text-[10px] text-slate-500">
+                {storeAddress ? `${storeAddress} • ` : ''}{cityName}{cityName && uf ? ' / ' : ''}{uf}
+              </p>
+            )}
           </div>
 
           {/* TÍTULO DO DOCUMENTO */}

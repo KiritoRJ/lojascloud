@@ -26,7 +26,7 @@ export default defineConfig(({ mode }) => {
             clientsClaim: true,
             skipWaiting: true,
             navigateFallback: 'index.html',
-            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
+            maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB
           },
           manifest: {
             name: 'Lojas Cloud',

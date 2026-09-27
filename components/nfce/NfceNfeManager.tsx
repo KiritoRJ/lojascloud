@@ -10,7 +10,7 @@ import {
   AppSettings, Sale, Product, Customer, 
   NfceNfeConfig, NfceNfeItem, NfceNfeProductItem, FiscalDocType 
 } from '../../types';
-import { CRT_OPTIONS } from '../../utils/taxProfiles';
+import { CRT_OPTIONS, BRAZIL_STATES } from '../../utils/taxProfiles';
 import NfceFiscalGuide from './NfceFiscalGuide';
 import NfceTroubleshooting from './NfceTroubleshooting';
 import NfceDanfeModal from './NfceDanfeModal';
@@ -24,37 +24,6 @@ interface Props {
   tenantId?: string;
   onBack: () => void;
 }
-
-// Estados e Códigos IBGE das 27 UFs
-const BRAZIL_STATES = [
-  { uf: 'AC', name: 'Acre', ibge: '12' },
-  { uf: 'AL', name: 'Alagoas', ibge: '27' },
-  { uf: 'AM', name: 'Amazonas', ibge: '13' },
-  { uf: 'AP', name: 'Amapá', ibge: '16' },
-  { uf: 'BA', name: 'Bahia', ibge: '29' },
-  { uf: 'CE', name: 'Ceará', ibge: '23' },
-  { uf: 'DF', name: 'Distrito Federal', ibge: '53' },
-  { uf: 'ES', name: 'Espírito Santo', ibge: '32' },
-  { uf: 'GO', name: 'Goiás', ibge: '52' },
-  { uf: 'MA', name: 'Maranhão', ibge: '21' },
-  { uf: 'MG', name: 'Minas Gerais', ibge: '31' },
-  { uf: 'MS', name: 'Mato Grosso do Sul', ibge: '50' },
-  { uf: 'MT', name: 'Mato Grosso', ibge: '51' },
-  { uf: 'PA', name: 'Pará', ibge: '15' },
-  { uf: 'PB', name: 'Paraíba', ibge: '25' },
-  { uf: 'PE', name: 'Pernambuco', ibge: '26' },
-  { uf: 'PI', name: 'Piauí', ibge: '22' },
-  { uf: 'PR', name: 'Paraná', ibge: '41' },
-  { uf: 'RJ', name: 'Rio de Janeiro', ibge: '33' },
-  { uf: 'RN', name: 'Rio Grande do Norte', ibge: '24' },
-  { uf: 'RO', name: 'Rondônia', ibge: '11' },
-  { uf: 'RR', name: 'Roraima', ibge: '14' },
-  { uf: 'RS', name: 'Rio Grande do Sul', ibge: '43' },
-  { uf: 'SC', name: 'Santa Catarina', ibge: '42' },
-  { uf: 'SE', name: 'Sergipe', ibge: '28' },
-  { uf: 'SP', name: 'São Paulo', ibge: '35' },
-  { uf: 'TO', name: 'Tocantins', ibge: '17' }
-];
 
 export const NfceNfeManager: React.FC<Props> = ({
   settings,
@@ -122,9 +91,14 @@ export const NfceNfeManager: React.FC<Props> = ({
     let changed = false;
     const updatedConfig = { ...config };
 
-    if (settings.storeName && settings.storeName !== config.companyName) {
-      updatedConfig.companyName = settings.storeName;
-      updatedConfig.tradeName = settings.storeName;
+    const corporateName = settings.storeCorporateName || settings.storeName;
+    if (corporateName && corporateName !== config.companyName) {
+      updatedConfig.companyName = corporateName;
+      changed = true;
+    }
+    const tradeName = settings.storeTradeName || settings.storeName;
+    if (tradeName && tradeName !== config.tradeName) {
+      updatedConfig.tradeName = tradeName;
       changed = true;
     }
     if (settings.storeCnpj && settings.storeCnpj !== config.cnpj) {
@@ -133,6 +107,18 @@ export const NfceNfeManager: React.FC<Props> = ({
     }
     if (settings.storeStateRegistration && settings.storeStateRegistration !== config.ie) {
       updatedConfig.ie = settings.storeStateRegistration;
+      changed = true;
+    }
+    if (settings.storeCity && settings.storeCity !== config.cityName) {
+      updatedConfig.cityName = settings.storeCity;
+      changed = true;
+    }
+    if (settings.storeState && settings.storeState !== config.uf) {
+      const stateObj = BRAZIL_STATES.find(s => s.uf.toUpperCase() === settings.storeState?.toUpperCase());
+      updatedConfig.uf = settings.storeState.toUpperCase();
+      if (stateObj) {
+        updatedConfig.cityIbgeCode = `${stateObj.ibge}00000`;
+      }
       changed = true;
     }
     

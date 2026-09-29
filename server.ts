@@ -61,7 +61,7 @@ const getMPAccessToken = async () => {
       .eq('store_key', 'global_plans')
       .maybeSingle();
 
-    const dbToken = data?.data_json?.mercadoPagoAccessToken;
+    const dbToken = data?.data_json?.mercadoPagoAccessToken || data?.data_json?.gateways?.mercadopago?.accessToken;
     if (dbToken && typeof dbToken === 'string' && dbToken.trim().length > 10) {
       return dbToken.trim();
     }
@@ -546,10 +546,78 @@ app.post('/api/auth/login', async (req, res) => {
       .maybeSingle();
 
     if (error) throw error;
-    if (!data) return res.status(401).json({ success: false, message: "Usuário ou senha incorretos." });
+    if (!data) {
+      // 1. Verifica se é um revendedor registrado no sistema
+      try {
+        const { data: resellerDoc } = await supabase
+          .from('cloud_data')
+          .select('data_json')
+          .eq('tenant_id', 'SYSTEM')
+          .eq('store_key', 'resellers_data')
+          .maybeSingle();
+
+        const resellers: any[] = Array.isArray(resellerDoc?.data_json) ? resellerDoc.data_json : [];
+        const found = resellers.find(r => r.username?.toLowerCase() === cleanUser);
+
+        if (found) {
+          if (found.status === 'blocked') {
+            return res.status(403).json({ success: false, message: "Acesso de revendedor bloqueado pela administração." });
+          }
+
+          const isMatch = (found.password === password.trim()) || 
+            (found.passwordHash && await comparePassword(password.trim(), found.passwordHash));
+
+          if (!isMatch) {
+            return res.status(401).json({ success: false, message: "Usuário ou senha incorretos." });
+          }
+
+          return res.json({
+            success: true,
+            type: 'reseller',
+            reseller: {
+              id: found.id,
+              name: found.name,
+              username: found.username,
+              email: found.email,
+              phone: found.phone,
+              commissionPercentage: found.commissionPercentage || 30,
+              status: found.status || 'active',
+              mercadoPagoAccessToken: found.mercadoPagoAccessToken,
+              mercadoPagoPublicKey: found.mercadoPagoPublicKey,
+              pixKey: found.pixKey,
+              pixKeyType: found.pixKeyType
+            }
+          });
+        }
+      } catch (rErr) {
+        console.warn('Aviso ao autenticar revendedor:', rErr);
+      }
+
+      return res.status(401).json({ success: false, message: "Usuário ou senha incorretos." });
+    }
 
     const isMatch = await comparePassword(password.trim(), data.password);
     if (!isMatch) return res.status(401).json({ success: false, message: "Usuário ou senha incorretos." });
+
+    // Verifica se a loja está bloqueada pelo revendedor ou super admin
+    try {
+      if (data.tenant_id) {
+        const { data: metaDoc } = await supabase
+          .from('cloud_data')
+          .select('data_json')
+          .eq('tenant_id', 'SYSTEM')
+          .eq('store_key', 'tenants_reseller_metadata')
+          .maybeSingle();
+
+        const meta = metaDoc?.data_json?.[data.tenant_id];
+        if (meta?.isBlocked) {
+          return res.status(403).json({ 
+            success: false, 
+            message: "Acesso a esta loja está temporariamente suspenso. Contate seu revendedor ou suporte financeiro." 
+          });
+        }
+      }
+    } catch {}
 
     const tenant = data.tenants;
     const limits = tenant?.tenant_limits;
@@ -597,17 +665,32 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/register-tenant', async (req, res) => {
-  const { id, storeName, adminUsername, adminPasswordPlain, logoUrl, phoneNumber } = req.body;
+  const { 
+    id, 
+    storeName, 
+    adminUsername, 
+    adminPasswordPlain, 
+    logoUrl, 
+    phoneNumber,
+    customMonthlyPrice,
+    customQuarterlyPrice,
+    customYearlyPrice,
+    trialDays: requestedTrialDays
+  } = req.body;
   
   try {
     const hashedPassword = await hashPassword(adminPasswordPlain.trim());
     
-    const trialDays = 7;
+    const trialDays = Number(requestedTrialDays) || 7;
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + trialDays);
 
     const globalSettings = await OnlineDB.getGlobalSettings();
     const trialLimits = globalSettings.trial || { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 };
+
+    const parsedMonthly = customMonthlyPrice ? Number(customMonthlyPrice) : null;
+    const parsedQuarterly = customQuarterlyPrice ? Number(customQuarterlyPrice) : (parsedMonthly ? Number((parsedMonthly * 3 * 0.9).toFixed(2)) : null);
+    const parsedYearly = customYearlyPrice ? Number(customYearlyPrice) : (parsedMonthly ? Number((parsedMonthly * 12 * 0.8).toFixed(2)) : null);
 
     const { error: tError } = await supabase
       .from('tenants')
@@ -619,6 +702,9 @@ app.post('/api/auth/register-tenant', async (req, res) => {
         subscription_status: 'trial',
         subscription_expires_at: expiresAt.toISOString(),
         phone_number: phoneNumber,
+        custom_monthly_price: parsedMonthly,
+        custom_quarterly_price: parsedQuarterly,
+        custom_yearly_price: parsedYearly,
         enabled_features: {
           osTab: true,
           customersTab: true,

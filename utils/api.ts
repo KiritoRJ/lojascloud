@@ -546,6 +546,10 @@ export class OnlineDB {
     adminPasswordPlain: string; 
     logoUrl: string | null; 
     phoneNumber: string; 
+    customMonthlyPrice?: number;
+    customQuarterlyPrice?: number;
+    customYearlyPrice?: number;
+    trialDays?: number;
   }) {
     try {
       const response = await fetch('/api/auth/register-tenant', {
@@ -557,6 +561,21 @@ export class OnlineDB {
     } catch (e) {
       return { success: false, message: "Erro ao conectar com o servidor." };
     }
+  }
+
+  static async registerTenant(tenantData: {
+    id: string; 
+    storeName: string; 
+    adminUsername: string; 
+    adminPasswordPlain: string; 
+    logoUrl?: string | null; 
+    phoneNumber: string;
+    customMonthlyPrice?: number;
+    customQuarterlyPrice?: number;
+    customYearlyPrice?: number;
+    trialDays?: number;
+  }) {
+    return this.createTenant({ ...tenantData, logoUrl: tenantData.logoUrl || null });
   }
 
   // Atualiza a assinatura de uma loja para uma data específica
@@ -881,7 +900,7 @@ export class OnlineDB {
     };
   }
 
-  static mapProductFromRow(d: any) {
+  static mapProductFromRow(d: any, extraFiscal?: Record<string, any>) {
     if (!d) return null;
     let videoUrl = d.video_url || null;
     let additionalPhotos = d.additional_photos || [];
@@ -891,6 +910,9 @@ export class OnlineDB {
       videoUrl = additionalPhotos[videoEntryIndex].replace('VIDEO:', '');
       additionalPhotos = additionalPhotos.filter((_: string, i: number) => i !== videoEntryIndex);
     }
+
+    const fiscal = (extraFiscal && extraFiscal[d.id]) || d.fiscal_data || {};
+    const hasExplicitFiscal = !!(fiscal.taxProfileId || fiscal.csosnCst);
 
     return {
       id: d.id,
@@ -909,9 +931,39 @@ export class OnlineDB {
       discount: Number(d.discount || 0),
       brand: d.brand || undefined,
       model: d.model || undefined,
-      ncm: d.ncm || undefined,
-      cest: d.cest || undefined,
-      cfop: d.cfop || undefined
+      ncm: fiscal.ncm || d.ncm || undefined,
+      cest: fiscal.cest || d.cest || undefined,
+      cfop: (hasExplicitFiscal && fiscal.cfop) ? fiscal.cfop : (d.cfop || fiscal.cfop || undefined),
+      // Dados Fiscais Mapeados e Preservados com Prioridade para Fiscal Real
+      csosnCst: (hasExplicitFiscal && fiscal.csosnCst) ? fiscal.csosnCst : (d.csosn_cst || d.csosn || d.cst || fiscal.csosnCst || undefined),
+      origin: (hasExplicitFiscal && fiscal.origin !== undefined) ? String(fiscal.origin) : (d.origin !== undefined && d.origin !== null ? String(d.origin) : (fiscal.origin !== undefined ? String(fiscal.origin) : undefined)),
+      cstPis: (hasExplicitFiscal && fiscal.cstPis) ? fiscal.cstPis : (d.cst_pis || fiscal.cstPis || undefined),
+      cstCofins: (hasExplicitFiscal && fiscal.cstCofins) ? fiscal.cstCofins : (d.cst_cofins || fiscal.cstCofins || undefined),
+      crtCode: (hasExplicitFiscal && fiscal.crtCode) ? fiscal.crtCode : (d.crt_code || fiscal.crtCode || undefined),
+      taxProfileId: fiscal.taxProfileId || d.tax_profile_id || undefined,
+      taxProfileName: fiscal.taxProfileName || d.tax_profile_name || undefined,
+      icmsAliquota: (hasExplicitFiscal && fiscal.icmsAliquota !== undefined) ? Number(fiscal.icmsAliquota) : (d.icms_rate !== undefined && d.icms_rate !== null ? Number(d.icms_rate) : (fiscal.icmsAliquota !== undefined ? Number(fiscal.icmsAliquota) : undefined)),
+      pisAliquota: (hasExplicitFiscal && fiscal.pisAliquota !== undefined) ? Number(fiscal.pisAliquota) : (d.pis_rate !== undefined && d.pis_rate !== null ? Number(d.pis_rate) : (fiscal.pisAliquota !== undefined ? Number(fiscal.pisAliquota) : undefined)),
+      cofinsAliquota: (hasExplicitFiscal && fiscal.cofinsAliquota !== undefined) ? Number(fiscal.cofinsAliquota) : (d.cofins_rate !== undefined && d.cofins_rate !== null ? Number(d.cofins_rate) : (fiscal.cofinsAliquota !== undefined ? Number(fiscal.cofinsAliquota) : undefined)),
+      tipoOperacao: fiscal.tipoOperacao || d.tipo_operacao || undefined,
+      destinoOperacao: fiscal.destinoOperacao || d.destino_operacao || undefined,
+      tipoDestinatario: fiscal.tipoDestinatario || d.tipo_destinatario || undefined,
+      modalidadeBc: fiscal.modalidadeBc || d.modalidade_bc || undefined,
+      mvaPercentual: fiscal.mvaPercentual !== undefined ? Number(fiscal.mvaPercentual) : undefined,
+      icmsStAliquotaDestino: fiscal.icmsStAliquotaDestino !== undefined ? Number(fiscal.icmsStAliquotaDestino) : undefined,
+      modalidadeBcSt: fiscal.modalidadeBcSt || undefined,
+      fcpAliquota: fiscal.fcpAliquota !== undefined ? Number(fiscal.fcpAliquota) : undefined,
+      pisTipoCalculo: fiscal.pisTipoCalculo || undefined,
+      cofinsTipoCalculo: fiscal.cofinsTipoCalculo || undefined,
+      cstIpi: fiscal.cstIpi || undefined,
+      cEnqIpi: fiscal.cEnqIpi || undefined,
+      issExigibilidade: fiscal.issExigibilidade || undefined,
+      issRegimeEspecial: fiscal.issRegimeEspecial || undefined,
+      issAliquota: fiscal.issAliquota !== undefined ? Number(fiscal.issAliquota) : undefined,
+      issRetencao: fiscal.issRetencao !== undefined ? Boolean(fiscal.issRetencao) : undefined,
+      issResponsavelRetencao: fiscal.issResponsavelRetencao || undefined,
+      itemLc116: fiscal.itemLc116 || undefined,
+      codigoTributacaoNacional: fiscal.codigoTributacaoNacional || undefined
     };
   }
 
@@ -1064,18 +1116,68 @@ export class OnlineDB {
   static async fetchProducts(tenantId: string): Promise<any[] | null> {
     if (!tenantId) return [];
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .order('id', { ascending: false });
+      const [prodRes, fiscalRes] = await Promise.all([
+        supabase
+          .from('products')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .order('id', { ascending: false }),
+        supabase
+          .from('cloud_data')
+          .select('data_json')
+          .eq('tenant_id', tenantId)
+          .eq('store_key', 'products_fiscal_data')
+          .maybeSingle()
+      ]);
       
-      if (error) {
-        logSupabaseNotice("Aviso ao buscar produtos do Supabase", error);
+      if (prodRes.error) {
+        logSupabaseNotice("Aviso ao buscar produtos do Supabase", prodRes.error);
         return null;
       }
       
-      return (data || []).map(d => this.mapProductFromRow(d)).filter(Boolean);
+      let fiscalMap: Record<string, any> = {};
+      if (fiscalRes.data?.data_json && typeof fiscalRes.data.data_json === 'object') {
+        fiscalMap = fiscalRes.data.data_json;
+      } else {
+        try {
+          const cached = localStorage.getItem(`products_fiscal_cache_${tenantId}`);
+          if (cached) fiscalMap = JSON.parse(cached);
+        } catch {}
+      }
+
+      // Se existir perfil padrão na loja, usa como preenchimento garantido
+      let defaultTaxProf: any = null;
+      try {
+        const storedProfiles = localStorage.getItem(`tax_profiles_${tenantId}`);
+        if (storedProfiles) {
+          const parsed = JSON.parse(storedProfiles);
+          if (Array.isArray(parsed)) {
+            defaultTaxProf = parsed.find((p: any) => p.isDefault) || parsed[0];
+          }
+        }
+      } catch {}
+
+      return (prodRes.data || []).map(d => {
+        const mapped = this.mapProductFromRow(d, fiscalMap);
+        if (!mapped) return null;
+        if (defaultTaxProf) {
+          // Se o produto não tiver perfil específico ou se ele estiver marcado com o perfil padrão da loja
+          if (!mapped.taxProfileId || mapped.taxProfileId === defaultTaxProf.id) {
+            mapped.taxProfileId = defaultTaxProf.id;
+            mapped.taxProfileName = defaultTaxProf.name;
+            mapped.csosnCst = mapped.csosnCst || defaultTaxProf.csosnCst;
+            mapped.origin = mapped.origin || defaultTaxProf.origin || '0';
+            mapped.cstPis = mapped.cstPis || defaultTaxProf.cstPis || '07';
+            mapped.cstCofins = mapped.cstCofins || defaultTaxProf.cstCofins || '07';
+            mapped.crtCode = mapped.crtCode || defaultTaxProf.crtCode || '4';
+            mapped.cfop = mapped.cfop || defaultTaxProf.defaultCfopInternal || '5102';
+            mapped.icmsAliquota = mapped.icmsAliquota !== undefined ? mapped.icmsAliquota : (defaultTaxProf.icmsAliquota || 0);
+            mapped.pisAliquota = mapped.pisAliquota !== undefined ? mapped.pisAliquota : (defaultTaxProf.pisAliquota || 0);
+            mapped.cofinsAliquota = mapped.cofinsAliquota !== undefined ? mapped.cofinsAliquota : (defaultTaxProf.cofinsAliquota || 0);
+          }
+        }
+        return mapped;
+      }).filter(Boolean);
     } catch (e: any) { 
       logSupabaseNotice("Conexão ao buscar produtos", e);
       return null; 
@@ -1177,15 +1279,85 @@ export class OnlineDB {
     }
   }
 
-  // Salva produtos no Banco de Dados
+  // Salva produtos no Banco de Dados com persistência fiscal garantida
   static async upsertProducts(tenantId: string, products: any[]) {
     if (!tenantId || !products.length) return { success: true };
     try {
-      const payload = products.map(p => {
-        // Workaround: Store videoUrl in additional_photos if column doesn't exist or for backup
+      // 0. Cache síncrono local imediato para resiliência offline e recarregamento sem perdas
+      let currentMap: Record<string, any> = {};
+      try {
+        const cached = localStorage.getItem(`products_fiscal_cache_${tenantId}`);
+        if (cached) currentMap = JSON.parse(cached);
+      } catch {}
+
+      for (const p of products) {
+        currentMap[p.id] = {
+          taxProfileId: p.taxProfileId,
+          taxProfileName: p.taxProfileName,
+          csosnCst: p.csosnCst,
+          origin: p.origin,
+          cstPis: p.cstPis,
+          cstCofins: p.cstCofins,
+          crtCode: p.crtCode,
+          icmsAliquota: p.icmsAliquota,
+          pisAliquota: p.pisAliquota,
+          cofinsAliquota: p.cofinsAliquota,
+          tipoOperacao: p.tipoOperacao,
+          destinoOperacao: p.destinoOperacao,
+          tipoDestinatario: p.tipoDestinatario,
+          modalidadeBc: p.modalidadeBc,
+          mvaPercentual: p.mvaPercentual,
+          icmsStAliquotaDestino: p.icmsStAliquotaDestino,
+          modalidadeBcSt: p.modalidadeBcSt,
+          fcpAliquota: p.fcpAliquota,
+          pisTipoCalculo: p.pisTipoCalculo,
+          cofinsTipoCalculo: p.cofinsTipoCalculo,
+          cstIpi: p.cstIpi,
+          cEnqIpi: p.cEnqIpi,
+          issExigibilidade: p.issExigibilidade,
+          issRegimeEspecial: p.issRegimeEspecial,
+          issAliquota: p.issAliquota,
+          issRetencao: p.issRetencao,
+          issResponsavelRetencao: p.issResponsavelRetencao,
+          itemLc116: p.itemLc116,
+          codigoTributacaoNacional: p.codigoTributacaoNacional,
+          cfop: p.cfop,
+          ncm: p.ncm,
+          cest: p.cest
+        };
+      }
+
+      try {
+        localStorage.setItem(`products_fiscal_cache_${tenantId}`, JSON.stringify(currentMap));
+      } catch {}
+
+      // 1. Grava no cloud_data (store_key: 'products_fiscal_data') como garantia total e imediata
+      try {
+        const { data: cloudFiscal } = await supabase
+          .from('cloud_data')
+          .select('data_json')
+          .eq('tenant_id', tenantId)
+          .eq('store_key', 'products_fiscal_data')
+          .maybeSingle();
+
+        if (cloudFiscal?.data_json && typeof cloudFiscal.data_json === 'object') {
+          currentMap = { ...cloudFiscal.data_json, ...currentMap };
+        }
+
+        await supabase.from('cloud_data').upsert({
+          tenant_id: tenantId,
+          store_key: 'products_fiscal_data',
+          data_json: currentMap,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'tenant_id,store_key' });
+      } catch (fErr) {
+        console.warn('Aviso ao sincronizar backup fiscal em cloud_data:', fErr);
+      }
+
+      // 2. Prepara basePayload incluindo colunas fiscais básicas padrão
+      const basePayload = products.map(p => {
         let additionalPhotos = p.additionalPhotos || [];
-        // Remove old video entries
-        additionalPhotos = additionalPhotos.filter((photo: string) => !photo.startsWith('VIDEO:'));
+        additionalPhotos = additionalPhotos.filter((photo: string) => typeof photo === 'string' && !photo.startsWith('VIDEO:'));
         
         if (p.videoUrl) {
           additionalPhotos.push(`VIDEO:${p.videoUrl}`);
@@ -1209,11 +1381,46 @@ export class OnlineDB {
           model: p.model || null,
           ncm: p.ncm || null,
           cest: p.cest || null,
-          cfop: p.cfop || null
+          cfop: p.cfop || '5102',
+          origin: p.origin !== undefined && p.origin !== null ? (isNaN(Number(p.origin)) ? 0 : Number(p.origin)) : 0,
+          csosn: p.csosnCst || null,
+          csosn_cst: p.csosnCst || null,
+          cst: p.csosnCst || null,
+          icms_rate: p.icmsAliquota || 0,
+          pis_rate: p.pisAliquota || 0,
+          cofins_rate: p.cofinsAliquota || 0
         };
       });
-      const { error } = await supabase.from('products').upsert(payload, { onConflict: 'id' });
-      if (error) throw error;
+
+      // Nível 1: payload completo com todas as colunas fiscais avançadas + fiscal_data JSONB
+      const fullFiscalPayload = basePayload.map((base, idx) => {
+        const p = products[idx];
+        return {
+          ...base,
+          cst_pis: p.cstPis || null,
+          cst_cofins: p.cstCofins || null,
+          crt_code: p.crtCode || null,
+          tax_profile_id: p.taxProfileId || null,
+          tax_profile_name: p.taxProfileName || null,
+          fiscal_data: currentMap[p.id] || null
+        };
+      });
+
+      const fullRes = await supabase.from('products').upsert(fullFiscalPayload, { onConflict: 'id' });
+      if (fullRes.error) {
+        // Nível 2: colunas fiscais básicas padrão
+        const standardRes = await supabase.from('products').upsert(basePayload, { onConflict: 'id' });
+        if (standardRes.error) {
+          // Nível 3: campos mínimos legados caso as colunas fiscais não existam ainda
+          const minimalPayload = basePayload.map(b => {
+            const { csosn, csosn_cst, cst, origin, icms_rate, pis_rate, cofins_rate, ...minimal } = b;
+            return minimal;
+          });
+          const minimalRes = await supabase.from('products').upsert(minimalPayload, { onConflict: 'id' });
+          if (minimalRes.error) throw minimalRes.error;
+        }
+      }
+
       return { success: true };
     } catch (e: any) { 
       logSupabaseNotice("Erro ao salvar produtos no Supabase", e);

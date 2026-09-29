@@ -6,6 +6,14 @@ export interface GlobalSystemSettings {
   trial: { maxUsers: number; maxOS: number; maxProducts: number };
   supportPhone?: string;
   mercadoPagoAccessToken?: string;
+  mercadoPagoPublicKey?: string;
+  activePaymentGateway?: 'mercadopago' | 'asaas' | 'efi' | 'iugu' | 'pix_manual';
+  gateways?: {
+    asaas?: { apiKey?: string; environment?: 'producao' | 'sandbox'; walletId?: string };
+    efi?: { clientId?: string; clientSecret?: string; pixKey?: string; environment?: 'producao' | 'homologacao' };
+    iugu?: { apiToken?: string; accountId?: string };
+    pix_manual?: { bankName?: string; pixKey?: string; pixKeyType?: string; holderName?: string; instructions?: string };
+  };
   aiPackages?: {
     package50?: { price: number; credits: number };
     package150?: { price: number; credits: number };
@@ -50,13 +58,53 @@ export interface Tenant {
   maxProducts?: number;
   printerSize?: 58 | 80;
   retentionMonths?: number;
+  resellerId?: string;
+  resellerName?: string;
+  resellerUsername?: string;
+  isBlocked?: boolean;
+  monthlyPaymentStatus?: 'paid' | 'pending' | 'expired';
+  monthlyPrice?: number;
+  lastPaymentDate?: string;
+  nextExpiresAt?: string;
+  ncmDatabaseVersion?: string;
+  ncmLastSync?: string;
+}
+
+export interface Reseller {
+  id: string;
+  name: string;
+  username: string;
+  password?: string;
+  email?: string;
+  phone?: string;
+  commissionPercentage: number; // Percentual de comissão definido pelo Super Admin (Ex: 30 = 30%)
+  status: 'active' | 'blocked';
+  createdAt: string;
+  mercadoPagoAccessToken?: string;
+  mercadoPagoPublicKey?: string;
+  pixKey?: string;
+  pixKeyType?: 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
+  notes?: string;
+}
+
+export interface ResellerPayoutRecord {
+  id: string;
+  resellerId: string;
+  resellerName: string;
+  month: string; // Ex: "2026-09"
+  totalStoresRevenue: number;
+  commissionPercentage: number;
+  payoutAmount: number;
+  status: 'paid' | 'pending';
+  paidAt?: string;
+  notes?: string;
 }
 
 export interface User {
   id: string;
   name: string;
   username?: string;
-  role: 'admin' | 'colaborador' | 'super';
+  role: 'admin' | 'colaborador' | 'super' | 'reseller';
   password?: string;
   photo: string | null;
   specialty?: 'Vendedor' | 'Técnico' | 'Outros';

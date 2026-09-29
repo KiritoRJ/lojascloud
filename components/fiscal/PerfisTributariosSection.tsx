@@ -15,10 +15,14 @@ import {
   HelpCircle,
   ArrowRight
 } from 'lucide-react';
-import { TaxProfile } from '../../types';
+import { TaxProfile, Product } from '../../types';
+import { OfflineSync } from '../../utils/offlineSync';
+import { OnlineDB } from '../../utils/api';
 import { 
   getStoredTaxProfiles, 
   saveTaxProfiles, 
+  applyTaxProfileToAllProducts,
+  setTaxProfileAsDefault,
   CRT_OPTIONS,
   ORIGIN_OPTIONS, 
   CSOSN_SIMPLES_OPTIONS, 
@@ -36,11 +40,17 @@ import {
 interface PerfisTributariosSectionProps {
   tenantId?: string;
   showToast?: (text: string, type?: 'success' | 'error' | 'info') => void;
+  products?: Product[];
+  setProducts?: (products: Product[]) => void;
+  onNavigateToMei?: () => void;
 }
 
 export const PerfisTributariosSection: React.FC<PerfisTributariosSectionProps> = ({
   tenantId,
-  showToast = () => {}
+  showToast = () => {},
+  products = [],
+  setProducts,
+  onNavigateToMei
 }) => {
   const [profiles, setProfiles] = useState<TaxProfile[]>(() => getStoredTaxProfiles(tenantId));
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -166,6 +176,17 @@ export const PerfisTributariosSection: React.FC<PerfisTributariosSectionProps> =
 
     setProfiles(updated);
     saveTaxProfiles(tenantId, updated);
+
+    // Se o perfil salvo for o padrão, atualiza todos os produtos do estoque imediatamente
+    if (formData.isDefault && setProducts && products && products.length > 0) {
+      const activeDef = updated.find(p => p.isDefault) || updated[0];
+      if (activeDef) {
+        const updatedProds = applyTaxProfileToAllProducts(products, activeDef);
+        setProducts(updatedProds);
+        showToast(`Perfil "${activeDef.name}" aplicado como padrão a todos os ${updatedProds.length} produtos do estoque!`, 'success');
+      }
+    }
+
     setIsModalOpen(false);
     resetForm();
   };
@@ -221,15 +242,94 @@ export const PerfisTributariosSection: React.FC<PerfisTributariosSectionProps> =
     showToast('Perfil tributário removido.', 'info');
   };
 
-  const handleSetDefault = (p: TaxProfile) => {
-    const updated = profiles.map(item => ({
-      ...item,
-      isDefault: item.id === p.id
-    }));
-    setProfiles(updated);
-    saveTaxProfiles(tenantId, updated);
-    showToast(`"${p.name}" agora é o Perfil Padrão!`);
+  const handleSetDefault = async (p: TaxProfile) => {
+    const { updatedProfiles, updatedProducts } = setTaxProfileAsDefault(tenantId, profiles, p.id, products);
+    setProfiles(updatedProfiles);
+
+    if (tenantId && updatedProducts.length > 0) {
+      try {
+        const fiscalCache: Record<string, any> = {};
+        updatedProducts.forEach(prod => {
+          fiscalCache[prod.id] = {
+            taxProfileId: prod.taxProfileId,
+            taxProfileName: prod.taxProfileName,
+            csosnCst: prod.csosnCst,
+            origin: prod.origin,
+            cstPis: prod.cstPis,
+            cstCofins: prod.cstCofins,
+            crtCode: prod.crtCode,
+            cfop: prod.cfop,
+            ncm: prod.ncm,
+            cest: prod.cest,
+            icmsAliquota: prod.icmsAliquota,
+            pisAliquota: prod.pisAliquota,
+            cofinsAliquota: prod.cofinsAliquota
+          };
+        });
+        localStorage.setItem(`products_fiscal_cache_${tenantId}`, JSON.stringify(fiscalCache));
+      } catch {}
+    }
+
+    if (setProducts && updatedProducts.length > 0) {
+      await setProducts(updatedProducts);
+    }
+    if (tenantId && updatedProducts.length > 0) {
+      await OfflineSync.saveProductsBatch(tenantId, updatedProducts, updatedProducts);
+      await OnlineDB.upsertProducts(tenantId, updatedProducts);
+      showToast(`"${p.name}" agora é o Perfil Padrão! Todos os ${updatedProducts.length} produtos do estoque foram atualizados e salvos com sucesso.`, 'success');
+    } else {
+      showToast(`"${p.name}" agora é o Perfil Padrão!`, 'success');
+    }
   };
+
+  const handleSyncAllProductsNow = async () => {
+    const defaultProf = profiles.find(p => p.isDefault) || profiles[0];
+    if (!defaultProf) {
+      showToast('Nenhum perfil tributário encontrado para sincronizar.', 'error');
+      return;
+    }
+    if (!products || products.length === 0) {
+      showToast('Nenhum produto cadastrado no estoque para sincronizar.', 'info');
+      return;
+    }
+
+    const updatedProducts = applyTaxProfileToAllProducts(products, defaultProf);
+
+    if (tenantId && updatedProducts.length > 0) {
+      try {
+        const fiscalCache: Record<string, any> = {};
+        updatedProducts.forEach(prod => {
+          fiscalCache[prod.id] = {
+            taxProfileId: prod.taxProfileId,
+            taxProfileName: prod.taxProfileName,
+            csosnCst: prod.csosnCst,
+            origin: prod.origin,
+            cstPis: prod.cstPis,
+            cstCofins: prod.cstCofins,
+            crtCode: prod.crtCode,
+            cfop: prod.cfop,
+            ncm: prod.ncm,
+            cest: prod.cest,
+            icmsAliquota: prod.icmsAliquota,
+            pisAliquota: prod.pisAliquota,
+            cofinsAliquota: prod.cofinsAliquota
+          };
+        });
+        localStorage.setItem(`products_fiscal_cache_${tenantId}`, JSON.stringify(fiscalCache));
+      } catch {}
+    }
+
+    if (setProducts) {
+      await setProducts(updatedProducts);
+    }
+    if (tenantId) {
+      await OfflineSync.saveProductsBatch(tenantId, updatedProducts, updatedProducts);
+      await OnlineDB.upsertProducts(tenantId, updatedProducts);
+    }
+    showToast(`Sincronização 100% concluída e salva! Todos os ${updatedProducts.length} produtos agora utilizam as regras de "${defaultProf.name}".`, 'success');
+  };
+
+  const defaultProfile = profiles.find(p => p.isDefault) || profiles[0];
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
@@ -241,26 +341,45 @@ export const PerfisTributariosSection: React.FC<PerfisTributariosSectionProps> =
               <Sparkles size={24} className="animate-pulse" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base md:text-lg font-black uppercase tracking-tight">Perfis Tributários & Regras Fiscais</h2>
                 <span className="bg-amber-400 text-slate-950 text-[9px] font-black uppercase px-2 py-0.5 rounded-full shadow-xs">
-                  Automação Dica de Ouro
+                  Automação Fiscal Ativa
                 </span>
+                {defaultProfile && (
+                  <span className="bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">
+                    Base Atual: {defaultProfile.name}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-200 mt-1 max-w-2xl leading-relaxed font-medium">
-                Vincule o produto a um Perfil Tributário para preencher automaticamente <strong>Origem (0-8)</strong>, <strong>CSOSN/CST (ICMS)</strong>, <strong>CST PIS</strong>, <strong>CST COFINS</strong> e <strong>CFOP</strong>. A conversão de CFOP para vendas de outro estado (ex: 5.102 ➔ 6.102) é feita 100% de forma automática pelo ERP!
+                O perfil selecionado como <strong>padrão</strong> é a base principal de toda a sua loja. Ao definir um perfil como padrão ou cadastrar novos produtos, o ERP sincroniza automaticamente as regras de <strong>Origem</strong>, <strong>CSOSN/CST</strong>, <strong>PIS/COFINS</strong> e <strong>CFOP</strong> em todo o estoque.
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => { resetForm(); setIsModalOpen(true); }}
-            className="px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg shadow-blue-600/30 active:scale-95 transition-all flex items-center gap-2 shrink-0 cursor-pointer border border-blue-400/40"
-          >
-            <Plus size={16} />
-            <span>Criar Perfil Tributário</span>
-          </button>
+          <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+            {products && products.length > 0 && (
+              <button
+                type="button"
+                onClick={handleSyncAllProductsNow}
+                className="px-3.5 py-3 bg-slate-800/90 hover:bg-slate-700 text-emerald-300 rounded-2xl font-black text-xs uppercase tracking-wider shadow-md border border-emerald-500/40 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
+                title="Aplica as regras do perfil padrão a todos os produtos existentes no estoque"
+              >
+                <CheckCircle2 size={16} className="text-emerald-400" />
+                <span>Sincronizar Todo o Estoque ({products.length})</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => { resetForm(); setIsModalOpen(true); }}
+              className="px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg shadow-blue-600/30 active:scale-95 transition-all flex items-center gap-2 shrink-0 cursor-pointer border border-blue-400/40"
+            >
+              <Plus size={16} />
+              <span>Criar Perfil Tributário</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -422,25 +541,46 @@ export const PerfisTributariosSection: React.FC<PerfisTributariosSectionProps> =
             </div>
 
             {/* Ações */}
-            <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 mt-4">
-              <button
-                type="button"
-                onClick={() => handleStartEdit(p)}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer"
-              >
-                <Edit3 size={12} />
-                <span>Editar</span>
-              </button>
-              {!p.isDefault && (
+            <div className="flex items-center justify-between gap-2 pt-4 border-t border-slate-100 mt-4 flex-wrap">
+              <div>
+                {p.isDefault ? (
+                  <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 size={12} className="text-emerald-600" />
+                    <span>Padrão em Uso ({products.length} itens)</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSetDefault(p)}
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+                    title="Define este perfil como padrão e atualiza todos os produtos do estoque imediatamente"
+                  >
+                    <CheckCircle2 size={12} />
+                    <span>Usar como Padrão</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setProfileToDelete(p.id)}
-                  className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer"
+                  onClick={() => handleStartEdit(p)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer"
                 >
-                  <Trash2 size={12} />
-                  <span>Excluir</span>
+                  <Edit3 size={12} />
+                  <span>Editar</span>
                 </button>
-              )}
+                {!p.isDefault && (
+                  <button
+                    type="button"
+                    onClick={() => setProfileToDelete(p.id)}
+                    className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer"
+                    title="Excluir Perfil Tributário"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}

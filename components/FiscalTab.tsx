@@ -30,6 +30,7 @@ import { XmlSection } from './fiscal/XmlSection';
 import { CertificadoSection } from './fiscal/CertificadoSection';
 import { AuditoriaSection } from './fiscal/AuditoriaSection';
 import { PerfisTributariosSection } from './fiscal/PerfisTributariosSection';
+import { LojasMeiSection } from './fiscal/LojasMeiSection';
 
 interface FiscalTabProps {
   settings: AppSettings;
@@ -40,7 +41,7 @@ interface FiscalTabProps {
   customers?: Customer[];
   serviceOrders?: ServiceOrder[];
   tenantId?: string;
-  initialSubTab?: 'nfe' | 'nfce' | 'nfse' | 'perfis' | 'eventos' | 'xml' | 'certificado' | 'auditoria';
+  initialSubTab?: 'mei' | 'nfe' | 'nfce' | 'nfse' | 'perfis' | 'eventos' | 'xml' | 'certificado' | 'auditoria';
   onBack?: () => void;
 }
 
@@ -53,10 +54,10 @@ export const FiscalTab: React.FC<FiscalTabProps> = ({
   customers = [],
   serviceOrders = [],
   tenantId = '',
-  initialSubTab = 'nfce',
+  initialSubTab = 'mei',
   onBack
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'nfe' | 'nfce' | 'nfse' | 'perfis' | 'eventos' | 'xml' | 'certificado' | 'auditoria'>(initialSubTab);
+  const [activeSubTab, setActiveSubTab] = useState<'mei' | 'nfe' | 'nfce' | 'nfse' | 'perfis' | 'eventos' | 'xml' | 'certificado' | 'auditoria'>(initialSubTab);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -219,10 +220,26 @@ export const FiscalTab: React.FC<FiscalTabProps> = ({
           />
         )}
 
+        {activeSubTab === 'mei' && (
+          <LojasMeiSection
+            settings={settings}
+            products={products}
+            setProducts={setProducts}
+            sales={sales}
+            serviceOrders={serviceOrders}
+            tenantId={tenantId}
+            showToast={showToast}
+            onNavigateToTab={(tab) => setActiveSubTab(tab as any)}
+          />
+        )}
+
         {activeSubTab === 'perfis' && (
           <PerfisTributariosSection
             tenantId={tenantId}
             showToast={showToast}
+            products={products}
+            setProducts={setProducts}
+            onNavigateToMei={() => setActiveSubTab('mei')}
           />
         )}
 

@@ -1,4 +1,4 @@
-import { TaxProfile } from '../types';
+import { TaxProfile, Product } from '../types';
 
 export const CRT_OPTIONS = [
   { code: '1', label: '1 - Simples Nacional' },
@@ -199,6 +199,69 @@ export const DEFAULT_TAX_PROFILES: TaxProfile[] = [
     isDefault: false,
   },
   {
+    id: 'tp_mei_geral',
+    name: 'MEI - Revenda de Mercadorias (CRT 4 - CSOSN 400 / CFOP 5102)',
+    description: 'Perfil oficial recomendado para Microempreendedor Individual (MEI). Tributação unificada no DAS-MEI (ICMS 0%, PIS 0%, COFINS 0%). Sem destaque ou crédito de ICMS.',
+    crtTaxRegime: 'simples',
+    crtCode: '4',
+    csosnCst: '0400',
+    origin: '0',
+    cstPis: '07',
+    cstCofins: '07',
+    defaultCfopInternal: '5102',
+    defaultCfopInterstate: '6102',
+    icmsAliquota: 0,
+    pisAliquota: 0,
+    cofinsAliquota: 0,
+    isDefault: false,
+    tipoOperacao: 'saida',
+    destinoOperacao: 'interna',
+    tipoDestinatario: 'nao_contribuinte',
+    modalidadeBc: 'op',
+  },
+  {
+    id: 'tp_mei_st',
+    name: 'MEI - Revenda c/ Substituição Tributária (CRT 4 - CSOSN 500 / CFOP 5405)',
+    description: 'Para MEI revendendo produtos com ICMS já retido anteriormente por Substituição Tributária (autopeças, bebidas, cosméticos, eletrônicos ST).',
+    crtTaxRegime: 'simples',
+    crtCode: '4',
+    csosnCst: '0500',
+    origin: '0',
+    cstPis: '07',
+    cstCofins: '07',
+    defaultCfopInternal: '5405',
+    defaultCfopInterstate: '6405',
+    icmsAliquota: 0,
+    pisAliquota: 0,
+    cofinsAliquota: 0,
+    isDefault: false,
+    tipoOperacao: 'saida',
+    destinoOperacao: 'interna',
+    tipoDestinatario: 'nao_contribuinte',
+    modalidadeBc: 'op',
+  },
+  {
+    id: 'tp_mei_102',
+    name: 'MEI - Revenda Mercadoria Normal (CRT 4 - CSOSN 102 / CFOP 5102)',
+    description: 'Para MEI em estados cuja SEFAZ exige CSOSN 102 (sem permissão de crédito) em vez de 400 em operações de venda ao consumidor.',
+    crtTaxRegime: 'simples',
+    crtCode: '4',
+    csosnCst: '0102',
+    origin: '0',
+    cstPis: '49',
+    cstCofins: '49',
+    defaultCfopInternal: '5102',
+    defaultCfopInterstate: '6102',
+    icmsAliquota: 0,
+    pisAliquota: 0,
+    cofinsAliquota: 0,
+    isDefault: false,
+    tipoOperacao: 'saida',
+    destinoOperacao: 'interna',
+    tipoDestinatario: 'nao_contribuinte',
+    modalidadeBc: 'op',
+  },
+  {
     id: 'tp_importado_mercado_interno',
     name: 'Mercadoria Importada Adquirida no Mercado Interno (Origem 2 - CSOSN 0102)',
     description: 'Produtos de origem estrangeira adquiridos de distribuidores ou importadores no Brasil.',
@@ -263,6 +326,14 @@ export const getStoredTaxProfiles = (tenantId?: string): TaxProfile[] => {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
+        // Assegura que novos perfis oficiais essenciais (como os de MEI) sejam mesclados caso ainda não existam
+        const existingIds = new Set(parsed.map(p => p.id));
+        const missingDefaults = DEFAULT_TAX_PROFILES.filter(d => !existingIds.has(d.id));
+        if (missingDefaults.length > 0) {
+          const merged = [...parsed, ...missingDefaults];
+          localStorage.setItem(key, JSON.stringify(merged));
+          return merged;
+        }
         return parsed;
       }
     }
@@ -275,6 +346,87 @@ export const saveTaxProfiles = (tenantId: string | undefined, profiles: TaxProfi
   try {
     localStorage.setItem(key, JSON.stringify(profiles));
   } catch (e) {}
+};
+
+/**
+ * Aplica as regras de um Perfil Tributário a um produto individual.
+ */
+export const applyTaxProfileToProduct = (product: Product, profile: TaxProfile): Product => {
+  return {
+    ...product,
+    taxProfileId: profile.id,
+    taxProfileName: profile.name,
+    crtCode: (profile.crtCode as any) || (profile.crtTaxRegime === 'normal' ? '3' : '1'),
+    csosnCst: profile.csosnCst,
+    origin: profile.origin,
+    cstPis: profile.cstPis,
+    cstCofins: profile.cstCofins,
+    cfop: profile.defaultCfopInternal || '5102',
+    icmsAliquota: Number(profile.icmsAliquota) || 0,
+    pisAliquota: Number(profile.pisAliquota) || 0,
+    cofinsAliquota: Number(profile.cofinsAliquota) || 0,
+    tipoOperacao: profile.tipoOperacao,
+    destinoOperacao: profile.destinoOperacao,
+    tipoDestinatario: profile.tipoDestinatario,
+    modalidadeBc: profile.modalidadeBc,
+    mvaPercentual: Number(profile.mvaPercentual) || 0,
+    icmsStAliquotaDestino: Number(profile.icmsStAliquotaDestino) || 0,
+    modalidadeBcSt: profile.modalidadeBcSt,
+    fcpAliquota: Number(profile.fcpAliquota) || 0,
+    pisTipoCalculo: profile.pisTipoCalculo,
+    cofinsTipoCalculo: profile.cofinsTipoCalculo,
+    cstIpi: profile.cstIpi,
+    cEnqIpi: profile.cEnqIpi,
+    issExigibilidade: profile.issExigibilidade,
+    issRegimeEspecial: profile.issRegimeEspecial,
+    issAliquota: Number(profile.issAliquota) || 0,
+    issRetencao: profile.issRetencao,
+    issResponsavelRetencao: profile.issResponsavelRetencao,
+    itemLc116: profile.itemLc116,
+    codigoTributacaoNacional: profile.codigoTributacaoNacional
+  };
+};
+
+/**
+ * Atualiza todos os produtos do estoque com as regras do Perfil Tributário padrão selecionado.
+ */
+export const applyTaxProfileToAllProducts = (products: Product[], profile: TaxProfile): Product[] => {
+  return products.map(p => applyTaxProfileToProduct(p, profile));
+};
+
+/**
+ * Obtém o perfil padrão configurado ou o primeiro disponível.
+ */
+export const getDefaultTaxProfile = (profiles: TaxProfile[]): TaxProfile | undefined => {
+  return profiles.find(p => p.isDefault) || profiles[0];
+};
+
+/**
+ * Define um perfil tributário como padrão e gera os produtos atualizados correspondentes.
+ */
+export const setTaxProfileAsDefault = (
+  tenantId: string | undefined,
+  profiles: TaxProfile[],
+  profileId: string,
+  currentProducts?: Product[]
+): { updatedProfiles: TaxProfile[]; updatedProducts: Product[]; defaultProfile?: TaxProfile } => {
+  const targetProfile = profiles.find(p => p.id === profileId);
+  const updatedProfiles = profiles.map(p => ({
+    ...p,
+    isDefault: p.id === profileId
+  }));
+
+  saveTaxProfiles(tenantId, updatedProfiles);
+
+  const updatedProducts = (currentProducts && targetProfile) 
+    ? applyTaxProfileToAllProducts(currentProducts, targetProfile)
+    : (currentProducts || []);
+
+  return {
+    updatedProfiles,
+    updatedProducts,
+    defaultProfile: targetProfile
+  };
 };
 
 // Estados e Códigos IBGE das 27 UFs do Brasil

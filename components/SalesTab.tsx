@@ -571,13 +571,16 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
             productId: it.product.id,
             description: it.product.name,
             ncm: it.product.ncm || settings.nfceNfeConfig?.ncmDefault || '8517.79.00',
-            cfop: settings.nfceNfeConfig?.cfopDefault || '5102',
-            csosn: settings.nfceNfeConfig?.csosnDefault || '102',
+            cfop: it.product.cfop || settings.nfceNfeConfig?.cfopDefault || '5102',
+            csosn: it.product.csosnCst || settings.nfceNfeConfig?.csosnDefault || '102',
+            origin: it.product.origin || '0',
+            cstPis: it.product.cstPis || '49',
+            cstCofins: it.product.cstCofins || '49',
             unitOfMeasure: 'UN',
             quantity: it.quantity,
             unitPrice: it.product.salePrice,
             totalPrice: it.quantity * it.product.salePrice,
-            icmsRate: settings.nfceNfeConfig?.icmsDefaultRate || 0,
+            icmsRate: it.product.icmsAliquota ?? settings.nfceNfeConfig?.icmsDefaultRate ?? 0,
             icmsAmount: 0
           }));
 

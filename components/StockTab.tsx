@@ -10,6 +10,8 @@ import { AICreditsModal } from './AICreditsModal';
 import { findMatchingFiscalData } from '../utils/fiscalDatabase';
 import { 
   getStoredTaxProfiles, 
+  applyTaxProfileToProduct,
+  applyTaxProfileToAllProducts,
   CRT_OPTIONS,
   ORIGIN_OPTIONS, 
   CSOSN_SIMPLES_OPTIONS, 
@@ -49,19 +51,16 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
   const availableTaxProfiles = getStoredTaxProfiles(tenantId);
   const defaultProfile = availableTaxProfiles.find(p => p.isDefault) || availableTaxProfiles[0];
 
-  const [formData, setFormData] = useState<Partial<Product>>({
-    name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null, barcode: '',
-    description: '', category: '', brand: '', model: '', ncm: '', cest: '', 
-    cfop: defaultProfile?.defaultCfopInternal || '5102',
-    csosnCst: defaultProfile?.csosnCst || '0102',
-    origin: defaultProfile?.origin || '0',
-    cstPis: defaultProfile?.cstPis || '49',
-    cstCofins: defaultProfile?.cstCofins || '49',
-    taxProfileId: defaultProfile?.id || '',
-    taxProfileName: defaultProfile?.name || '',
-    promotionalPrice: 0, discount: 0, isPromotion: false
+  const [formData, setFormData] = useState<Partial<Product>>(() => {
+    const base: Partial<Product> = {
+      name: '', costPrice: 0, salePrice: 0, quantity: 0, photo: null, barcode: '',
+      description: '', category: '', brand: '', model: '', ncm: '', cest: '', 
+      promotionalPrice: 0, discount: 0, isPromotion: false
+    };
+    return defaultProfile ? applyTaxProfileToProduct(base as any, defaultProfile) : base;
   });
 
+  const [stockSyncBadge, setStockSyncBadge] = useState<string | null>(null);
   const [isPhotoChoiceOpen, setIsPhotoChoiceOpen] = useState(false);
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
   const [aiProgressMessage, setAiProgressMessage] = useState('');
@@ -485,7 +484,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     setFiscalMatchSuggestion(null);
     setIsSuggestionDismissed(false);
     const defProf = availableTaxProfiles.find(p => p.isDefault) || availableTaxProfiles[0];
-    setFormData({
+    const baseNew: Partial<Product> = {
       name: '',
       costPrice: 0,
       salePrice: 0,
@@ -498,17 +497,11 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
       model: '',
       ncm: '',
       cest: '',
-      cfop: defProf?.defaultCfopInternal || '5102',
-      csosnCst: defProf?.csosnCst || '0102',
-      origin: defProf?.origin || '0',
-      cstPis: defProf?.cstPis || '49',
-      cstCofins: defProf?.cstCofins || '49',
-      taxProfileId: defProf?.id || '',
-      taxProfileName: defProf?.name || '',
       promotionalPrice: 0,
       discount: 0,
       isPromotion: false,
-    });
+    };
+    setFormData(defProf ? applyTaxProfileToProduct(baseNew as any, defProf) : baseNew);
     setAiSuccessBadge(null);
     setAiErrorBadge(null);
     setShowFiscalFields(false);
@@ -551,15 +544,36 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
     }
   };
 
+  const handleSyncStockWithDefaultProfile = () => {
+    if (!defaultProfile || products.length === 0) return;
+    const updated = applyTaxProfileToAllProducts(products, defaultProfile);
+    setProducts(updated);
+    setStockSyncBadge(`Todos os ${updated.length} produtos foram sincronizados com a regra "${defaultProfile.name}"!`);
+    setTimeout(() => setStockSyncBadge(null), 4500);
+  };
+
   return (
     <div className="space-y-4 pb-4">
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Estoque Pro</h2>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Gestão e Cadastro Inteligente</p>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+            Gestão e Cadastro Inteligente {defaultProfile ? `• Fiscal Padrão: ${defaultProfile.name.split('(')[0].trim()}` : ''}
+          </p>
         </div>
         <div className="flex items-center gap-2">
+          {defaultProfile && products.length > 0 && (
+            <button
+              type="button"
+              onClick={handleSyncStockWithDefaultProfile}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
+              title={`Perfil padrão atual: ${defaultProfile.name}. Clique para aplicar esta regra a todos os produtos do estoque.`}
+            >
+              <CheckCircle2 size={13} className="text-emerald-600" />
+              <span>Sincronizar Fiscal</span>
+            </button>
+          )}
           {aiEnabled && tenantId && (
             <button
               type="button"
@@ -594,6 +608,22 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
           </button>
         </div>
       </div>
+
+      {stockSyncBadge && (
+        <div className="bg-emerald-600 text-white p-3 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-between shadow-lg shadow-emerald-600/20 animate-in fade-in slide-in-from-top-1">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-emerald-200 shrink-0" />
+            <span>{stockSyncBadge}</span>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => setStockSyncBadge(null)}
+            className="text-white/80 hover:text-white text-xs font-bold px-2 py-0.5"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {limitReached && (
         <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-amber-700 text-xs font-bold flex items-center gap-3">
@@ -1156,39 +1186,7 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
                             }
                             const prof = availableTaxProfiles.find(p => p.id === selectedId);
                             if (prof) {
-                              setFormData(f => ({
-                                ...f,
-                                taxProfileId: prof.id,
-                                taxProfileName: prof.name,
-                                crtCode: prof.crtCode || (prof.crtTaxRegime === 'normal' ? '3' : '1'),
-                                csosnCst: prof.csosnCst,
-                                origin: prof.origin,
-                                cstPis: prof.cstPis,
-                                cstCofins: prof.cstCofins,
-                                cfop: prof.defaultCfopInternal || '5102',
-                                icmsAliquota: prof.icmsAliquota || 0,
-                                pisAliquota: prof.pisAliquota || 0,
-                                cofinsAliquota: prof.cofinsAliquota || 0,
-                                tipoOperacao: prof.tipoOperacao,
-                                destinoOperacao: prof.destinoOperacao,
-                                tipoDestinatario: prof.tipoDestinatario,
-                                modalidadeBc: prof.modalidadeBc,
-                                mvaPercentual: prof.mvaPercentual,
-                                icmsStAliquotaDestino: prof.icmsStAliquotaDestino,
-                                modalidadeBcSt: prof.modalidadeBcSt,
-                                fcpAliquota: prof.fcpAliquota,
-                                pisTipoCalculo: prof.pisTipoCalculo,
-                                cofinsTipoCalculo: prof.cofinsTipoCalculo,
-                                cstIpi: prof.cstIpi,
-                                cEnqIpi: prof.cEnqIpi,
-                                issExigibilidade: prof.issExigibilidade,
-                                issRegimeEspecial: prof.issRegimeEspecial,
-                                issAliquota: prof.issAliquota,
-                                issRetencao: prof.issRetencao,
-                                issResponsavelRetencao: prof.issResponsavelRetencao,
-                                itemLc116: prof.itemLc116,
-                                codigoTributacaoNacional: prof.codigoTributacaoNacional
-                              }));
+                              setFormData(f => applyTaxProfileToProduct(f as any, prof));
                             }
                           }}
                           className="w-full p-2.5 bg-white rounded-xl font-black text-xs text-slate-800 outline-none border border-blue-200 focus:ring-2 focus:ring-blue-600"

@@ -12,6 +12,7 @@ import EmployeeManagementTab from './components/EmployeeManagementTab';
 import ToolsTab from './components/ToolsTab';
 import { FiscalTab } from './components/FiscalTab';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
+import { ResellerDashboard } from './components/ResellerDashboard';
 import SubscriptionView from './components/SubscriptionView';
 import CustomerCatalog from './components/CustomerCatalog';
 import PublicTrackingPage from './components/PublicTrackingPage';
@@ -21,6 +22,7 @@ import { SpotlightTour } from './components/SpotlightTour';
 import { OnlineDB, supabase } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { OfflineAuth } from './utils/offlineAuth';
+import { ResellerService } from './utils/resellerService';
 import { getChangedOrders } from './utils/orderUtils';
 import { db } from './utils/localDb';
 import { useAppNotifications } from './utils/useAppNotifications';
@@ -65,9 +67,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 const App: React.FC = () => {
   const [session, setSession] = useState<{ 
     isLoggedIn: boolean; 
-    type: 'super' | 'admin' | 'colaborador'; 
+    type: 'super' | 'admin' | 'colaborador' | 'reseller'; 
     tenantId?: string; 
     user?: User; 
+    reseller?: any;
     isSuper?: boolean;
     impersonatedBySuper?: boolean;
     subscriptionStatus?: string; 
@@ -101,8 +104,17 @@ const App: React.FC = () => {
       const storedUser = localStorage.getItem('currentUser_pro');
       if (storedSession) {
         const parsed = JSON.parse(storedSession);
+        // Se for a antiga sessão de demo, descarta e limpa
+        if (parsed.tenantId === 'T_DEMO_LOJA' || parsed.user?.id === 'admin-demo') {
+          localStorage.removeItem('session_pro');
+          localStorage.removeItem('currentUser_pro');
+          return null;
+        }
         if (parsed.isSuper && !parsed.tenantId) {
           return { isLoggedIn: true, type: 'super', isSuper: true };
+        }
+        if (parsed.type === 'reseller' && parsed.reseller) {
+          return { isLoggedIn: true, type: 'reseller', reseller: parsed.reseller };
         }
         if (parsed.tenantId) {
           const user = storedUser ? JSON.parse(storedUser) : null;
@@ -128,36 +140,7 @@ const App: React.FC = () => {
         }
       }
     } catch (e) {}
-    // Sessão padrão de demonstração para carregamento instantâneo no preview
-    const defaultUser: User = {
-      id: 'admin-demo',
-      name: 'Administrador Demo',
-      username: 'admin',
-      role: 'admin',
-      photo: null
-    };
-    return {
-      isLoggedIn: true,
-      type: 'admin',
-      tenantId: 'T_DEMO_LOJA',
-      user: defaultUser,
-      isSuper: false,
-      subscriptionStatus: 'active',
-      subscriptionExpiresAt: '2099-12-31',
-      printerSize: 58,
-      enabledFeatures: {
-        osTab: true,
-        customersTab: true,
-        stockTab: true,
-        salesTab: true,
-        fiscalTab: true,
-        fiscalMode: true,
-        financeTab: true,
-        toolsTab: true,
-        profiles: true,
-        xmlExportImport: true,
-      }
-    };
+    return null;
   });
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
@@ -849,6 +832,40 @@ const App: React.FC = () => {
       }
 
       // 2. SE ESTIVER ONLINE, CONECTA NO SUPABASE
+      // 2.1 Verifica primeiro se as credenciais pertencem a um Revendedor cadastrado
+      try {
+        const resellerAuth = await ResellerService.authenticateReseller(loginForm.username, loginForm.password);
+        if (resellerAuth.success && resellerAuth.reseller) {
+          const resellerSession = {
+            isLoggedIn: true,
+            type: 'reseller' as const,
+            reseller: resellerAuth.reseller
+          };
+          const resellerUser = {
+            id: resellerAuth.reseller.id,
+            name: resellerAuth.reseller.name,
+            role: 'admin' as const,
+            photo: null
+          };
+          localStorage.setItem('session_pro', JSON.stringify(resellerSession));
+          localStorage.setItem('currentUser_pro', JSON.stringify(resellerUser));
+          localStorage.setItem('cached_current_reseller', JSON.stringify(resellerAuth.reseller));
+          setSession(resellerSession as any);
+          setIsLoggingIn(false);
+          return;
+        } else if (resellerAuth.message?.includes('Senha incorreta')) {
+          setLoginError('Senha incorreta para a conta de revendedor.');
+          setIsLoggingIn(false);
+          return;
+        } else if (resellerAuth.message?.includes('Acesso bloqueado')) {
+          setLoginError(resellerAuth.message);
+          setIsLoggingIn(false);
+          return;
+        }
+      } catch (resellerErr) {
+        console.warn('Verificação de revendedor ignorada:', resellerErr);
+      }
+
       const result = await OnlineDB.login(loginForm.username, loginForm.password);
       
       if (result.success) {
@@ -1006,12 +1023,17 @@ const App: React.FC = () => {
   const handleLoginAs = async (tenantId: string) => {
     const tenant = await OnlineDB.getTenantById(tenantId);
     if (tenant) {
+      const isFromReseller = session?.type === 'reseller' || !!session?.reseller;
+      const currentReseller = session?.reseller || (isFromReseller && localStorage.getItem('cached_current_reseller') ? JSON.parse(localStorage.getItem('cached_current_reseller')!) : undefined);
+
       const newSession = {
         isLoggedIn: true,
         type: 'admin' as const,
         tenantId: tenant.id,
         isSuper: false,
-        impersonatedBySuper: true, // Marca que a sessão foi iniciada pelo Super Administrador
+        reseller: currentReseller,
+        impersonatedBySuper: !currentReseller,
+        impersonatedByReseller: !!currentReseller,
         subscriptionStatus: tenant.subscription_status,
         subscriptionExpiresAt: tenant.subscription_expires_at,
         customMonthlyPrice: tenant.custom_monthly_price,
@@ -1036,8 +1058,28 @@ const App: React.FC = () => {
     }
   };
 
-  // Retorna diretamente para o painel Super ADM
+  // Retorna diretamente para o painel Super ADM ou Painel do Revendedor
   const returnToSuperAdmin = () => {
+    const cachedReseller = session?.reseller || (localStorage.getItem('cached_current_reseller') ? JSON.parse(localStorage.getItem('cached_current_reseller')!) : null);
+    if ((session as any)?.impersonatedByReseller && cachedReseller) {
+      const resellerSession = { isLoggedIn: true, type: 'reseller' as const, reseller: cachedReseller };
+      const resellerUser = { id: cachedReseller.id, name: cachedReseller.name, role: 'admin' as const, photo: null };
+      localStorage.setItem('session_pro', JSON.stringify(resellerSession));
+      localStorage.setItem('currentUser_pro', JSON.stringify(resellerUser));
+      setSession(resellerSession as any);
+      setSettings(null);
+      setOrders([]);
+      setCustomers([]);
+      setPrefilledCustomerForOS(null);
+      setProducts([]);
+      setSales([]);
+      setActiveTab('vendas');
+      setIsLogoutModalOpen(false);
+      setLogoutPassword('');
+      setLogoutError(false);
+      return;
+    }
+
     const superSession = { isLoggedIn: true, type: 'super' as const, isSuper: true };
     const superUser = { id: 'super', name: 'Super Admin', role: 'super' as const, photo: null };
     localStorage.setItem('session_pro', JSON.stringify(superSession));
@@ -1240,6 +1282,34 @@ const App: React.FC = () => {
     const prevProducts = products;
     setProducts(newProducts);
     if (session?.tenantId) {
+      try {
+        const fiscalCache: Record<string, any> = {};
+        newProducts.forEach(p => {
+          if (p.taxProfileId || p.csosnCst) {
+            fiscalCache[p.id] = {
+              taxProfileId: p.taxProfileId,
+              taxProfileName: p.taxProfileName,
+              csosnCst: p.csosnCst,
+              origin: p.origin,
+              cstPis: p.cstPis,
+              cstCofins: p.cstCofins,
+              crtCode: p.crtCode,
+              cfop: p.cfop,
+              ncm: p.ncm,
+              cest: p.cest,
+              icmsAliquota: p.icmsAliquota,
+              pisAliquota: p.pisAliquota,
+              cofinsAliquota: p.cofinsAliquota
+            };
+          }
+        });
+        if (Object.keys(fiscalCache).length > 0) {
+          const prevCache = localStorage.getItem(`products_fiscal_cache_${session.tenantId}`);
+          const merged = prevCache ? { ...JSON.parse(prevCache), ...fiscalCache } : fiscalCache;
+          localStorage.setItem(`products_fiscal_cache_${session.tenantId}`, JSON.stringify(merged));
+        }
+      } catch {}
+
       const prevMap = new Map(prevProducts.map(p => [p.id, p]));
       const changed = newProducts.filter(newP => {
         const oldP = prevMap.get(newP.id);
@@ -1454,6 +1524,12 @@ const App: React.FC = () => {
               <p className="text-xs lg:text-base text-slate-500 font-medium">
                 {isRegisterMode ? 'Comece seus 7 dias de teste agora mesmo.' : 'Digite suas credenciais para acessar o painel.'}
               </p>
+              {!isRegisterMode && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-xl text-[10px] font-bold border border-blue-200/70">
+                  <ShieldCheck size={14} className="text-blue-600 shrink-0" />
+                  <span>Login unificado: Lojistas, Colaboradores e Revendedores</span>
+                </div>
+              )}
             </div>
 
             {/* Formulários */}
@@ -1623,51 +1699,6 @@ const App: React.FC = () => {
                   )}
                 </button>
 
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    const demoUser: User = {
-                      id: 'admin-demo',
-                      name: 'Administrador Demo',
-                      username: 'admin',
-                      role: 'admin',
-                      photo: null
-                    };
-                    const demoSession = {
-                      isLoggedIn: true,
-                      type: 'admin' as const,
-                      tenantId: 'T_DEMO_LOJA',
-                      user: demoUser,
-                      isSuper: false,
-                      subscriptionStatus: 'active',
-                      subscriptionExpiresAt: '2099-12-31',
-                      printerSize: 58 as const,
-                      enabledFeatures: {
-                        osTab: true,
-                        customersTab: true,
-                        stockTab: true,
-                        salesTab: true,
-                        fiscalTab: true,
-                        fiscalMode: true,
-                        financeTab: true,
-                        toolsTab: true,
-                        profiles: true,
-                        xmlExportImport: true,
-                      }
-                    };
-                    setSession(demoSession);
-                    setActiveTab('config');
-                    try {
-                      localStorage.setItem('session_pro', JSON.stringify(demoSession));
-                      localStorage.setItem('currentUser_pro', JSON.stringify(demoUser));
-                    } catch (e) {}
-                  }} 
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
-                >
-                  <Sparkles size={14} className="text-emerald-200" />
-                  <span>Acessar Loja Demonstração (Ajustes)</span>
-                </button>
-
                 <div className="relative py-2">
                   <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
                   <div className="relative flex justify-center"><span className="bg-white px-4 text-[9px] font-black text-slate-300 uppercase tracking-widest">Ou</span></div>
@@ -1689,6 +1720,16 @@ const App: React.FC = () => {
   }
 
   if (session.type === 'super') return <SuperAdminDashboard onLogout={handleLogout} onLoginAs={handleLoginAs} />;
+
+  if (session.type === 'reseller' && session.reseller) {
+    return (
+      <ResellerDashboard
+        reseller={session.reseller}
+        onLogout={handleLogout}
+        onLoginAs={handleLoginAs}
+      />
+    );
+  }
 
   if (session.subscriptionStatus === 'expired' || isSubscriptionModalOpen) {
     return (

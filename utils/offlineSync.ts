@@ -372,18 +372,19 @@ export class OfflineSync {
   }
 
   // Salvar lote de Produtos
-  static async saveProductsBatch(tenantId: string, allProducts: Product[], changedProducts: Product[]) {
+  static async saveProductsBatch(tenantId: string, allProducts: Product[], changedProducts?: Product[]) {
     await db.products.bulkPut(allProducts.map(p => ({ ...p, tenantId })));
-    if (changedProducts.length === 0) return;
+    const toSync = (changedProducts && changedProducts.length > 0) ? changedProducts : allProducts;
+    if (toSync.length === 0) return;
 
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       try {
-        const res = await OnlineDB.upsertProducts(tenantId, changedProducts);
+        const res = await OnlineDB.upsertProducts(tenantId, toSync);
         if (res.success) return;
       } catch {}
     }
 
-    for (const p of changedProducts) {
+    for (const p of toSync) {
       await this.enqueue({
         tenantId,
         type: 'products',
@@ -874,10 +875,34 @@ export class OfflineSync {
       if (Array.isArray(cloudProducts)) {
         const keepLocal = await db.products.where('tenantId').equals(tenantId).filter(p => pendingProdIds.has(p.id)).toArray();
         const allLocal = await db.products.where('tenantId').equals(tenantId).toArray();
+        const localMap = new Map(allLocal.map(p => [p.id, p]));
+
         for (const p of allLocal) {
           if (!pendingProdIds.has(p.id)) await db.products.delete(p.id);
         }
-        const toPut = cloudProducts.filter(cp => !pendingProdIds.has(cp.id)).map((p: any) => ({ ...p, tenantId }));
+        const toPut = cloudProducts.filter(cp => !pendingProdIds.has(cp.id)).map((cp: any) => {
+          const local = localMap.get(cp.id);
+          // Se o produto local já foi padronizado ou possui dados fiscais específicos, preserva a padronização
+          const hasLocalFiscal = !!(local?.taxProfileId || local?.csosnCst);
+          return {
+            ...local,
+            ...cp,
+            taxProfileId: cp.taxProfileId || local?.taxProfileId,
+            taxProfileName: cp.taxProfileName || local?.taxProfileName,
+            csosnCst: (hasLocalFiscal && !cp.taxProfileId) ? (local?.csosnCst || cp.csosnCst) : (cp.csosnCst || local?.csosnCst),
+            origin: (hasLocalFiscal && !cp.taxProfileId) ? (local?.origin ?? cp.origin) : (cp.origin !== undefined && cp.origin !== null ? cp.origin : local?.origin),
+            cstPis: cp.cstPis || local?.cstPis,
+            cstCofins: cp.cstCofins || local?.cstCofins,
+            crtCode: (hasLocalFiscal && !cp.taxProfileId) ? (local?.crtCode || cp.crtCode) : (cp.crtCode || local?.crtCode),
+            icmsAliquota: (hasLocalFiscal && !cp.taxProfileId) ? (local?.icmsAliquota ?? cp.icmsAliquota) : (cp.icmsAliquota !== undefined && cp.icmsAliquota !== null ? cp.icmsAliquota : local?.icmsAliquota),
+            pisAliquota: (hasLocalFiscal && !cp.taxProfileId) ? (local?.pisAliquota ?? cp.pisAliquota) : (cp.pisAliquota !== undefined && cp.pisAliquota !== null ? cp.pisAliquota : local?.pisAliquota),
+            cofinsAliquota: (hasLocalFiscal && !cp.taxProfileId) ? (local?.cofinsAliquota ?? cp.cofinsAliquota) : (cp.cofinsAliquota !== undefined && cp.cofinsAliquota !== null ? cp.cofinsAliquota : local?.cofinsAliquota),
+            cfop: (hasLocalFiscal && !cp.taxProfileId) ? (local?.cfop || cp.cfop) : (cp.cfop || local?.cfop),
+            ncm: cp.ncm || local?.ncm,
+            cest: cp.cest || local?.cest,
+            tenantId
+          };
+        });
         await db.products.bulkPut([...toPut, ...keepLocal]);
       }
 

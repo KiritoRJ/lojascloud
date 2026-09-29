@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard, Sparkles, Eye, EyeOff, Power, AlertTriangle, Cpu, FileText, Receipt, Upload, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Users, Plus, Store, ShieldCheck, LogOut, Key, Trash2, CheckCircle2, Globe, Server, Shield, Loader2, AlertCircle, X, Camera, Calendar, Clock, DollarSign, Settings2, Phone, Search, Copy, Check, KeySquare, CreditCard, Sparkles, Eye, EyeOff, Power, AlertTriangle, Cpu, FileText, Receipt, Upload, RefreshCw, Filter, Zap, TrendingUp, HelpCircle } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -8,6 +8,10 @@ import 'react-datepicker/dist/react-datepicker.css';
 registerLocale('pt-BR', ptBR);
 import { OnlineDB } from '../utils/api';
 import { SuperAdminFiscalModal } from './SuperAdminFiscalModal';
+import { SuperAdminResellerModal } from './SuperAdminResellerModal';
+import { SuperAdminFinancialDashboard } from './SuperAdminFinancialDashboard';
+import { SuperAdminGatewaySettings } from './SuperAdminGatewaySettings';
+import { Tooltip } from './reseller/Tooltip';
 
 interface Props {
   onLogout: () => void;
@@ -15,6 +19,9 @@ interface Props {
 }
 
 const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
+  const [activeMainTab, setActiveMainTab] = useState<'tenants' | 'finance' | 'gateways'>('tenants');
+  const [tenantStatusFilter, setTenantStatusFilter] = useState<'all' | 'paid' | 'warning' | 'expired' | 'trial'>('all');
+  const [quickProcessingId, setQuickProcessingId] = useState<string | null>(null);
   const [tenants, setTenants] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -29,6 +36,7 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
   const [isEditingGlobal, setIsEditingGlobal] = useState(false);
   const [isAiConfigModalOpen, setIsAiConfigModalOpen] = useState(false);
   const [isFiscalConfigModalOpen, setIsFiscalConfigModalOpen] = useState(false);
+  const [isResellerModalOpen, setIsResellerModalOpen] = useState(false);
   const [fiscalInitialTab, setFiscalInitialTab] = useState<'import' | 'records' | 'sync' | 'test'>('import');
 
   const openFiscalModal = (tab: 'import' | 'records' | 'sync' | 'test' = 'import') => {
@@ -280,6 +288,22 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
     setIsSaving(false);
   };
 
+  const handleSaveGatewaySettings = async () => {
+    setIsSaving(true);
+    try {
+      const res = await OnlineDB.updateGlobalSettings(globalPlans);
+      if (res.success) {
+        alert('Configurações de Gateways e APIs de Pagamento salvas com sucesso!');
+      } else {
+        setErrorMsg(res.message || 'Erro ao salvar configurações de gateway.');
+      }
+    } catch (e: any) {
+      setErrorMsg('Erro ao salvar configurações no banco de dados.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleUpdateCustomPrices = async () => {
     if (!tenantToEditPrices) return;
     setIsSaving(true);
@@ -390,9 +414,50 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
     }
   };
 
-  const filteredTenants = tenants.filter(t => 
-    t.store_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleQuickAdd30Days = async (tenantId: string, currentExpiryStr?: string, planType?: string) => {
+    setQuickProcessingId(tenantId);
+    try {
+      const now = new Date();
+      const currentExpiry = currentExpiryStr ? new Date(currentExpiryStr) : now;
+      const baseDate = currentExpiry > now ? currentExpiry : now;
+      baseDate.setDate(baseDate.getDate() + 30);
+      const newExpiry = baseDate.toISOString();
+
+      const validPlan = (planType === 'quarterly' || planType === 'yearly') ? planType : 'monthly';
+      await OnlineDB.setSubscriptionDate(tenantId, newExpiry, 'active', validPlan);
+      await loadTenants();
+    } catch (e: any) {
+      alert(`Erro ao prorrogar assinatura: ${e?.message || 'Falha de conexão'}`);
+    } finally {
+      setQuickProcessingId(null);
+    }
+  };
+
+  const filteredTenants = tenants.filter(t => {
+    const term = searchTerm.toLowerCase();
+    const matchesSearch = t.store_name?.toLowerCase().includes(term) || t.id?.toLowerCase().includes(term);
+    if (!matchesSearch) return false;
+
+    if (tenantStatusFilter === 'all') return true;
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const expiresAt = t.subscription_expires_at ? new Date(t.subscription_expires_at) : null;
+    const isTrial = t.subscription_status === 'trial';
+
+    if (tenantStatusFilter === 'trial') return isTrial;
+    if (isTrial) return false;
+
+    if (!expiresAt) return tenantStatusFilter === 'expired';
+
+    const diffDays = Math.ceil((expiresAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (tenantStatusFilter === 'paid') return diffDays > 7;
+    if (tenantStatusFilter === 'warning') return diffDays >= 0 && diffDays <= 7;
+    if (tenantStatusFilter === 'expired') return diffDays < 0 || t.subscription_status === 'expired';
+
+    return true;
+  });
 
   const handleCopyToClipboard = (id: string) => {
     navigator.clipboard.writeText(id);
@@ -400,15 +465,53 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const stats = {
-    active: tenants.filter(t => t.subscription_status === 'active' && new Date(t.subscription_expires_at) >= new Date()).length,
-    expired: tenants.filter(t => t.subscription_status === 'expired' || new Date(t.subscription_expires_at) < new Date()).length,
-    trial: tenants.filter(t => t.subscription_status === 'trial').length
-  };
+  const stats = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let active = 0;
+    let expired = 0;
+    let warning = 0;
+    let trial = 0;
+
+    tenants.forEach(t => {
+      const isTrial = t.subscription_status === 'trial';
+      if (isTrial) {
+        trial++;
+        return;
+      }
+      const expiresAt = t.subscription_expires_at ? new Date(t.subscription_expires_at) : null;
+      if (!expiresAt || expiresAt < today || t.subscription_status === 'expired') {
+        expired++;
+        return;
+      }
+      const diffDays = Math.ceil((expiresAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 7) {
+        warning++;
+      } else {
+        active++;
+      }
+    });
+
+    return { active, expired, warning, trial };
+  }, [tenants]);
+
+  const activeGatewayLabel = useMemo(() => {
+    const gw = globalPlans?.activePaymentGateway || 'mercadopago';
+    if (gw === 'mercadopago') return 'Mercado Pago';
+    if (gw === 'asaas') return 'Asaas';
+    if (gw === 'efi') return 'Efí / Gerencianet';
+    if (gw === 'iugu') return 'Iugu';
+    if (gw === 'pix_manual') return 'Pix Manual';
+    return gw;
+  }, [globalPlans]);
+
+  const totalMRRPotential = useMemo(() => {
+    return tenants.reduce((acc, t) => acc + (Number(t.custom_monthly_price) || 79.90), 0);
+  }, [tenants]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 sm:p-8 font-sans">
-      <header className="max-w-6xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-8 sm:mb-16">
+      <header className="max-w-6xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-6 sm:mb-8">
         <div className="flex items-center gap-4 sm:gap-6">
           <div className="w-12 h-12 sm:w-16 sm:h-16 bg-blue-600 rounded-2xl sm:rounded-[2rem] flex items-center justify-center shadow-2xl shadow-blue-500/20 border border-white/10 shrink-0">
             <ShieldCheck size={24} className="sm:hidden" />
@@ -418,338 +521,666 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
             <h1 className="text-xl sm:text-3xl font-black uppercase tracking-tighter text-white leading-none">Wandev Global</h1>
             <p className="text-[8px] sm:text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 mt-1">
                <Server size={10} className="sm:hidden" />
-               <Server size={12} className="hidden sm:block" /> Cloud Supabase Ativa
+               <Server size={12} className="hidden sm:block" /> Cloud Supabase Ativa • Painel Super Administrador
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
-          <button 
-            onClick={() => setIsRegisterModalOpen(true)}
-            className="flex-1 sm:flex-none px-4 sm:px-6 py-3 sm:py-4 bg-blue-600 border border-blue-500 rounded-xl sm:rounded-2xl text-white hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-black text-[8px] sm:text-[10px] uppercase tracking-widest shadow-lg shadow-blue-600/20"
-          >
-            <Plus size={14} className="sm:hidden" />
-            <Plus size={16} className="hidden sm:block" /> Nova Loja
-          </button>
-          <button 
-            onClick={() => setIsPasswordModalOpen(true)}
-            className="flex-1 sm:flex-none px-4 sm:px-6 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl text-slate-400 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2 font-black text-[8px] sm:text-[10px] uppercase tracking-widest"
-          >
-            <Key size={14} className="sm:hidden" />
-            <Key size={16} className="hidden sm:block" /> Alterar Senha
-          </button>
-          <button onClick={onLogout} className="px-4 sm:px-6 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl text-slate-400 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2 font-black text-[8px] sm:text-[10px] uppercase tracking-widest">
-            Sair <LogOut size={14} className="sm:hidden" />
-            <LogOut size={16} className="hidden sm:block" />
-          </button>
+          <Tooltip content="Cadastrar uma nova empresa com usuário e senha de administrador inicial.">
+            <button 
+              onClick={() => setIsRegisterModalOpen(true)}
+              className="flex-1 sm:flex-none px-4 sm:px-6 py-3 sm:py-3.5 bg-blue-600 border border-blue-500 rounded-xl sm:rounded-2xl text-white hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-black text-[8px] sm:text-[10px] uppercase tracking-widest shadow-lg shadow-blue-600/20 cursor-pointer"
+            >
+              <Plus size={14} className="sm:hidden" />
+              <Plus size={16} className="hidden sm:block" /> Nova Loja
+            </button>
+          </Tooltip>
+          <Tooltip content="Alterar a senha mestra de acesso do Super Administrador do sistema.">
+            <button 
+              onClick={() => setIsPasswordModalOpen(true)}
+              className="flex-1 sm:flex-none px-4 sm:px-6 py-3 sm:py-3.5 bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl text-slate-400 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2 font-black text-[8px] sm:text-[10px] uppercase tracking-widest cursor-pointer"
+            >
+              <Key size={14} className="sm:hidden" />
+              <Key size={16} className="hidden sm:block" /> Alterar Senha
+            </button>
+          </Tooltip>
+          <Tooltip content="Encerrar a sessão do Super Administrador e voltar para a tela inicial de login.">
+            <button onClick={onLogout} className="px-4 sm:px-6 py-3 sm:py-3.5 bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl text-slate-400 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2 font-black text-[8px] sm:text-[10px] uppercase tracking-widest cursor-pointer">
+              Sair <LogOut size={14} className="sm:hidden" />
+              <LogOut size={16} className="hidden sm:block" />
+            </button>
+          </Tooltip>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto space-y-6">
-        <div className="space-y-4 sm:space-y-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white/5 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-white/10 gap-4">
-            <div>
-               <div>
-                 <h2 className="text-xs sm:text-sm font-black uppercase tracking-[0.2em] text-slate-400">Empresas Cadastradas</h2>
-                 <p className="text-[8px] sm:text-[10px] font-bold text-slate-600 uppercase tracking-wider mt-0.5">
-                   Mostrando {filteredTenants.length} de {tenants.length} empresas
-                 </p>
-               </div>
+      {/* NAVEGAÇÃO PRINCIPAL MODERNA EM ABAS DO SUPER ADMIN */}
+      <div className="max-w-6xl mx-auto mb-8 bg-slate-900/90 p-1.5 sm:p-2 rounded-2xl sm:rounded-3xl border border-slate-800 flex flex-wrap sm:flex-nowrap gap-1.5 sm:gap-2 shadow-2xl backdrop-blur-md">
+        <Tooltip content="Controle total das empresas: ver mensalidades em dia vs atrasadas, renovação com 1 clique, permissões e emissão fiscal.">
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('tenants')}
+            className={`flex-1 py-3 sm:py-3.5 px-3 sm:px-5 rounded-xl sm:rounded-2xl text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeMainTab === 'tenants'
+                ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Store size={16} />
+            <span>Lojas & Mensalidades</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+              activeMainTab === 'tenants' ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'
+            }`}>
+              {tenants.length}
+            </span>
+            {stats.expired > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-red-500 text-white animate-pulse" title={`${stats.expired} lojas com mensalidade vencida`}>
+                {stats.expired} atrasada{stats.expired > 1 ? 's' : ''}
+              </span>
+            )}
+          </button>
+        </Tooltip>
+
+        <Tooltip content="Dashboard financeiro avançado: Receita recorrente mensal (MRR), total recebido no mês, previsão de faturamento e controle de inadimplência.">
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('finance')}
+            className={`flex-1 py-3 sm:py-3.5 px-3 sm:px-5 rounded-xl sm:rounded-2xl text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeMainTab === 'finance'
+                ? 'bg-emerald-600 text-white shadow-xl shadow-emerald-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <DollarSign size={16} />
+            <span>Dashboard Financeiro</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+              activeMainTab === 'finance' ? 'bg-white/20 text-white' : 'bg-emerald-500/20 text-emerald-300'
+            }`}>
+              R$ {totalMRRPotential.toFixed(0)} MRR
+            </span>
+          </button>
+        </Tooltip>
+
+        <Tooltip content="Configure a API de recebimento das assinaturas do sistema: Mercado Pago (nativo ou chave própria), Asaas, Efí Bank / Gerencianet, Iugu ou Pix direto.">
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('gateways')}
+            className={`flex-1 py-3 sm:py-3.5 px-3 sm:px-5 rounded-xl sm:rounded-2xl text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeMainTab === 'gateways'
+                ? 'bg-purple-600 text-white shadow-xl shadow-purple-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <CreditCard size={16} />
+            <span>APIs de Pagamento & Bancos</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+              activeMainTab === 'gateways' ? 'bg-white/20 text-white' : 'bg-purple-500/20 text-purple-300'
+            }`}>
+              {activeGatewayLabel}
+            </span>
+          </button>
+        </Tooltip>
+      </div>
+
+      {/* ABA 2: DASHBOARD FINANCEIRO */}
+      {activeMainTab === 'finance' && (
+        <main className="max-w-6xl mx-auto space-y-6">
+          <SuperAdminFinancialDashboard 
+            tenants={tenants} 
+            onRefresh={loadTenants} 
+            onOpenEditPrices={setTenantToEditPrices} 
+            onOpenEditSub={setTenantToEditSub} 
+            formatDateBR={formatDateBR} 
+          />
+        </main>
+      )}
+
+      {/* ABA 3: GATEWAYS DE PAGAMENTO */}
+      {activeMainTab === 'gateways' && (
+        <main className="max-w-6xl mx-auto space-y-6">
+          <SuperAdminGatewaySettings 
+            globalPlans={globalPlans} 
+            setGlobalPlans={setGlobalPlans} 
+            onSave={handleSaveGatewaySettings} 
+            isSaving={isSaving} 
+          />
+        </main>
+      )}
+
+      {/* ABA 1: GESTÃO DE LOJAS & MENSALIDADES */}
+      {activeMainTab === 'tenants' && (
+        <main className="max-w-6xl mx-auto space-y-6">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white/5 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-white/10 gap-4">
+              <div>
+                 <div>
+                   <h2 className="text-xs sm:text-sm font-black uppercase tracking-[0.2em] text-slate-400">Controle de Lojas & Mensalidades</h2>
+                   <p className="text-[8px] sm:text-[10px] font-bold text-slate-600 uppercase tracking-wider mt-0.5">
+                     Mostrando {filteredTenants.length} de {tenants.length} empresas cadastradas
+                   </p>
+                 </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
+                <Tooltip content="Configurar a chave de API do Google Gemini e habilitar ou pausar as funções de Inteligência Artificial para todos os lojistas.">
+                  <button 
+                    onClick={() => {
+                      setTestKeyResult(null);
+                      setIsAiConfigModalOpen(true);
+                    }}
+                    className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 border rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer ${
+                      globalPlans.aiDisabledGlobally
+                        ? 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500 hover:text-white'
+                        : 'bg-purple-600/10 text-purple-400 border-purple-600/30 hover:bg-purple-600 hover:text-white'
+                    }`}
+                  >
+                    <Sparkles size={12} className="sm:hidden" />
+                    <Sparkles size={14} className="hidden sm:block" />
+                    <span>IA do Sistema {globalPlans.aiDisabledGlobally ? '(Desativada)' : '(Ativa)'}</span>
+                  </button>
+                </Tooltip>
+
+                <Tooltip content="Importar planilhas e arquivos tributários (.xlsx, .csv, .json) com a tabela oficial de NCM, CEST e CFOP para sincronização com produtos.">
+                  <button 
+                    onClick={() => setIsFiscalConfigModalOpen(true)}
+                    className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-emerald-600/10 text-emerald-400 border border-emerald-600/30 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all cursor-pointer shadow-sm"
+                  >
+                    <Receipt size={12} className="sm:hidden" />
+                    <Receipt size={14} className="hidden sm:block" />
+                    <span>Base Fiscal (NCM/CEST/CFOP)</span>
+                  </button>
+                </Tooltip>
+
+                <Tooltip content="Cadastrar revendedores parceiros, definir comissão percentual (%) e programar repasses de lucros sobre as mensalidades.">
+                  <button 
+                    onClick={() => setIsResellerModalOpen(true)}
+                    className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-indigo-600/10 text-indigo-400 border border-indigo-600/30 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all cursor-pointer shadow-sm"
+                  >
+                    <Users size={12} className="sm:hidden" />
+                    <Users size={14} className="hidden sm:block" />
+                    <span>Revendedores & Repasses</span>
+                  </button>
+                </Tooltip>
+
+                <Tooltip content="Definir valores padrão dos planos (Start, Pro, Anual) e limites máximos padrão de usuários, produtos e ordens de serviço.">
+                  <button 
+                    onClick={() => setIsEditingGlobal(true)}
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-600/20 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all cursor-pointer"
+                  >
+                    <Settings2 size={12} className="sm:hidden" />
+                    <Settings2 size={14} className="hidden sm:block" /> Planos Globais
+                  </button>
+                </Tooltip>
+
+                {isLoading ? <Loader2 className="animate-spin text-blue-500" /> : (
+                  <>
+                    <Globe className="text-blue-500 animate-pulse sm:hidden" size={24} />
+                    <Globe className="text-blue-500 animate-pulse hidden sm:block" size={32} />
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
-              <button 
-                onClick={() => {
-                  setTestKeyResult(null);
-                  setIsAiConfigModalOpen(true);
-                }}
-                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 border rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${
-                  globalPlans.aiDisabledGlobally
-                    ? 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500 hover:text-white'
-                    : 'bg-purple-600/10 text-purple-400 border-purple-600/30 hover:bg-purple-600 hover:text-white'
-                }`}
-                title="Configurar Chave da IA e Status Global"
-              >
-                <Sparkles size={12} className="sm:hidden" />
-                <Sparkles size={14} className="hidden sm:block" />
-                <span>IA do Sistema {globalPlans.aiDisabledGlobally ? '(Desativada)' : '(Ativa)'}</span>
-              </button>
-              <button 
-                onClick={() => setIsFiscalConfigModalOpen(true)}
-                className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-emerald-600/10 text-emerald-400 border border-emerald-600/30 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all cursor-pointer shadow-sm"
-                title="Configurar Tabelas Fiscais Globais (NCM, CEST, CFOP)"
-              >
-                <Receipt size={12} className="sm:hidden" />
-                <Receipt size={14} className="hidden sm:block" />
-                <span>Base Fiscal (NCM/CEST/CFOP)</span>
-              </button>
-              <button 
-                onClick={() => setIsEditingGlobal(true)}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-600/20 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all"
-              >
-                <Settings2 size={12} className="sm:hidden" />
-                <Settings2 size={14} className="hidden sm:block" /> Planos Globais
-              </button>
-              {isLoading ? <Loader2 className="animate-spin text-blue-500" /> : (
-                <>
-                  <Globe className="text-blue-500 animate-pulse sm:hidden" size={24} />
-                  <Globe className="text-blue-500 animate-pulse hidden sm:block" size={32} />
-                </>
+
+            {globalPlans.aiDisabledGlobally && (
+              <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-400 text-xs font-bold animate-in fade-in">
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle size={18} className="text-amber-400 shrink-0" />
+                  <div>
+                    <p className="font-black uppercase tracking-wider text-[11px] text-amber-300">Inteligência Artificial Desativada em Todo o Sistema</p>
+                    <p className="text-[10px] text-amber-400/80 font-normal">Todas as funções de IA estão desabilitadas para os lojistas e colaboradores.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setTestKeyResult(null);
+                    setIsAiConfigModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[9px] uppercase tracking-wider rounded-lg transition-all shrink-0 cursor-pointer"
+                >
+                  Reativar / Gerenciar IA
+                </button>
+              </div>
+            )}
+
+            {/* CARDS DE RESUMO DE MENSALIDADES */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+              <Tooltip content="Lojas que estão com a mensalidade paga e com mais de 7 dias de validade.">
+                <div 
+                  onClick={() => setTenantStatusFilter('paid')}
+                  className={`border rounded-2xl sm:rounded-3xl p-4 sm:p-5 transition-all cursor-pointer ${
+                    tenantStatusFilter === 'paid' ? 'bg-emerald-500/20 border-emerald-500 ring-2 ring-emerald-500/30' : 'bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/15'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-widest text-emerald-400">Em Dia</h3>
+                    <CheckCircle2 size={16} className="text-emerald-400" />
+                  </div>
+                  <p className="text-2xl sm:text-3xl font-black text-white mt-1 sm:mt-2">{stats.active}</p>
+                  <p className="text-[10px] text-emerald-300/80 mt-1 font-bold">Mensalidades quitadas</p>
+                </div>
+              </Tooltip>
+
+              <Tooltip content="Lojas cuja mensalidade irá expirar nos próximos 7 dias. Perfeito para enviar lembrete amigável no WhatsApp.">
+                <div 
+                  onClick={() => setTenantStatusFilter('warning')}
+                  className={`border rounded-2xl sm:rounded-3xl p-4 sm:p-5 transition-all cursor-pointer ${
+                    tenantStatusFilter === 'warning' ? 'bg-amber-500/20 border-amber-500 ring-2 ring-amber-500/30' : 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/15'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-widest text-amber-400">A Vencer</h3>
+                    <Clock size={16} className="text-amber-400" />
+                  </div>
+                  <p className="text-2xl sm:text-3xl font-black text-white mt-1 sm:mt-2">{stats.warning}</p>
+                  <p className="text-[10px] text-amber-300/80 mt-1 font-bold">Vencimento em até 7 dias</p>
+                </div>
+              </Tooltip>
+
+              <Tooltip content="Lojas com mensalidade vencida. O lojista vê a tela de bloqueio com opção de pagamento.">
+                <div 
+                  onClick={() => setTenantStatusFilter('expired')}
+                  className={`border rounded-2xl sm:rounded-3xl p-4 sm:p-5 transition-all cursor-pointer ${
+                    tenantStatusFilter === 'expired' ? 'bg-red-500/20 border-red-500 ring-2 ring-red-500/30' : 'bg-red-500/10 border-red-500/20 hover:bg-red-500/15'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-widest text-red-400">Vencidas</h3>
+                    <AlertTriangle size={16} className="text-red-400" />
+                  </div>
+                  <p className="text-2xl sm:text-3xl font-black text-white mt-1 sm:mt-2">{stats.expired}</p>
+                  <p className="text-[10px] text-red-300/80 mt-1 font-bold">Inadimplentes ou atrasadas</p>
+                </div>
+              </Tooltip>
+
+              <Tooltip content="Lojas utilizando o período promocional de teste gratuito.">
+                <div 
+                  onClick={() => setTenantStatusFilter('trial')}
+                  className={`border rounded-2xl sm:rounded-3xl p-4 sm:p-5 transition-all cursor-pointer ${
+                    tenantStatusFilter === 'trial' ? 'bg-indigo-500/20 border-indigo-500 ring-2 ring-indigo-500/30' : 'bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/15'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-widest text-indigo-400">Em Teste</h3>
+                    <Sparkles size={16} className="text-indigo-400" />
+                  </div>
+                  <p className="text-2xl sm:text-3xl font-black text-white mt-1 sm:mt-2">{stats.trial}</p>
+                  <p className="text-[10px] text-indigo-300/80 mt-1 font-bold">Teste grátis de 7 dias</p>
+                </div>
+              </Tooltip>
+            </div>
+
+            {errorMsg && (
+              <div className="bg-red-500/10 border border-red-500/20 p-5 rounded-3xl flex items-center gap-3 text-red-500 text-xs font-bold uppercase animate-in slide-in-from-top-2">
+                <AlertCircle size={18} />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {/* FILTROS RÁPIDOS DE MENSALIDADE */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white/5 p-3 sm:p-4 rounded-2xl border border-white/10">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-2 flex items-center gap-1.5">
+                  <Filter size={13} className="text-blue-400" />
+                  Filtrar Mensalidade:
+                </span>
+                <Tooltip content="Exibir todas as lojas sem distinção de status.">
+                  <button
+                    type="button"
+                    onClick={() => setTenantStatusFilter('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      tenantStatusFilter === 'all'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Todas ({tenants.length})
+                  </button>
+                </Tooltip>
+
+                <Tooltip content="Filtrar apenas lojas que pagaram suas mensalidades e estão com o prazo regular.">
+                  <button
+                    type="button"
+                    onClick={() => setTenantStatusFilter('paid')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      tenantStatusFilter === 'paid'
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                        : 'bg-slate-800 text-emerald-400 hover:bg-emerald-950/40'
+                    }`}
+                  >
+                    <CheckCircle2 size={13} />
+                    <span>Em Dia ({stats.active})</span>
+                  </button>
+                </Tooltip>
+
+                <Tooltip content="Filtrar lojas cuja mensalidade expira nos próximos 7 dias.">
+                  <button
+                    type="button"
+                    onClick={() => setTenantStatusFilter('warning')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      tenantStatusFilter === 'warning'
+                        ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
+                        : 'bg-slate-800 text-amber-400 hover:bg-amber-950/40'
+                    }`}
+                  >
+                    <Clock size={13} />
+                    <span>A Vencer em 7d ({stats.warning})</span>
+                  </button>
+                </Tooltip>
+
+                <Tooltip content="Filtrar lojas com mensalidade vencida para cobrança ou reativação.">
+                  <button
+                    type="button"
+                    onClick={() => setTenantStatusFilter('expired')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      tenantStatusFilter === 'expired'
+                        ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
+                        : 'bg-slate-800 text-red-400 hover:bg-red-950/40'
+                    }`}
+                  >
+                    <AlertTriangle size={13} />
+                    <span>Vencidas / Atrasadas ({stats.expired})</span>
+                  </button>
+                </Tooltip>
+
+                <Tooltip content="Filtrar lojas que estão no período de avaliação gratuito.">
+                  <button
+                    type="button"
+                    onClick={() => setTenantStatusFilter('trial')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      tenantStatusFilter === 'trial'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                        : 'bg-slate-800 text-indigo-400 hover:bg-indigo-950/40'
+                    }`}
+                  >
+                    <Sparkles size={13} />
+                    <span>Em Teste ({stats.trial})</span>
+                  </button>
+                </Tooltip>
+              </div>
+
+              {tenantStatusFilter !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => setTenantStatusFilter('all')}
+                  className="text-[10px] font-bold text-slate-400 hover:text-white uppercase tracking-wider underline cursor-pointer"
+                >
+                  Limpar Filtro
+                </button>
               )}
             </div>
-          </div>
 
-          {globalPlans.aiDisabledGlobally && (
-            <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-400 text-xs font-bold animate-in fade-in">
-              <div className="flex items-center gap-2.5">
-                <AlertTriangle size={18} className="text-amber-400 shrink-0" />
-                <div>
-                  <p className="font-black uppercase tracking-wider text-[11px] text-amber-300">Inteligência Artificial Desativada em Todo o Sistema</p>
-                  <p className="text-[10px] text-amber-400/80 font-normal">Todas as funções de IA estão desabilitadas para os lojistas e colaboradores.</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setTestKeyResult(null);
-                  setIsAiConfigModalOpen(true);
-                }}
-                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[9px] uppercase tracking-wider rounded-lg transition-all shrink-0"
-              >
-                Reativar / Gerenciar IA
-              </button>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6">
-              <h3 className="text-xs sm:text-sm font-black uppercase tracking-widest text-emerald-400">Ativas</h3>
-              <p className="text-2xl sm:text-4xl font-black text-white mt-1 sm:mt-2">{stats.active}</p>
-            </div>
-            <div className="bg-red-500/10 border border-red-500/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6">
-              <h3 className="text-xs sm:text-sm font-black uppercase tracking-widest text-red-400">Expiradas</h3>
-              <p className="text-2xl sm:text-4xl font-black text-white mt-1 sm:mt-2">{stats.expired}</p>
-            </div>
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6">
-              <h3 className="text-xs sm:text-sm font-black uppercase tracking-widest text-amber-400">Em Teste</h3>
-              <p className="text-2xl sm:text-4xl font-black text-white mt-1 sm:mt-2">{stats.trial}</p>
-            </div>
-          </div>
-
-          {errorMsg && (
-            <div className="bg-red-500/10 border border-red-500/20 p-5 rounded-3xl flex items-center gap-3 text-red-500 text-xs font-bold uppercase animate-in slide-in-from-top-2">
-              <AlertCircle size={18} />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {/* Card de Destaque: Módulo de Configurações Fiscais Globais (NCM, CEST, CFOP) */}
-          <div className="bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 relative z-10">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
-                  <Receipt size={24} />
-                </div>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm sm:text-base font-black uppercase tracking-wider text-white">
-                      Configurações Fiscais e Base de Dados Global
-                    </h3>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      NCM • CEST • CFOP
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                    Anexe arquivos fiscais (.xlsx, .csv, .txt, .json) para salvar no banco de dados. O sistema formata e sincroniza automaticamente os códigos tributários de qualquer produto cadastrado pelo nome (ex: <strong>Arroz</strong> → NCM 1006.30.21).
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full md:w-auto shrink-0">
-                <button
-                  type="button"
-                  onClick={() => openFiscalModal('import')}
-                  className="flex-1 md:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Upload size={14} />
-                  <span>Importar Arquivos</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openFiscalModal('test')}
-                  className="flex-1 md:flex-none px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-black uppercase tracking-wider active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Sparkles size={14} className="text-amber-400" />
-                  <span>Testar Pareamento</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openFiscalModal('sync')}
-                  className="flex-1 md:flex-none px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-black uppercase tracking-wider active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <RefreshCw size={14} className="text-blue-400" />
-                  <span>Sincronizar Lojas</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="relative">
+            {/* CAMPO DE BUSCA DE LOJAS */}
+            <div className="relative">
               <Search size={18} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" />
               <input 
                 type="text"
-                placeholder="Buscar empresa por nome..."
+                placeholder="Buscar empresa por nome, ID ou WhatsApp..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm font-bold text-white placeholder-slate-500 outline-none focus:border-blue-500 transition-colors"
               />
             </div>
 
+            {/* LISTAGEM DE EMPRESAS COM CONTROLE DE MENSALIDADE */}
             <div className="grid gap-3 sm:gap-4">
-            {filteredTenants.map((t, idx) => (
-              <div key={`tenant-${t.id}-${idx}`} className="bg-white/5 border border-white/5 p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 group hover:border-blue-500/30 transition-all">
-                <div className="flex items-center gap-3 sm:gap-5 w-full sm:w-auto">
-                  <div className="w-10 h-10 sm:w-14 sm:h-14 bg-slate-900 rounded-xl sm:rounded-2xl flex items-center justify-center text-blue-500 border border-white/5 overflow-hidden shrink-0">
-                    {t.logo_url ? <img src={t.logo_url} className="w-full h-full object-cover" /> : <Store size={20} className="sm:hidden" />}
-                    {!t.logo_url && <Store size={24} className="hidden sm:block" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-black text-slate-100 uppercase text-[10px] sm:text-sm truncate">{t.store_name}</h3>
-                    <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 mt-0.5 text-[7px] sm:text-[9px] font-black text-slate-500 uppercase">
-                       <div className="flex items-center gap-1.5">
-                         <span className="text-slate-400">ID: {t.id}</span>
-                         <button onClick={() => handleCopyToClipboard(t.id)} className="text-slate-500 hover:text-white">
-                           {copiedId === t.id ? <Check size={10} className="text-emerald-500" /> : <Copy size={10} />}
-                         </button>
-                       </div>
-                       <span className="opacity-30">•</span>
-                       <div className="flex items-center gap-1">
-                         <Calendar size={8} className="text-blue-400 sm:hidden" />
-                         <Calendar size={10} className="text-blue-400 hidden sm:block" />
-                         <span>{formatDateBR(t.created_at)}</span>
-                       </div>
-                       <span className="opacity-30">•</span>
-                       <div className="flex items-center gap-1">
-                         <Clock size={8} className={`${t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date() ? "text-red-500" : "text-emerald-500"} sm:hidden`} />
-                         <Clock size={10} className={`${t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date() ? "text-red-500" : "text-emerald-500"} hidden sm:block`} />
-                         <span>{formatDateBR(t.subscription_expires_at)}</span>
-                       </div>
+              {filteredTenants.map((t, idx) => {
+                const now = new Date();
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const expiresAt = t.subscription_expires_at ? new Date(t.subscription_expires_at) : null;
+                const isTrial = t.subscription_status === 'trial';
+                const monthlyPrice = Number(t.custom_monthly_price) || 79.90;
+
+                let paymentCategory: 'paid' | 'warning' | 'expired' | 'trial' = 'expired';
+                let daysRemaining = 0;
+
+                if (isTrial) {
+                  paymentCategory = 'trial';
+                } else if (expiresAt) {
+                  const diffTime = expiresAt.getTime() - today.getTime();
+                  daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                  if (daysRemaining > 7) {
+                    paymentCategory = 'paid';
+                  } else if (daysRemaining >= 0 && daysRemaining <= 7) {
+                    paymentCategory = 'warning';
+                  } else {
+                    paymentCategory = 'expired';
+                  }
+                }
+
+                return (
+                  <div 
+                    key={`tenant-${t.id}-${idx}`} 
+                    className={`bg-white/5 border p-4 sm:p-5 rounded-2xl sm:rounded-[2rem] flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 group transition-all ${
+                      paymentCategory === 'expired' 
+                        ? 'border-red-500/20 hover:border-red-500/40 bg-red-950/10' 
+                        : paymentCategory === 'warning'
+                        ? 'border-amber-500/20 hover:border-amber-500/40 bg-amber-950/10'
+                        : 'border-white/5 hover:border-blue-500/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 sm:gap-5 w-full lg:w-auto">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 bg-slate-900 rounded-xl sm:rounded-2xl flex items-center justify-center text-blue-500 border border-white/5 overflow-hidden shrink-0 shadow-inner">
+                        {t.logo_url ? <img src={t.logo_url} className="w-full h-full object-cover" /> : <Store size={22} />}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-black text-slate-100 uppercase text-xs sm:text-sm truncate">{t.store_name}</h3>
+                          
+                          {/* BADGE DE SITUAÇÃO DA MENSALIDADE */}
+                          {paymentCategory === 'paid' && (
+                            <Tooltip content={`Mensalidade quitada! Vencimento em ${formatDateBR(t.subscription_expires_at)} (faltam ${daysRemaining} dias).`}>
+                              <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                                <CheckCircle2 size={10} />
+                                <span>Em Dia ({daysRemaining}d)</span>
+                              </span>
+                            </Tooltip>
+                          )}
+
+                          {paymentCategory === 'warning' && (
+                            <Tooltip content={`Atenção: A mensalidade desta loja vence em ${daysRemaining} dia${daysRemaining !== 1 ? 's' : ''} (${formatDateBR(t.subscription_expires_at)}).`}>
+                              <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 animate-pulse">
+                                <Clock size={10} />
+                                <span>Vence em {daysRemaining}d</span>
+                              </span>
+                            </Tooltip>
+                          )}
+
+                          {paymentCategory === 'expired' && (
+                            <Tooltip content={`Mensalidade vencida! Expirou em ${formatDateBR(t.subscription_expires_at)}. Clique no botão '+30 Dias' para registrar a quitação.`}>
+                              <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-red-500/20 text-red-300 border border-red-500/30 flex items-center gap-1">
+                                <AlertTriangle size={10} />
+                                <span>Vencida há {Math.abs(daysRemaining)}d</span>
+                              </span>
+                            </Tooltip>
+                          )}
+
+                          {paymentCategory === 'trial' && (
+                            <Tooltip content="Esta loja está em período de avaliação gratuita de 7 dias.">
+                              <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                                <Sparkles size={10} />
+                                <span>Em Teste</span>
+                              </span>
+                            </Tooltip>
+                          )}
+
+                          {/* TAG DE VALOR DA MENSALIDADE */}
+                          <Tooltip content={`Valor da mensalidade cobrada desta loja: R$ ${monthlyPrice.toFixed(2)}/mês. Clique no ícone de cifrão ($) para personalizar.`}>
+                            <span className="px-2 py-0.5 rounded-lg text-[9px] font-black bg-slate-800 text-slate-300 border border-slate-700">
+                              R$ {monthlyPrice.toFixed(2)}/mês
+                            </span>
+                          </Tooltip>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 mt-1 text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">
+                           <div className="flex items-center gap-1">
+                             <span className="text-slate-400">ID: {t.id}</span>
+                             <Tooltip content="Copiar ID da loja para a área de transferência">
+                               <button onClick={() => handleCopyToClipboard(t.id)} className="text-slate-500 hover:text-white cursor-pointer">
+                                 {copiedId === t.id ? <Check size={10} className="text-emerald-500" /> : <Copy size={10} />}
+                               </button>
+                             </Tooltip>
+                           </div>
+                           <span className="opacity-30">•</span>
+                           <div className="flex items-center gap-1">
+                             <Calendar size={10} className="text-blue-400" />
+                             <span>Criada: {formatDateBR(t.created_at)}</span>
+                           </div>
+                           <span className="opacity-30">•</span>
+                           <div className="flex items-center gap-1">
+                             <Clock size={10} className={paymentCategory === 'expired' ? "text-red-500" : paymentCategory === 'warning' ? "text-amber-400" : "text-emerald-400"} />
+                             <span>Vencimento: {formatDateBR(t.subscription_expires_at)}</span>
+                           </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BOTÕES DE AÇÃO COM TOOLTIPS EXPLICATIVOS */}
+                    <div className="flex flex-wrap items-center justify-between lg:justify-end gap-1.5 sm:gap-2 w-full lg:w-auto pt-3 lg:pt-0 border-t lg:border-t-0 border-white/5">
+                      
+                      {/* BOTÃO RÁPIDO DE BAIXA / RENOVAÇÃO (+30 DIAS) */}
+                      <Tooltip content={`Dar baixa manual no pagamento e estender a mensalidade de ${t.store_name} por mais 30 dias imediatamente.`}>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickAdd30Days(t.id, t.subscription_expires_at, t.last_plan_type)}
+                          disabled={quickProcessingId === t.id}
+                          className="px-2.5 sm:px-3 py-2 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-95 shadow-sm"
+                        >
+                          {quickProcessingId === t.id ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <Plus size={13} />
+                          )}
+                          <span>+30 Dias</span>
+                        </button>
+                      </Tooltip>
+
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        <Tooltip content="Acessar o sistema como Administrador desta loja sem necessidade de digitar a senha do lojista.">
+                          <button 
+                            onClick={() => onLoginAs(t.id)}
+                            className="p-2 sm:p-2.5 bg-yellow-500/10 text-yellow-500 rounded-lg sm:rounded-xl hover:bg-yellow-500 hover:text-white transition-all active:scale-90 cursor-pointer"
+                          >
+                            <KeySquare size={15} />
+                          </button>
+                        </Tooltip>
+
+                        <Tooltip content="Gerenciar permissões de módulos (Estoque, Vendas, OS, Ferramentas, IA) e limites de usuários/OS desta loja.">
+                          <button 
+                            onClick={() => setTenantToEditFeatures({ 
+                              id: t.id, 
+                              name: t.store_name, 
+                              features: {
+                                toolsTab: t.enabled_features?.toolsTab !== false,
+                                customersTab: t.enabled_features?.customersTab !== false,
+                                aiFeature: t.enabled_features?.aiFeature !== false,
+                                ...t.enabled_features
+                              },
+                              maxUsers: t.max_users || 999,
+                              maxOS: t.tenant_limits?.max_os || 999,
+                              maxProducts: t.tenant_limits?.max_products || 999,
+                              printerSize: t.printer_size || 58,
+                              retentionMonths: t.retention_months || 6
+                            })}
+                            className="p-2 sm:p-2.5 bg-slate-800 text-slate-400 rounded-lg sm:rounded-xl hover:bg-slate-700 hover:text-white transition-all active:scale-90 cursor-pointer"
+                          >
+                            <Settings2 size={15} />
+                          </button>
+                        </Tooltip>
+
+                        <Tooltip content={t.enabled_features?.fiscalMode ? "Modo Fiscal Ativado (Emissão Obrigatória de NFC-e/NF-e). Clique para desativar." : "Modo Fiscal Desativado. Clique para ativar a emissão de NFC-e/NF-e nesta loja."}>
+                          <button 
+                            onClick={() => handleToggleFiscalMode(t)}
+                            className={`p-2 sm:p-2.5 rounded-lg sm:rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all active:scale-90 flex items-center gap-1 cursor-pointer ${
+                              t.enabled_features?.fiscalMode 
+                                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30' 
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                            }`}
+                          >
+                            <Receipt size={15} className={t.enabled_features?.fiscalMode ? 'text-purple-400' : ''} />
+                            <span className="hidden xl:inline text-[9px] font-bold">{t.enabled_features?.fiscalMode ? 'Fiscal ON' : 'Fiscal OFF'}</span>
+                          </button>
+                        </Tooltip>
+
+                        <Tooltip content="Configurar preços personalizados de mensalidade (Mensal, Trimestral, Anual) cobrados especificamente desta loja.">
+                          <button 
+                            onClick={() => setTenantToEditPrices({ 
+                              id: t.id, 
+                              name: t.store_name, 
+                              monthly: t.custom_monthly_price, 
+                              quarterly: t.custom_quarterly_price, 
+                              yearly: t.custom_yearly_price 
+                            })}
+                            className="p-2 sm:p-2.5 bg-blue-500/10 text-blue-500 rounded-lg sm:rounded-xl hover:bg-blue-500 hover:text-white transition-all active:scale-90 cursor-pointer"
+                          >
+                            <DollarSign size={15} />
+                          </button>
+                        </Tooltip>
+
+                        <Tooltip content="Editar manualmente a data de expiração da assinatura, status ativo/expirado e plano contratado.">
+                          <button 
+                            onClick={() => {
+                              setTenantToEditSub({ 
+                                id: t.id, 
+                                name: t.store_name, 
+                                expiresAt: t.subscription_expires_at || new Date().toISOString(),
+                                status: t.subscription_status || 'trial',
+                                planType: t.last_plan_type
+                              });
+                              setNewSubDate(t.subscription_expires_at ? new Date(t.subscription_expires_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+                              setNewPlanType(t.last_plan_type || 'monthly');
+                            }}
+                            className={`p-2 sm:p-2.5 rounded-lg sm:rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all active:scale-90 cursor-pointer ${
+                              paymentCategory === 'expired'
+                              ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white' 
+                              : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500 hover:text-white'
+                            }`}
+                          >
+                            <ShieldCheck size={15} />
+                          </button>
+                        </Tooltip>
+
+                        {t.phone_number && (
+                          <Tooltip content={`Enviar mensagem ou cobrança amigável via WhatsApp para o número cadastrado (${t.phone_number}).`}>
+                            <a
+                              href={`https://wa.me/55${t.phone_number.replace(/\D/g, '')}?text=Olá, ${encodeURIComponent(t.store_name)}! Estamos entrando em contato sobre a sua assinatura no sistema.`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 sm:p-2.5 bg-emerald-500/10 text-emerald-500 rounded-lg sm:rounded-xl hover:bg-emerald-500 hover:text-white transition-all active:scale-90 flex items-center justify-center cursor-pointer"
+                            >
+                              <Phone size={15} />
+                            </a>
+                          </Tooltip>
+                        )}
+
+                        <Tooltip content="Excluir permanentemente esta empresa, limpando todos os seus dados e usuários do banco de dados.">
+                          <button 
+                            onClick={() => setTenantToDelete({ id: t.id, name: t.store_name })}
+                            className="p-2 sm:p-2.5 bg-red-500/10 text-red-500 rounded-lg sm:rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90 cursor-pointer"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </Tooltip>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center justify-between sm:justify-end gap-1.5 sm:gap-2 w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-white/5">
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <button 
-                      onClick={() => onLoginAs(t.id)}
-                      className="p-2 sm:p-2.5 bg-yellow-500/10 text-yellow-500 rounded-lg sm:rounded-xl hover:bg-yellow-500 hover:text-white transition-all active:scale-90"
-                      title="Login como Admin"
+                );
+              })}
+
+              {!isLoading && filteredTenants.length === 0 && (
+                 <div className="text-center py-20 bg-white/5 rounded-[2rem] border-2 border-dashed border-white/10">
+                    <p className="text-slate-400 font-black uppercase text-xs">Nenhuma empresa encontrada com os filtros selecionados</p>
+                    <button
+                      type="button"
+                      onClick={() => { setTenantStatusFilter('all'); setSearchTerm(''); }}
+                      className="mt-3 px-4 py-2 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
                     >
-                      <KeySquare size={14} className="sm:hidden" />
-                      <KeySquare size={16} className="hidden sm:block" />
+                      Limpar Filtros e Busca
                     </button>
-                    <button 
-                      onClick={() => setTenantToEditFeatures({ 
-                        id: t.id, 
-                        name: t.store_name, 
-                        features: {
-                          toolsTab: t.enabled_features?.toolsTab !== false,
-                          customersTab: t.enabled_features?.customersTab !== false,
-                          aiFeature: t.enabled_features?.aiFeature !== false,
-                          ...t.enabled_features
-                        },
-                        maxUsers: t.max_users || 999,
-                        maxOS: t.tenant_limits?.max_os || 999,
-                        maxProducts: t.tenant_limits?.max_products || 999,
-                        printerSize: t.printer_size || 58,
-                        retentionMonths: t.retention_months || 6
-                      })}
-                      className="p-2 sm:p-2.5 bg-slate-800 text-slate-400 rounded-lg sm:rounded-xl hover:bg-slate-700 hover:text-white transition-all active:scale-90"
-                      title="Permissões"
-                    >
-                      <Settings2 size={14} className="sm:hidden" />
-                      <Settings2 size={16} className="hidden sm:block" />
-                    </button>
-                    <button 
-                      onClick={() => handleToggleFiscalMode(t)}
-                      className={`p-2 sm:p-2.5 rounded-lg sm:rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all active:scale-90 flex items-center gap-1 ${
-                        t.enabled_features?.fiscalMode 
-                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30' 
-                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
-                      }`}
-                      title={t.enabled_features?.fiscalMode ? "Modo Fiscal Ativado (Emissão Obrigatória de Notas). Clique para desativar." : "Modo Fiscal Desativado. Clique para ativar."}
-                    >
-                      <Receipt size={14} className={`sm:hidden ${t.enabled_features?.fiscalMode ? 'text-purple-400' : ''}`} />
-                      <Receipt size={16} className={`hidden sm:block ${t.enabled_features?.fiscalMode ? 'text-purple-400' : ''}`} />
-                      <span className="hidden xl:inline text-[9px] font-bold">{t.enabled_features?.fiscalMode ? 'Fiscal ON' : 'Fiscal OFF'}</span>
-                    </button>
-                    <button 
-                      onClick={() => setTenantToEditPrices({ 
-                        id: t.id, 
-                        name: t.store_name, 
-                        monthly: t.custom_monthly_price, 
-                        quarterly: t.custom_quarterly_price, 
-                        yearly: t.custom_yearly_price 
-                      })}
-                      className="p-2 sm:p-2.5 bg-blue-500/10 text-blue-500 rounded-lg sm:rounded-xl hover:bg-blue-500 hover:text-white transition-all active:scale-90"
-                      title="Preços"
-                    >
-                      <DollarSign size={14} className="sm:hidden" />
-                      <DollarSign size={16} className="hidden sm:block" />
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setTenantToEditSub({ 
-                          id: t.id, 
-                          name: t.store_name, 
-                          expiresAt: t.subscription_expires_at || new Date().toISOString(),
-                          status: t.subscription_status || 'trial',
-                          planType: t.last_plan_type
-                        });
-                        setNewSubDate(t.subscription_expires_at ? new Date(t.subscription_expires_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
-                        setNewPlanType(t.last_plan_type || 'monthly');
-                      }}
-                      className={`p-2 sm:p-2.5 rounded-lg sm:rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all active:scale-90 ${
-                        (t.subscription_status === 'expired' || (t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date()))
-                        ? 'bg-red-500/10 text-red-500 border-red-500/20' 
-                        : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                      }`}
-                      title="Assinatura"
-                    >
-                      <ShieldCheck size={14} className="sm:hidden" />
-                      <ShieldCheck size={16} className="hidden sm:block" />
-                    </button>
-                    {t.phone_number && (
-                      <a
-                        href={`https://wa.me/55${t.phone_number.replace(/\D/g, '')}?text=Olá, ${t.store_name}! Temos uma novidade para você.`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-2 sm:p-2.5 bg-emerald-500/10 text-emerald-500 rounded-lg sm:rounded-xl hover:bg-emerald-500 hover:text-white transition-all active:scale-90"
-                        title="WhatsApp"
-                      >
-                        <Phone size={14} className="sm:hidden" />
-                        <Phone size={16} className="hidden sm:block" />
-                      </a>
-                    )}
-                    <button 
-                      onClick={() => setTenantToDelete({ id: t.id, name: t.store_name })}
-                      className="p-2 sm:p-2.5 bg-red-500/10 text-red-500 rounded-lg sm:rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
-                      title="Excluir"
-                    >
-                      <Trash2 size={14} className="sm:hidden" />
-                      <Trash2 size={16} className="hidden sm:block" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {!isLoading && tenants.length === 0 && (
-               <div className="text-center py-20 bg-white/5 rounded-[2rem] border-2 border-dashed border-white/10">
-                  <p className="text-slate-600 font-black uppercase text-xs">Nenhuma empresa encontrada</p>
-               </div>
-            )}
+                 </div>
+              )}
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      )}
 
       {isRegisterModalOpen && (
         <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1749,6 +2180,12 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
         onClose={() => setIsFiscalConfigModalOpen(false)} 
         tenants={tenants} 
         initialTab={fiscalInitialTab}
+      />
+
+      {/* Modal de Gestão e Repasse de Revendedores */}
+      <SuperAdminResellerModal
+        isOpen={isResellerModalOpen}
+        onClose={() => setIsResellerModalOpen(false)}
       />
     </div>
   );

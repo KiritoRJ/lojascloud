@@ -10,10 +10,11 @@ import {
   Wrench, 
   Activity, 
   Layers, 
-  AlertTriangle,
-  RefreshCw,
-  Sparkles,
-  Tag
+  AlertTriangle, 
+  RefreshCw, 
+  Sparkles, 
+  Tag,
+  Store
 } from 'lucide-react';
 import { AppSettings, CertificateA1Data } from '../../types';
 
@@ -50,6 +51,7 @@ export const FiscalHeader: React.FC<FiscalHeaderProps> = ({
   const isCertExpired = certificate?.hasCertificate && certificate.status === 'expired';
 
   const menuItems = [
+    { id: 'mei', label: 'Lojas MEI', desc: 'Guia Fiscal MEI • Sincronização Automática', icon: Store },
     { id: 'nfe', label: 'NF-e', badge: stats.nfeCount, desc: 'Modelo 55 • Mercantil & B2B', icon: FileText },
     { id: 'nfce', label: 'NFC-e', badge: stats.nfceCount, desc: 'Modelo 65 • Cupom PDV', icon: Package },
     { id: 'nfse', label: 'NFS-e', badge: stats.nfseCount, desc: 'Serviços & O.S. • LC 116', icon: Wrench },

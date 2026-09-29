@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer, LayoutGrid, Grid, List, Rows, CreditCard, Camera, Image as ImageIcon, AlertTriangle, Sparkles, TrendingUp, ShieldAlert, MessageCircle, FileText, Send, QrCode } from 'lucide-react';
+import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer, LayoutGrid, Grid, List, Rows, CreditCard, Camera, Image as ImageIcon, AlertTriangle, Sparkles, TrendingUp, ShieldAlert, MessageCircle, FileText, Send, QrCode, User as UserIcon } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { Product, Sale, AppSettings, User, NfceNfeItem, NfceNfeProductItem } from '../types';
@@ -82,6 +82,26 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
   const isSubmittingSaleRef = useRef(false);
   const bannerInputRef = useRef<HTMLInputElement>(null);
+
+  // Vendedores e Colaboradores da Equipe
+  const [teamEmployees, setTeamEmployees] = useState<any[]>([]);
+  const [selectedSellerId, setSelectedSellerId] = useState<string>(currentUser?.id || '');
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      setSelectedSellerId(currentUser.id);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (tenantId) {
+      OnlineDB.fetchEmployees(tenantId).then((emps) => {
+        if (Array.isArray(emps)) {
+          setTeamEmployees(emps.filter((e: any) => e.status !== 'inactive'));
+        }
+      }).catch(() => {});
+    }
+  }, [tenantId]);
 
   // Recupera carrinho do PDV caso o app seja minimizado ou recarregado no celular
   useEffect(() => {
@@ -506,6 +526,12 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       const discountedTotal = Math.max(0, cartTotal - totalDiscount);
       const surchargeAmount = discountedTotal * (totalSurcharge / 100);
 
+      const chosenEmp = teamEmployees.find((e: any) => e.id === selectedSellerId || e.userId === selectedSellerId) ||
+        (selectedSellerId === currentUser?.id ? currentUser : null);
+
+      const resolvedSellerName = chosenEmp?.name || currentUser?.name || 'Sistema';
+      const resolvedSellerId = chosenEmp?.id || (chosenEmp as any)?.userId || currentUser?.id || 'admin';
+
       const newSales: Sale[] = cart.map((item, index) => {
         const effectiveUnit = getProductEffectivePrice(item.product);
         const itemTotal = effectiveUnit * item.quantity;
@@ -532,14 +558,14 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           paymentMethod: paymentEntries.map(p => p.method === 'Cartão' && p.installments && p.installments > 1 ? `${p.method} (${p.installments}x)` : p.method).join(', '),
           paymentEntriesJson: JSON.stringify(paymentEntries),
           change: change,
-          sellerName: currentUser?.name || 'Sistema',
-          sellerId: currentUser?.id,
+          sellerName: resolvedSellerName,
+          sellerId: resolvedSellerId,
           transactionId
         };
 
         // Calcula comissão em background
-        if (tenantId && currentUser?.id) {
-          OnlineDB.calculateAndLogCommission(tenantId, newSale, 'sale', currentUser.id);
+        if (tenantId && resolvedSellerId) {
+          OnlineDB.calculateAndLogCommission(tenantId, newSale, 'sale', resolvedSellerId);
         }
 
         return newSale;
@@ -1482,6 +1508,33 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* SELEÇÃO DO VENDEDOR / COLABORADOR */}
+              <div className="space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                    <UserIcon size={12} className="text-blue-500" />
+                    Vendedor da Venda
+                  </label>
+                  <span className="text-[8px] font-bold text-slate-400">Comissão & Meta</span>
+                </div>
+                <select
+                  value={selectedSellerId}
+                  onChange={(e) => setSelectedSellerId(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] font-black text-slate-800 outline-none focus:border-blue-500 cursor-pointer shadow-xs"
+                >
+                  <option value={currentUser?.id || 'admin'}>
+                    {currentUser?.name || 'Administrador'} (Atual)
+                  </option>
+                  {teamEmployees
+                    .filter((e: any) => e.id !== currentUser?.id && e.userId !== currentUser?.id)
+                    .map((emp: any) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} ({emp.role === 'tecnico' ? 'Técnico' : emp.role === 'vendedor' ? 'Vendedor' : emp.role})
+                      </option>
+                    ))}
+                </select>
               </div>
 
               {/* FORMAS DE PAGAMENTO (Max 2) */}

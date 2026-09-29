@@ -105,6 +105,9 @@ export class OfflineSync {
       const tenantIds = Array.from(new Set(queue.map(q => q.tenantId)));
 
       for (const tenantId of tenantIds) {
+        if (tenantId) {
+          await OnlineDB.ensureTenant(tenantId);
+        }
         const tenantItems = queue.filter(q => q.tenantId === tenantId && !handledItemIds.has(q.id!));
 
         // 1. SINCRONIZAÇÃO EM LOTE DE ORDENS DE SERVIÇO (UPSERTS)

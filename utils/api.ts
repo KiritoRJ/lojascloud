@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { Customer } from '../types';
+import { Customer, ServiceOrder } from '../types';
 import { OfflineAuth } from './offlineAuth';
 
 const SUPABASE_URL = (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) || (import.meta as any).env?.VITE_SUPABASE_URL || 'https://lawcmqsjhwuhogsukhbf.supabase.co';
@@ -1228,9 +1228,41 @@ export class OnlineDB {
     }
   }
 
+  // Garante que o tenantId existe na tabela tenants antes de inserir dados vinculados por foreign key
+  static async ensureTenant(tenantId: string) {
+    if (!tenantId || tenantId === 'undefined' || tenantId === 'null') return;
+    try {
+      const { data } = await supabase.from('tenants').select('id').eq('id', tenantId).maybeSingle();
+      if (!data) {
+        // Tenta criar primeiro com store_name (padrão do sistema)
+        const res = await supabase.from('tenants').upsert([{
+          id: tenantId,
+          store_name: 'Minha Loja',
+          created_at: new Date().toISOString(),
+          subscription_status: 'trial',
+          custom_monthly_price: 79.90
+        }], { onConflict: 'id' });
+
+        if (res.error) {
+          // Se falhar, tenta com a coluna alternativa 'name'
+          await supabase.from('tenants').upsert([{
+            id: tenantId,
+            name: 'Minha Loja',
+            created_at: new Date().toISOString(),
+            subscription_status: 'trial',
+            custom_monthly_price: 79.90
+          }], { onConflict: 'id' });
+        }
+      }
+    } catch (e) {
+      console.warn('[ensureTenant] Erro ao assegurar registro do tenant:', e);
+    }
+  }
+
   // Salva Ordens de Serviço no Banco de Dados
   static async upsertOrders(tenantId: string, orders: any[]) {
     if (!tenantId || !orders.length) return { success: true };
+    await this.ensureTenant(tenantId);
     try {
       const payload = orders.map(os => {
         let checklistArr = Array.isArray(os.checklist) ? [...os.checklist] : [];
@@ -1282,6 +1314,7 @@ export class OnlineDB {
   // Salva produtos no Banco de Dados com persistência fiscal garantida
   static async upsertProducts(tenantId: string, products: any[]) {
     if (!tenantId || !products.length) return { success: true };
+    await this.ensureTenant(tenantId);
     try {
       // 0. Cache síncrono local imediato para resiliência offline e recarregamento sem perdas
       let currentMap: Record<string, any> = {};
@@ -1431,6 +1464,7 @@ export class OnlineDB {
   // Salva vendas no Banco de Dados
   static async upsertSales(tenantId: string, sales: any[]) {
     if (!tenantId || !sales.length) return { success: true };
+    await this.ensureTenant(tenantId);
     try {
       const payload = sales.map(s => ({
         id: s.id,
@@ -1461,6 +1495,7 @@ export class OnlineDB {
   // Salva transações no Banco de Dados
   static async upsertTransactions(tenantId: string, transactions: any[]) {
     if (!tenantId || !transactions.length) return { success: true };
+    await this.ensureTenant(tenantId);
     try {
       const payload = transactions.map(t => ({
         id: t.id,
@@ -1724,6 +1759,56 @@ export class OnlineDB {
     }
   }
 
+  // Deleta / desativa um colaborador
+  static async deleteEmployee(id: string) {
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .update({ status: 'deleted' })
+        .eq('id', id);
+      if (error) throw error;
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
+
+  // Busca ordens de serviço da loja para apuração de comissões de técnicos
+  static async fetchServiceOrders(tenantId: string): Promise<ServiceOrder[]> {
+    try {
+      const { data, error } = await supabase
+        .from('service_orders')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .neq('is_deleted', true);
+      if (error) throw error;
+      return (data || []).map((d: any) => ({
+        id: d.id,
+        date: d.date || d.created_at,
+        entryDate: d.entry_date || d.date,
+        exitDate: d.exit_date,
+        customerName: d.customer_name || 'Cliente',
+        phoneNumber: d.phone_number || '',
+        address: d.address || '',
+        deviceBrand: d.device_brand || '',
+        deviceModel: d.device_model || '',
+        defect: d.defect || '',
+        repairDetails: d.repair_details || '',
+        partsCost: Number(d.parts_cost || 0),
+        serviceCost: Number(d.service_cost || 0),
+        total: Number(d.total || 0),
+        status: d.status || 'Concluído',
+        photos: d.photos || [],
+        technicianId: d.technician_id,
+        sellerId: d.seller_id,
+        paymentMethod: d.payment_method,
+        isDeleted: d.is_deleted
+      }));
+    } catch (e) {
+      return [];
+    }
+  }
+
   // Busca Regras de Comissão
   static async fetchCommissionRules(tenantId: string) {
     try {
@@ -1898,16 +1983,78 @@ export class OnlineDB {
 
   // Calcula e registra comissão automaticamente usando regras inteligentes
   static async calculateAndLogCommission(tenantId: string, item: any, type: 'sale' | 'service_order', userId: string) {
+    if (!tenantId || !userId) return { success: false, message: 'Dados incompletos' };
     try {
-      // 1. Busca o funcionário vinculado ao usuário
-      const { data: employee } = await supabase
+      // 1. Busca o funcionário vinculado ao usuário (por user_id, id, email ou nome)
+      let employee: any = null;
+      
+      const { data: empById } = await supabase
         .from('employees')
         .select('*')
         .eq('tenant_id', tenantId)
-        .eq('user_id', userId)
+        .or(`user_id.eq.${userId},id.eq.${userId},email.eq.${userId}`)
         .maybeSingle();
 
-      if (!employee) return { success: false, message: 'Funcionário não encontrado para este usuário.' };
+      employee = empById;
+
+      if (!employee) {
+        // Tenta buscar por nome do vendedor
+        const { data: empByName } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .ilike('name', userId)
+          .maybeSingle();
+        employee = empByName;
+      }
+
+      // Se não encontrou em employees, verifica se existe na tabela users para criar o registro
+      if (!employee) {
+        const { data: userRec } = await supabase
+          .from('users')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .or(`id.eq.${userId},username.eq.${userId},name.eq.${userId}`)
+          .maybeSingle();
+
+        if (userRec) {
+          const newEmpPayload = {
+            tenant_id: tenantId,
+            user_id: userRec.id,
+            name: userRec.name || userRec.username,
+            email: userRec.username,
+            role: userRec.specialty === 'Técnico' ? 'tecnico' : 'vendedor',
+            status: 'active',
+            admission_date: new Date().toISOString().split('T')[0],
+            salary_base: 0,
+            commission_type: 'sales_percent',
+            default_commission_percent: 5,
+            service_commission_percent: 10,
+            goal_monthly: 10000
+          };
+
+          const { data: createdEmp } = await supabase
+            .from('employees')
+            .insert([newEmpPayload])
+            .select()
+            .maybeSingle();
+
+          employee = createdEmp || newEmpPayload;
+        }
+      }
+
+      if (!employee) {
+        // Cria um employee temporário para não perder o log
+        employee = {
+          id: userId,
+          tenant_id: tenantId,
+          name: item.sellerName || 'Vendedor',
+          commission_type: 'sales_percent',
+          default_commission_percent: 5,
+          service_commission_percent: 10,
+          goal_monthly: 10000
+        };
+      }
 
       // 2. Busca todas as regras ativas para este tenant
       const rules = await this.fetchCommissionRules(tenantId);
@@ -2211,6 +2358,7 @@ export class OnlineDB {
   // Salva clientes do tenant
   static async upsertCustomers(tenantId: string, customers: Customer[]) {
     if (!tenantId || !customers.length) return { success: true };
+    await this.ensureTenant(tenantId);
     try {
       // Salva de forma universal em cloud_data para total confiabilidade
       await this.syncPush(tenantId, 'customers', customers);

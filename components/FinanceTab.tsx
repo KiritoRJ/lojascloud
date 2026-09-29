@@ -762,8 +762,8 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
                 <BarChart3 size={12} className="text-blue-500" />
                 <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">DRE Simplificada</h3>
               </div>
-              <div className="w-full min-h-[220px] h-[220px] relative">
-                <ResponsiveContainer width="100%" height="100%" debounce={50}>
+              <div className="w-full min-h-[220px] h-[220px] relative min-w-0">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200} debounce={50}>
                   <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis 
@@ -808,8 +808,8 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
               <div className="w-full min-h-[220px] h-[220px] relative flex flex-col">
                 {sourceData.length > 0 ? (
                   <>
-                    <div className="flex-1 min-h-0">
-                      <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                    <div className="flex-1 min-h-0 min-w-0">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={180} debounce={50}>
                         <PieChart>
                           <Pie
                             data={sourceData}
@@ -1117,8 +1117,8 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
       {viewMode === 'evolution' && (
         <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4">Evolução Mensal (Últimos 6 Meses)</h3>
-           <div className="bg-white p-4 rounded-[2rem] border border-slate-50 shadow-sm h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
+           <div className="bg-white p-4 rounded-[2rem] border border-slate-50 shadow-sm h-[300px] min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
                  <AreaChart data={evolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                        <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">

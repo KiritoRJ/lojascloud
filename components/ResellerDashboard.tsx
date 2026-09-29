@@ -61,19 +61,27 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
   const [isCreateStoreModalOpen, setIsCreateStoreModalOpen] = useState(false);
   const [isPaymentConfigModalOpen, setIsPaymentConfigModalOpen] = useState(false);
   const [storeToEditModules, setStoreToEditModules] = useState<any | null>(null);
-  const [storeToEditPrice, setStoreToEditPrice] = useState<{ id: string; storeName: string; monthlyPrice: number } | null>(null);
+  const [storeToEditPrice, setStoreToEditPrice] = useState<{ 
+    id: string; 
+    storeName: string; 
+    monthlyPrice: number;
+    quarterlyPrice: number;
+    yearlyPrice: number;
+  } | null>(null);
   const [storeToDelete, setStoreToDelete] = useState<any | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [errorToast, setErrorToast] = useState<string | null>(null);
 
-  // Formulário de Criação de Loja
+  // Formulário de Criação de Loja (Permite personalizar todos os planos; teste é fixo 0,00)
   const [newStoreForm, setNewStoreForm] = useState({
     storeName: '',
     adminUsername: '',
     adminPassword: '',
     phoneNumber: '',
     monthlyPrice: 79.90,
+    quarterlyPrice: 215.70,
+    yearlyPrice: 767.00,
     trialDays: 7
   });
 
@@ -208,6 +216,8 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
     try {
       const tenantId = 'store_' + Math.random().toString(36).substr(2, 7);
       const monthlyPrice = Number(newStoreForm.monthlyPrice) || 79.90;
+      const quarterlyPrice = Number(newStoreForm.quarterlyPrice) || Number((monthlyPrice * 3 * 0.9).toFixed(2));
+      const yearlyPrice = Number(newStoreForm.yearlyPrice) || Number((monthlyPrice * 12 * 0.8).toFixed(2));
       const trialDays = Number(newStoreForm.trialDays) || 7;
       
       const registerRes = await OnlineDB.createTenant({
@@ -218,8 +228,8 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
         logoUrl: null,
         phoneNumber: newStoreForm.phoneNumber.trim(),
         customMonthlyPrice: monthlyPrice,
-        customQuarterlyPrice: Number((monthlyPrice * 3 * 0.9).toFixed(2)),
-        customYearlyPrice: Number((monthlyPrice * 12 * 0.8).toFixed(2)),
+        customQuarterlyPrice: quarterlyPrice,
+        customYearlyPrice: yearlyPrice,
         trialDays: trialDays
       });
 
@@ -229,11 +239,11 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
         return;
       }
 
-      // Garante a gravação direta dos preços customizados na tabela tenants
+      // Garante a gravação direta dos preços customizados de todos os planos na tabela tenants
       await OnlineDB.updateTenantCustomPrices(tenantId, {
         monthly: monthlyPrice,
-        quarterly: Number((monthlyPrice * 3 * 0.9).toFixed(2)),
-        yearly: Number((monthlyPrice * 12 * 0.8).toFixed(2))
+        quarterly: quarterlyPrice,
+        yearly: yearlyPrice
       });
 
       // Calcula data de validade inicial (dias de teste)
@@ -247,6 +257,8 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
         resellerUsername: reseller.username,
         monthlyPaymentStatus: 'pending',
         monthlyPrice: monthlyPrice,
+        quarterlyPrice: quarterlyPrice,
+        yearlyPrice: yearlyPrice,
         nextExpiresAt: expires.toISOString(),
         isBlocked: false
       });
@@ -259,6 +271,8 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
         adminPassword: '',
         phoneNumber: '',
         monthlyPrice: 79.90,
+        quarterlyPrice: 215.70,
+        yearlyPrice: 767.00,
         trialDays: 7
       });
       await loadData();
@@ -269,30 +283,34 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
     }
   };
 
-  // Salvar Preço / Mensalidade da Loja
+  // Salvar Preço dos Planos da Loja (Mensal, Trimestral, Anual - Teste é 100% gratuito)
   const handleSaveStorePrice = async () => {
     if (!storeToEditPrice) return;
     setIsSaving(true);
     try {
-      const newPrice = Number(storeToEditPrice.monthlyPrice) || 79.90;
+      const newMonthly = Number(storeToEditPrice.monthlyPrice) || 79.90;
+      const newQuarterly = Number(storeToEditPrice.quarterlyPrice) || Number((newMonthly * 3 * 0.9).toFixed(2));
+      const newYearly = Number(storeToEditPrice.yearlyPrice) || Number((newMonthly * 12 * 0.8).toFixed(2));
       
-      // 1. Atualiza custom_monthly_price no banco de dados na tabela tenants (visível ao Super Admin e nos banners da loja)
+      // 1. Atualiza custom_monthly_price, custom_quarterly_price, custom_yearly_price na tabela tenants
       await OnlineDB.updateTenantCustomPrices(storeToEditPrice.id, {
-        monthly: newPrice,
-        quarterly: Number((newPrice * 3 * 0.9).toFixed(2)),
-        yearly: Number((newPrice * 12 * 0.8).toFixed(2))
+        monthly: newMonthly,
+        quarterly: newQuarterly,
+        yearly: newYearly
       });
 
       // 2. Atualiza metadados do revendedor
       await ResellerService.updateTenantMetadata(storeToEditPrice.id, {
-        monthlyPrice: newPrice
+        monthlyPrice: newMonthly,
+        quarterlyPrice: newQuarterly,
+        yearlyPrice: newYearly
       });
 
-      showToast(`Valor da mensalidade da loja "${storeToEditPrice.storeName}" atualizado para R$ ${newPrice.toFixed(2)}!`);
+      showToast(`Preços dos planos da loja "${storeToEditPrice.storeName}" atualizados com sucesso!`);
       setStoreToEditPrice(null);
       await loadData();
     } catch (err: any) {
-      showToast('Erro ao atualizar mensalidade da loja.', true);
+      showToast('Erro ao atualizar preços dos planos da loja.', true);
     } finally {
       setIsSaving(false);
     }
@@ -709,6 +727,8 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
                 const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
                 const isPaid = meta.monthlyPaymentStatus === 'paid' && !isExpired;
                 const monthlyPrice = Number(meta.monthlyPrice || t.custom_monthly_price || 79.90);
+                const quarterlyPrice = Number(meta.quarterlyPrice || t.custom_quarterly_price || Number((monthlyPrice * 3 * 0.9).toFixed(2)));
+                const yearlyPrice = Number(meta.yearlyPrice || t.custom_yearly_price || Number((monthlyPrice * 12 * 0.8).toFixed(2)));
 
                 return (
                   <div
@@ -774,10 +794,16 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
                           )}
                         </div>
 
-                        <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
+                        <div className="flex items-center gap-2.5 text-xs text-slate-400 flex-wrap">
                           <span>ID: <code className="text-slate-300 font-mono">{t.id}</code></span>
                           <span>•</span>
-                          <span>Mensalidade: <strong className="text-white">R$ {monthlyPrice.toFixed(2)}</strong></span>
+                          <span>Mensal: <strong className="text-emerald-400">R$ {monthlyPrice.toFixed(2)}</strong></span>
+                          <span>•</span>
+                          <span>Trimestral: <strong className="text-blue-400">R$ {quarterlyPrice.toFixed(2)}</strong></span>
+                          <span>•</span>
+                          <span>Anual: <strong className="text-purple-400">R$ {yearlyPrice.toFixed(2)}</strong></span>
+                          <span>•</span>
+                          <span className="text-amber-400 font-bold text-[11px]">Teste: Grátis</span>
                           <span>•</span>
                           <span>
                             Vencimento: <strong className={isExpired ? 'text-red-400' : 'text-slate-200'}>
@@ -839,15 +865,21 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
                         </button>
                       </Tooltip>
 
-                      {/* Alterar Preço da Mensalidade */}
-                      <Tooltip content="Editar o valor da mensalidade cobrada desta loja. Esse valor será atualizado automaticamente no painel do Super Admin e nos banners de renovação da loja.">
+                      {/* Alterar Preço de Todos os Planos */}
+                      <Tooltip content="Personalizar os valores de todos os planos (Mensal, Trimestral e Anual) para esta loja. O plano Teste é sempre gratuito.">
                         <button
                           type="button"
-                          onClick={() => setStoreToEditPrice({ id: t.id, storeName: t.store_name, monthlyPrice })}
+                          onClick={() => setStoreToEditPrice({ 
+                            id: t.id, 
+                            storeName: t.store_name, 
+                            monthlyPrice,
+                            quarterlyPrice,
+                            yearlyPrice
+                          })}
                           className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
                         >
                           <DollarSign size={14} className="text-emerald-400" />
-                          <span>Preço</span>
+                          <span>Planos</span>
                         </button>
                       </Tooltip>
 
@@ -966,32 +998,105 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                    WhatsApp / Telefone
-                  </label>
-                  <input
-                    type="text"
-                    value={newStoreForm.phoneNumber}
-                    onChange={(e) => setNewStoreForm({ ...newStoreForm, phoneNumber: e.target.value })}
-                    placeholder="(00) 00000-0000"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-blue-500"
-                  />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  WhatsApp / Telefone
+                </label>
+                <input
+                  type="text"
+                  value={newStoreForm.phoneNumber}
+                  onChange={(e) => setNewStoreForm({ ...newStoreForm, phoneNumber: e.target.value })}
+                  placeholder="(00) 00000-0000"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Seção de Configuração de Valores dos Planos */}
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+                    <DollarSign size={14} className="text-emerald-400" />
+                    Valores dos Planos para esta Loja
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">Personalizável</span>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                    Valor Mensalidade (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={newStoreForm.monthlyPrice}
-                    onChange={(e) => setNewStoreForm({ ...newStoreForm, monthlyPrice: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-blue-500 font-mono"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-wider text-emerald-400 block">
+                      Plano Mensal (1 Mês)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-[11px]">R$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        value={newStoreForm.monthlyPrice}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setNewStoreForm({
+                            ...newStoreForm,
+                            monthlyPrice: val,
+                            quarterlyPrice: Number((val * 3 * 0.9).toFixed(2)),
+                            yearlyPrice: Number((val * 12 * 0.8).toFixed(2))
+                          });
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl py-2 pl-8 pr-2 text-xs font-black text-white outline-none focus:border-emerald-500 font-mono"
+                        placeholder="79.90"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-wider text-blue-400 block">
+                      Plano Trimestral (3M)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-[11px]">R$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        value={newStoreForm.quarterlyPrice}
+                        onChange={(e) => setNewStoreForm({ ...newStoreForm, quarterlyPrice: parseFloat(e.target.value) || 0 })}
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl py-2 pl-8 pr-2 text-xs font-black text-white outline-none focus:border-blue-500 font-mono"
+                        placeholder="215.70"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-wider text-purple-400 block">
+                      Plano Anual (12M)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-[11px]">R$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        value={newStoreForm.yearlyPrice}
+                        onChange={(e) => setNewStoreForm({ ...newStoreForm, yearlyPrice: parseFloat(e.target.value) || 0 })}
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl py-2 pl-8 pr-2 text-xs font-black text-white outline-none focus:border-purple-500 font-mono"
+                        placeholder="767.00"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Plano Teste Fixo Grátis */}
+                <div className="flex items-center justify-between p-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-[11px]">
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <Lock size={12} className="text-amber-400" />
+                    <span><strong>Plano Teste (Avaliação):</strong> R$ 0,00 (100% Gratuito)</span>
+                  </div>
+                  <span className="text-[10px] text-amber-400/90 font-bold uppercase bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                    Não Cobrado
+                  </span>
                 </div>
               </div>
 
@@ -1322,19 +1427,19 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
       )}
 
       {/* ====================================================================== */}
-      {/* MODAL 5: EDITAR PREÇO / MENSALIDADE DA LOJA                             */}
+      {/* MODAL 5: EDITAR PREÇO DOS PLANOS DA LOJA (MENSAL, TRIMESTRAL, ANUAL)    */}
       {/* ====================================================================== */}
       {storeToEditPrice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                  <DollarSign size={18} />
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <DollarSign size={20} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black uppercase text-white">Editar Mensalidade</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">{storeToEditPrice.storeName}</p>
+                  <h3 className="text-base font-black uppercase text-white">Editar Valores dos Planos</h3>
+                  <p className="text-xs text-slate-400 font-bold uppercase">{storeToEditPrice.storeName}</p>
                 </div>
               </div>
               <button
@@ -1346,25 +1451,96 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
               </button>
             </div>
 
-            <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                Valor da Mensalidade (R$)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">R$</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={storeToEditPrice.monthlyPrice}
-                  onChange={(e) => setStoreToEditPrice({ ...storeToEditPrice, monthlyPrice: parseFloat(e.target.value) || 0 })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-sm font-black text-white outline-none focus:border-blue-500 font-mono"
-                  placeholder="79.90"
-                />
-              </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Este valor será o cobrado na renovação de assinatura dentro da loja e aparecerá no painel financeiro do Super Admin. O repasse da sua comissão ({reseller.commissionPercentage || 30}%) será calculado sobre esse valor.
+            <div className="space-y-4">
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Você pode personalizar os valores de todos os planos pagos para esta loja. O plano Teste é gratuito e inalterável.
               </p>
+
+              {/* Grid de Planos */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. Plano Mensal */}
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-emerald-400">Mensal (1M)</span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">R$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={storeToEditPrice.monthlyPrice}
+                      onChange={(e) => setStoreToEditPrice({ ...storeToEditPrice, monthlyPrice: parseFloat(e.target.value) || 0 })}
+                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl py-2 pl-8 pr-2 text-xs font-black text-white outline-none focus:border-emerald-500 font-mono"
+                      placeholder="79.90"
+                    />
+                  </div>
+                  <span className="text-[9px] text-slate-500 block">Cobrança a cada 30 dias</span>
+                </div>
+
+                {/* 2. Plano Trimestral */}
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-blue-400">Trimestral (3M)</span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">R$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={storeToEditPrice.quarterlyPrice}
+                      onChange={(e) => setStoreToEditPrice({ ...storeToEditPrice, quarterlyPrice: parseFloat(e.target.value) || 0 })}
+                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl py-2 pl-8 pr-2 text-xs font-black text-white outline-none focus:border-blue-500 font-mono"
+                      placeholder="215.70"
+                    />
+                  </div>
+                  <span className="text-[9px] text-slate-500 block">Cobrança a cada 90 dias</span>
+                </div>
+
+                {/* 3. Plano Anual */}
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-purple-400">Anual (12M)</span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">R$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={storeToEditPrice.yearlyPrice}
+                      onChange={(e) => setStoreToEditPrice({ ...storeToEditPrice, yearlyPrice: parseFloat(e.target.value) || 0 })}
+                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl py-2 pl-8 pr-2 text-xs font-black text-white outline-none focus:border-purple-500 font-mono"
+                      placeholder="767.00"
+                    />
+                  </div>
+                  <span className="text-[9px] text-slate-500 block">Cobrança a cada 365 dias</span>
+                </div>
+              </div>
+
+              {/* 4. Plano Teste (Inalterável / Fixo R$ 0,00) */}
+              <div className="p-3.5 bg-slate-950 border border-amber-500/20 rounded-2xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
+                    <Lock size={14} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-black uppercase text-white block">Plano Teste (Trial)</span>
+                    <span className="text-[10px] text-slate-400">Período de testes inicial da loja.</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-black text-amber-400 font-mono block">R$ 0,00</span>
+                  <span className="text-[9px] font-black uppercase text-amber-400/80 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                    100% Gratuito (Fixo)
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-blue-950/20 border border-blue-500/20 rounded-xl text-[11px] text-blue-300 leading-relaxed">
+                ℹ️ <strong>Importante:</strong> Esses valores serão cobrados no banner de renovação da loja e refletirão nos relatórios e repasses do Super Admin ({reseller.commissionPercentage || 30}% de comissão).
+              </div>
             </div>
 
             <div className="flex items-center gap-3 pt-3 border-t border-slate-800">
@@ -1381,7 +1557,7 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
                 disabled={isSaving}
                 className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-xs uppercase shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
               >
-                {isSaving ? 'Salvando...' : 'Salvar Preço'}
+                {isSaving ? 'Salvando...' : 'Salvar Preços dos Planos'}
               </button>
             </div>
           </div>

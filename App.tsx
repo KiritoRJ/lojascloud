@@ -2125,7 +2125,15 @@ const App: React.FC = () => {
             />
           )}
           {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} setOrders={saveOrders} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
-          {activeTab === 'team' && <EmployeeManagementTab tenantId={session.tenantId || ''} />}
+          {activeTab === 'team' && (
+            <EmployeeManagementTab 
+              tenantId={session.tenantId || ''} 
+              sales={sales.filter(s => !s.isDeleted)} 
+              serviceOrders={orders.filter(o => !o.isDeleted)} 
+              products={products}
+              currentUser={currentUser}
+            />
+          )}
           {activeTab === 'ferramentas' && <ToolsTab settings={settings} currentUser={currentUser} tenantId={session.tenantId || ''} />}
           {activeTab === 'config' && (
             <SettingsTab 

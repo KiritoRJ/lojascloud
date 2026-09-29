@@ -236,6 +236,8 @@ export class ResellerService {
       isBlocked?: boolean;
       monthlyPaymentStatus?: 'paid' | 'pending' | 'expired';
       monthlyPrice?: number;
+      quarterlyPrice?: number;
+      yearlyPrice?: number;
       lastPaymentDate?: string;
       nextExpiresAt?: string;
       ncmDatabaseVersion?: string;

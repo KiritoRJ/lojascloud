@@ -29,6 +29,14 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [formData, setFormData] = useState({ storeName: '', username: '', password: '', logoUrl: null as string | null, phoneNumber: '' });
   const [tenantToDelete, setTenantToDelete] = useState<{ id: string, name: string } | null>(null);
+  const [tenantToConfirmRenew, setTenantToConfirmRenew] = useState<{
+    id: string;
+    name: string;
+    currentExpiryStr?: string;
+    planType?: string;
+    newExpiryStr: string;
+    monthlyPrice?: number;
+  } | null>(null);
   const [tenantToEditSub, setTenantToEditSub] = useState<{ id: string, name: string, expiresAt: string, status: string, planType?: string } | null>(null);
   const [tenantToEditPrices, setTenantToEditPrices] = useState<{ id: string, name: string, monthly?: number, quarterly?: number, yearly?: number } | null>(null);
   const [tenantToEditFeatures, setTenantToEditFeatures] = useState<{ id: string; name: string; features: any; maxUsers: number; maxOS: number; maxProducts: number; printerSize: 58 | 80; retentionMonths: number; } | null>(null);
@@ -221,7 +229,8 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
         adminUsername: formData.username,
         adminPasswordPlain: formData.password,
         logoUrl: formData.logoUrl,
-        phoneNumber: formData.phoneNumber
+        phoneNumber: formData.phoneNumber,
+        trialDays: 7
       });
 
       if (result.success) {
@@ -414,7 +423,51 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
     }
   };
 
+  const handleOpenConfirmRenew = (tenant: any) => {
+    const now = new Date();
+    const currentExpiry = tenant.subscription_expires_at ? new Date(tenant.subscription_expires_at) : now;
+    const baseDate = currentExpiry > now ? new Date(currentExpiry) : new Date(now);
+    baseDate.setDate(baseDate.getDate() + 30);
+    const newExpiry = baseDate.toISOString();
+
+    const monthlyPrice = Number(tenant.custom_monthly_price ?? globalPlans?.monthlyPlan?.price ?? 79.9);
+
+    setTenantToConfirmRenew({
+      id: tenant.id,
+      name: tenant.store_name,
+      currentExpiryStr: tenant.subscription_expires_at,
+      planType: tenant.last_plan_type,
+      newExpiryStr: newExpiry,
+      monthlyPrice
+    });
+  };
+
+  const handleConfirmRenew = async () => {
+    if (!tenantToConfirmRenew) return;
+    const { id, planType, newExpiryStr } = tenantToConfirmRenew;
+    setQuickProcessingId(id);
+    try {
+      const validPlan = (planType === 'quarterly' || planType === 'yearly') ? planType : 'monthly';
+      const result = await OnlineDB.setSubscriptionDate(id, newExpiryStr, 'active', validPlan);
+      if (result && result.success) {
+        setTenantToConfirmRenew(null);
+        await loadTenants();
+      } else {
+        alert(result?.message || 'Erro ao prorrogar assinatura.');
+      }
+    } catch (e: any) {
+      alert(`Erro ao prorrogar assinatura: ${e?.message || 'Falha de conexão'}`);
+    } finally {
+      setQuickProcessingId(null);
+    }
+  };
+
   const handleQuickAdd30Days = async (tenantId: string, currentExpiryStr?: string, planType?: string) => {
+    const t = tenants.find(item => item.id === tenantId);
+    if (t) {
+      handleOpenConfirmRenew(t);
+      return;
+    }
     setQuickProcessingId(tenantId);
     try {
       const now = new Date();
@@ -444,17 +497,15 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const expiresAt = t.subscription_expires_at ? new Date(t.subscription_expires_at) : null;
     const isTrial = t.subscription_status === 'trial';
+    const diffDays = expiresAt ? Math.ceil((expiresAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+    const isExpired = (!expiresAt && !isTrial) || (expiresAt && diffDays < 0) || t.subscription_status === 'expired';
 
-    if (tenantStatusFilter === 'trial') return isTrial;
+    if (tenantStatusFilter === 'trial') return isTrial && !isExpired;
+    if (tenantStatusFilter === 'expired') return isExpired;
     if (isTrial) return false;
-
-    if (!expiresAt) return tenantStatusFilter === 'expired';
-
-    const diffDays = Math.ceil((expiresAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
     if (tenantStatusFilter === 'paid') return diffDays > 7;
     if (tenantStatusFilter === 'warning') return diffDays >= 0 && diffDays <= 7;
-    if (tenantStatusFilter === 'expired') return diffDays < 0 || t.subscription_status === 'expired';
 
     return true;
   });
@@ -475,20 +526,20 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
 
     tenants.forEach(t => {
       const isTrial = t.subscription_status === 'trial';
-      if (isTrial) {
-        trial++;
-        return;
-      }
       const expiresAt = t.subscription_expires_at ? new Date(t.subscription_expires_at) : null;
-      if (!expiresAt || expiresAt < today || t.subscription_status === 'expired') {
+      const isExpired = (!expiresAt && !isTrial) || (expiresAt && expiresAt < today) || t.subscription_status === 'expired';
+
+      if (isExpired) {
         expired++;
-        return;
-      }
-      const diffDays = Math.ceil((expiresAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      if (diffDays <= 7) {
-        warning++;
+      } else if (isTrial) {
+        trial++;
       } else {
-        active++;
+        const diffDays = expiresAt ? Math.ceil((expiresAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+        if (diffDays <= 7) {
+          warning++;
+        } else {
+          active++;
+        }
       }
     });
 
@@ -931,18 +982,23 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
                 let paymentCategory: 'paid' | 'warning' | 'expired' | 'trial' = 'expired';
                 let daysRemaining = 0;
 
-                if (isTrial) {
-                  paymentCategory = 'trial';
-                } else if (expiresAt) {
+                if (expiresAt) {
                   const diffTime = expiresAt.getTime() - today.getTime();
                   daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                  if (daysRemaining > 7) {
-                    paymentCategory = 'paid';
-                  } else if (daysRemaining >= 0 && daysRemaining <= 7) {
-                    paymentCategory = 'warning';
-                  } else {
+                  if (daysRemaining < 0 || t.subscription_status === 'expired') {
                     paymentCategory = 'expired';
+                  } else if (isTrial) {
+                    paymentCategory = 'trial';
+                  } else if (daysRemaining > 7) {
+                    paymentCategory = 'paid';
+                  } else {
+                    paymentCategory = 'warning';
                   }
+                } else if (isTrial) {
+                  paymentCategory = 'trial';
+                  daysRemaining = 7;
+                } else {
+                  paymentCategory = 'expired';
                 }
 
                 return (
@@ -994,10 +1050,10 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
                           )}
 
                           {paymentCategory === 'trial' && (
-                            <Tooltip content="Esta loja está em período de avaliação gratuita de 7 dias.">
+                            <Tooltip content={`Esta loja está em período de avaliação gratuita de 7 dias (expira em ${formatDateBR(t.subscription_expires_at)}).`}>
                               <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
                                 <Sparkles size={10} />
-                                <span>Em Teste</span>
+                                <span>Em Teste ({daysRemaining}d)</span>
                               </span>
                             </Tooltip>
                           )}
@@ -1037,10 +1093,10 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
                     <div className="flex flex-wrap items-center justify-between lg:justify-end gap-1.5 sm:gap-2 w-full lg:w-auto pt-3 lg:pt-0 border-t lg:border-t-0 border-white/5">
                       
                       {/* BOTÃO RÁPIDO DE BAIXA / RENOVAÇÃO (+30 DIAS) */}
-                      <Tooltip content={`Dar baixa manual no pagamento e estender a mensalidade de ${t.store_name} por mais 30 dias imediatamente.`}>
+                      <Tooltip content={`Dar baixa manual no pagamento e estender a mensalidade de ${t.store_name} por mais 30 dias.`}>
                         <button
                           type="button"
-                          onClick={() => handleQuickAdd30Days(t.id, t.subscription_expires_at, t.last_plan_type)}
+                          onClick={() => handleOpenConfirmRenew(t)}
                           disabled={quickProcessingId === t.id}
                           className="px-2.5 sm:px-3 py-2 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-95 shadow-sm"
                         >
@@ -1240,6 +1296,13 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
                   placeholder="Ex: 11987654321" 
                   className="w-full bg-white/10 border border-white/10 rounded-xl sm:rounded-2xl p-4 sm:p-5 font-bold outline-none text-xs sm:text-sm placeholder:text-blue-200/50 text-white" 
                 />
+              </div>
+              <div className="bg-white/10 border border-white/20 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex items-center gap-3 text-white text-left">
+                <Sparkles size={20} className="text-amber-300 shrink-0" />
+                <div>
+                  <p className="text-[10px] sm:text-xs font-black uppercase text-amber-300">Plano de Teste Inicial (7 Dias)</p>
+                  <p className="text-[8px] sm:text-[10px] text-blue-100 font-medium">A loja será cadastrada em período de testes com validade automática de 7 dias a partir da criação.</p>
+                </div>
               </div>
             </div>
             <button 
@@ -2091,6 +2154,99 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
                   Cancelar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO PARA BAIXA MANUAL E PRORROGAÇÃO (+30 DIAS) */}
+      {tenantToConfirmRenew && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-sm sm:max-w-md rounded-2xl sm:rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 border border-slate-100">
+            <div className="p-6 sm:p-8 space-y-4 sm:space-y-6">
+              
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 shadow-inner">
+                <Calendar size={32} className="sm:hidden" />
+                <Calendar size={40} className="hidden sm:block" />
+              </div>
+
+              <div className="space-y-2 text-center">
+                <h3 className="font-black text-slate-800 uppercase text-base sm:text-lg">
+                  Dar Baixa Manual & Prorrogar?
+                </h3>
+                <p className="text-slate-500 text-xs sm:text-sm font-semibold leading-relaxed">
+                  Confirma o recebimento manual do pagamento da loja{' '}
+                  <span className="text-emerald-700 font-black">"{tenantToConfirmRenew.name}"</span>{' '}
+                  e a prorrogação da mensalidade?
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2.5 text-xs text-left">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Loja / ID:</span>
+                  <span className="font-mono text-slate-700 font-bold">{tenantToConfirmRenew.id}</span>
+                </div>
+                {tenantToConfirmRenew.monthlyPrice !== undefined && (
+                  <div className="flex justify-between items-center border-t border-slate-200/60 pt-2">
+                    <span className="text-slate-400 font-bold uppercase text-[10px]">Valor da Mensalidade:</span>
+                    <span className="font-black text-slate-800">
+                      R$ {tenantToConfirmRenew.monthlyPrice.toFixed(2)}/mês
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center border-t border-slate-200/60 pt-2">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Vencimento Atual:</span>
+                  <span className="font-bold text-slate-700">
+                    {formatDateBR(tenantToConfirmRenew.currentExpiryStr)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center border-t border-emerald-200 pt-2 bg-emerald-500/10 -mx-4 -mb-4 p-3 rounded-b-2xl">
+                  <span className="text-emerald-800 font-black uppercase text-[10px] sm:text-[11px]">
+                    Novo Vencimento (+30 Dias):
+                  </span>
+                  <span className="font-black text-emerald-700 text-sm">
+                    {formatDateBR(tenantToConfirmRenew.newExpiryStr)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl flex items-start gap-2.5 text-left">
+                <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-[10px] sm:text-[11px] text-amber-800 font-medium leading-snug">
+                  Ao confirmar, o status da loja será atualizado para <strong className="font-bold text-amber-900">Ativo</strong> e a data de expiração será estendida por mais 30 dias.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmRenew}
+                  disabled={quickProcessingId !== null}
+                  className="w-full py-4 sm:py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl sm:rounded-2xl font-black uppercase text-[10px] sm:text-xs tracking-widest shadow-xl shadow-emerald-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                >
+                  {quickProcessingId !== null ? (
+                    <>
+                      <Loader2 className="animate-spin" size={18} />
+                      <span>Confirmando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={18} />
+                      <span>Confirmar Baixa (+30 Dias)</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTenantToConfirmRenew(null)}
+                  disabled={quickProcessingId !== null}
+                  className="w-full py-3.5 sm:py-4 bg-slate-100 text-slate-600 hover:text-slate-800 rounded-xl sm:rounded-2xl font-black uppercase text-[10px] sm:text-xs tracking-widest hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+
             </div>
           </div>
         </div>

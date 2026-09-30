@@ -621,7 +621,20 @@ app.post('/api/auth/login', async (req, res) => {
 
     const tenant = data.tenants;
     const limits = tenant?.tenant_limits;
-    const expiresAt = tenant?.subscription_expires_at;
+    let expiresAt = tenant?.subscription_expires_at;
+
+    // Garante que lojas em plano de teste tenham sempre data para expirar de 7 dias
+    if (tenant?.subscription_status === 'trial' && !expiresAt) {
+      const created = tenant?.created_at ? new Date(tenant.created_at) : new Date();
+      const trialExp = new Date(created);
+      trialExp.setDate(trialExp.getDate() + 7);
+      trialExp.setHours(23, 59, 59, 999);
+      expiresAt = trialExp.toISOString();
+      try {
+        await supabase.from('tenants').update({ subscription_expires_at: expiresAt }).eq('id', data.tenant_id);
+      } catch (_) {}
+    }
+
     const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
 
     res.json({ 
@@ -684,6 +697,7 @@ app.post('/api/auth/register-tenant', async (req, res) => {
     const trialDays = Number(requestedTrialDays) || 7;
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + trialDays);
+    expiresAt.setHours(23, 59, 59, 999); // Final do 7º dia de teste
 
     const globalSettings = await OnlineDB.getGlobalSettings();
     const trialLimits = globalSettings.trial || { maxUsers: 1000, maxOS: 1000, maxProducts: 1000 };

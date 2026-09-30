@@ -18,7 +18,10 @@ import {
   ArrowUpRight,
   Filter,
   Check,
-  Percent
+  Percent,
+  AlertCircle,
+  Loader2,
+  X
 } from 'lucide-react';
 import { OnlineDB } from '../utils/api';
 import { Tooltip } from './reseller/Tooltip';
@@ -61,19 +64,24 @@ export const SuperAdminFinancialDashboard: React.FC<SuperAdminFinancialDashboard
       let paymentCategory: 'paid' | 'warning' | 'expired' | 'trial' = 'expired';
       let daysRemaining = 0;
 
-      if (isTrial) {
-        paymentCategory = 'trial';
-      } else if (expiresAt) {
+      if (expiresAt) {
         const diffTime = expiresAt.getTime() - today.getTime();
         daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        if (daysRemaining > 7) {
-          paymentCategory = 'paid'; // Em dia com mais de 7 dias
-        } else if (daysRemaining >= 0 && daysRemaining <= 7) {
-          paymentCategory = 'warning'; // A vencer nos próximos 7 dias
-        } else {
+        if (daysRemaining < 0 || t.subscription_status === 'expired') {
           paymentCategory = 'expired'; // Vencida
+        } else if (isTrial) {
+          paymentCategory = 'trial'; // Em teste ativo
+        } else if (daysRemaining > 7) {
+          paymentCategory = 'paid'; // Em dia com mais de 7 dias
+        } else {
+          paymentCategory = 'warning'; // A vencer nos próximos 7 dias
         }
+      } else if (isTrial) {
+        paymentCategory = 'trial';
+        daysRemaining = 7;
+      } else {
+        paymentCategory = 'expired';
       }
 
       return {
@@ -140,25 +148,61 @@ export const SuperAdminFinancialDashboard: React.FC<SuperAdminFinancialDashboard
     });
   }, [enrichedTenants, statusFilter, searchTerm]);
 
-  // Ação rápida: Registrar pagamento e adicionar +30 dias
-  const handleQuickAdd30Days = async (tenant: any) => {
-    setProcessingTenantId(tenant.id);
-    try {
-      const now = new Date();
-      const currentExpiry = tenant.subscription_expires_at ? new Date(tenant.subscription_expires_at) : now;
-      const baseDate = currentExpiry > now ? currentExpiry : now;
-      
-      baseDate.setDate(baseDate.getDate() + 30);
-      const newExpiryStr = baseDate.toISOString();
+  // Confirmação para Dar Baixa Manual e Estender Mensalidade (+30 dias)
+  const [tenantToConfirmRenew, setTenantToConfirmRenew] = useState<{
+    id: string;
+    store_name: string;
+    monthlyPrice: number;
+    currentExpiryStr?: string;
+    newExpiryStr: string;
+    planType?: string;
+  } | null>(null);
 
-      await OnlineDB.setSubscriptionDate(tenant.id, newExpiryStr, 'active', tenant.last_plan_type || 'monthly');
-      showToast(`✅ Pagamento confirmado! Mensalidade de ${tenant.store_name} estendida até ${formatDateBR(newExpiryStr)}`);
+  const handleOpenConfirmRenew = (tenant: any) => {
+    const now = new Date();
+    const currentExpiry = tenant.subscription_expires_at ? new Date(tenant.subscription_expires_at) : now;
+    const baseDate = currentExpiry > now ? new Date(currentExpiry) : new Date(now);
+    baseDate.setDate(baseDate.getDate() + 30);
+    const newExpiryStr = baseDate.toISOString();
+
+    setTenantToConfirmRenew({
+      id: tenant.id,
+      store_name: tenant.store_name,
+      monthlyPrice: tenant.monthlyPrice || 79.9,
+      currentExpiryStr: tenant.subscription_expires_at,
+      newExpiryStr,
+      planType: tenant.last_plan_type
+    });
+  };
+
+  const handleConfirmRenew = async () => {
+    if (!tenantToConfirmRenew) return;
+    setProcessingTenantId(tenantToConfirmRenew.id);
+    try {
+      const validPlan: 'monthly' | 'quarterly' | 'yearly' = 
+        (tenantToConfirmRenew.planType === 'quarterly' || tenantToConfirmRenew.planType === 'yearly') 
+          ? tenantToConfirmRenew.planType 
+          : 'monthly';
+
+      await OnlineDB.setSubscriptionDate(
+        tenantToConfirmRenew.id,
+        tenantToConfirmRenew.newExpiryStr,
+        'active',
+        validPlan
+      );
+      showToast(`✅ Pagamento confirmado! Mensalidade de ${tenantToConfirmRenew.store_name} estendida até ${formatDateBR(tenantToConfirmRenew.newExpiryStr)}`);
+      setTenantToConfirmRenew(null);
       onRefresh();
     } catch (e: any) {
       alert(`Erro ao registrar pagamento: ${e?.message || 'Falha de conexão'}`);
     } finally {
       setProcessingTenantId(null);
     }
+  };
+
+  // Ação rápida: Registrar pagamento e adicionar +30 dias (abre confirmação)
+  const handleQuickAdd30Days = async (tenant: any) => {
+    handleOpenConfirmRenew(tenant);
   };
 
   return (
@@ -436,9 +480,9 @@ export const SuperAdminFinancialDashboard: React.FC<SuperAdminFinancialDashboard
                   )}
 
                   {t.paymentCategory === 'trial' && (
-                    <Tooltip content="Loja em fase de testes gratuitos iniciais de 7 dias.">
+                    <Tooltip content={`Loja em fase de testes gratuitos de 7 dias (expira em ${formatDateBR(t.subscription_expires_at)}).`}>
                       <span className="px-3 py-1 bg-purple-500/20 text-purple-300 border border-purple-500/40 rounded-full text-xs font-black uppercase tracking-wider flex items-center gap-1.5 cursor-help">
-                        <span>Período de Teste</span>
+                        <span>Em Teste ({t.daysRemaining}d)</span>
                       </span>
                     </Tooltip>
                   )}
@@ -517,6 +561,97 @@ export const SuperAdminFinancialDashboard: React.FC<SuperAdminFinancialDashboard
           })
         )}
       </div>
+
+      {/* MODAL DE CONFIRMAÇÃO DE BAIXA MANUAL (+30 DIAS) */}
+      {tenantToConfirmRenew && (
+        <div className="fixed inset-0 bg-slate-950/80 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700/80 w-full max-w-sm sm:max-w-md rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 text-white">
+            <div className="p-6 sm:p-8 space-y-4 sm:space-y-6">
+              
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto mb-2 shadow-inner">
+                <CreditCard size={32} className="sm:hidden" />
+                <CreditCard size={40} className="hidden sm:block" />
+              </div>
+
+              <div className="space-y-2 text-center">
+                <h3 className="font-black text-white uppercase text-base sm:text-lg">
+                  Confirmar Baixa de Pagamento?
+                </h3>
+                <p className="text-slate-400 text-xs sm:text-sm font-semibold leading-relaxed">
+                  Confirma o recebimento manual da mensalidade da loja{' '}
+                  <span className="text-emerald-400 font-black">"{tenantToConfirmRenew.store_name}"</span>{' '}
+                  e prorrogação por mais 30 dias?
+                </p>
+              </div>
+
+              <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-4 space-y-2.5 text-xs text-left">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Loja / ID:</span>
+                  <span className="font-mono text-slate-300 font-bold">{tenantToConfirmRenew.id}</span>
+                </div>
+                <div className="flex justify-between items-center border-t border-slate-700/40 pt-2">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Valor da Mensalidade:</span>
+                  <span className="font-black text-white">
+                    R$ {tenantToConfirmRenew.monthlyPrice.toFixed(2)}/mês
+                  </span>
+                </div>
+                <div className="flex justify-between items-center border-t border-slate-700/40 pt-2">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Vencimento Atual:</span>
+                  <span className="font-bold text-amber-400">
+                    {formatDateBR(tenantToConfirmRenew.currentExpiryStr)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center border-t border-emerald-500/30 pt-2 bg-emerald-500/10 -mx-4 -mb-4 p-3 rounded-b-2xl">
+                  <span className="text-emerald-300 font-black uppercase text-[10px] sm:text-[11px]">
+                    Novo Vencimento (+30 Dias):
+                  </span>
+                  <span className="font-black text-emerald-400 text-sm">
+                    {formatDateBR(tenantToConfirmRenew.newExpiryStr)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-left">
+                <AlertCircle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-[10px] sm:text-[11px] text-amber-200/90 font-medium leading-snug">
+                  Ao confirmar, o status financeiro da loja será atualizado para <strong className="font-bold text-amber-300">Ativo</strong> e a nova validade será salva no banco.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmRenew}
+                  disabled={processingTenantId !== null}
+                  className="w-full py-4 sm:py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl sm:rounded-2xl font-black uppercase text-[10px] sm:text-xs tracking-widest shadow-xl shadow-emerald-900/30 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                >
+                  {processingTenantId !== null ? (
+                    <>
+                      <Loader2 className="animate-spin" size={18} />
+                      <span>Confirmando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={18} />
+                      <span>Confirmar Baixa (+30 Dias)</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTenantToConfirmRenew(null)}
+                  disabled={processingTenantId !== null}
+                  className="w-full py-3.5 sm:py-4 bg-slate-800 text-slate-300 hover:text-white rounded-xl sm:rounded-2xl font-black uppercase text-[10px] sm:text-xs tracking-widest hover:bg-slate-700 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

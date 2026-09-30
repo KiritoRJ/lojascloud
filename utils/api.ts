@@ -814,7 +814,23 @@ export class OnlineDB {
         .select('*, tenant_limits(*)')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return data || [];
+      
+      const tenantsList = data || [];
+      // Garante que qualquer loja em plano de teste tenha a data de expiração de 7 dias calculada e salva
+      for (const t of tenantsList) {
+        if (t.subscription_status === 'trial' && !t.subscription_expires_at) {
+          const created = t.created_at ? new Date(t.created_at) : new Date();
+          const trialExp = new Date(created);
+          trialExp.setDate(trialExp.getDate() + 7);
+          trialExp.setHours(23, 59, 59, 999);
+          t.subscription_expires_at = trialExp.toISOString();
+          try {
+            await supabase.from('tenants').update({ subscription_expires_at: t.subscription_expires_at }).eq('id', t.id);
+          } catch (_) {}
+        }
+      }
+
+      return tenantsList;
     } catch (e) {
       return [];
     }
@@ -1232,14 +1248,20 @@ export class OnlineDB {
   static async ensureTenant(tenantId: string) {
     if (!tenantId || tenantId === 'undefined' || tenantId === 'null') return;
     try {
-      const { data } = await supabase.from('tenants').select('id').eq('id', tenantId).maybeSingle();
+      const { data } = await supabase.from('tenants').select('id, subscription_status, subscription_expires_at, created_at').eq('id', tenantId).maybeSingle();
       if (!data) {
+        // Lojas criadas em plano de teste devem ter data para expirar de 7 dias
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+        expiresAt.setHours(23, 59, 59, 999);
+
         // Tenta criar primeiro com store_name (padrão do sistema)
         const res = await supabase.from('tenants').upsert([{
           id: tenantId,
           store_name: 'Minha Loja',
           created_at: new Date().toISOString(),
           subscription_status: 'trial',
+          subscription_expires_at: expiresAt.toISOString(),
           custom_monthly_price: 79.90
         }], { onConflict: 'id' });
 
@@ -1250,9 +1272,17 @@ export class OnlineDB {
             name: 'Minha Loja',
             created_at: new Date().toISOString(),
             subscription_status: 'trial',
+            subscription_expires_at: expiresAt.toISOString(),
             custom_monthly_price: 79.90
           }], { onConflict: 'id' });
         }
+      } else if (data.subscription_status === 'trial' && !data.subscription_expires_at) {
+        // Se a loja existe mas não tem data para expirar definida, garante 7 dias
+        const created = data.created_at ? new Date(data.created_at) : new Date();
+        const trialExp = new Date(created);
+        trialExp.setDate(trialExp.getDate() + 7);
+        trialExp.setHours(23, 59, 59, 999);
+        await supabase.from('tenants').update({ subscription_expires_at: trialExp.toISOString() }).eq('id', tenantId);
       }
     } catch (e) {
       console.warn('[ensureTenant] Erro ao assegurar registro do tenant:', e);

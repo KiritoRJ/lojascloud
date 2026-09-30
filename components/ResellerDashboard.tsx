@@ -249,6 +249,7 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
       // Calcula data de validade inicial (dias de teste)
       const expires = new Date();
       expires.setDate(expires.getDate() + trialDays);
+      expires.setHours(23, 59, 59, 999);
 
       // Vincula metadados de revendedor
       await ResellerService.updateTenantMetadata(tenantId, {

@@ -1,5 +1,5 @@
-import React from 'react';
-import { ShoppingCart, History, User as UserIcon, Camera, ImageIcon, Trash2, Loader2, Maximize2, Minimize2, Lightbulb } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { ShoppingCart, History, User as UserIcon, Camera, ImageIcon, Trash2, Loader2, Maximize2, Minimize2, Lightbulb, Crown } from 'lucide-react';
 import { AppSettings, User } from '../../types';
 
 interface PosHeaderProps {
@@ -28,6 +28,7 @@ interface PosHeaderProps {
   terminalName?: string;
   totalActiveTerminals?: number;
   onOpenTerminalsModal?: () => void;
+  onSwitchUserRequest?: (user: User) => void;
 }
 
 export const PosHeader: React.FC<PosHeaderProps> = ({
@@ -55,10 +56,63 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
   terminalNumber = 1,
   terminalName = 'PDV 01',
   totalActiveTerminals = 1,
-  onOpenTerminalsModal
+  onOpenTerminalsModal,
+  onSwitchUserRequest
 }) => {
   const isServing = cartLength > 0;
   const isDark = theme === 'dark';
+
+  // Lista de Administradores e Colaboradores para troca direta ou com senha
+  const { adminOptions, collaboratorOptions } = useMemo(() => {
+    const admins: User[] = [];
+    const collabs: User[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. Administrador (de settings.users ou currentUser)
+    const adminFromSettings = settings?.users?.find(u => u.role === 'admin');
+    if (adminFromSettings) {
+      admins.push(adminFromSettings);
+      seenIds.add(adminFromSettings.id);
+    } else if (currentUser?.role === 'admin') {
+      admins.push(currentUser);
+      seenIds.add(currentUser.id);
+    } else {
+      admins.push({
+        id: 'admin_master',
+        name: 'Administrador (Loja)',
+        role: 'admin',
+        photo: null
+      });
+      seenIds.add('admin_master');
+    }
+
+    // 2. Colaboradores de settings.users
+    (settings?.users || []).forEach(u => {
+      if (u.role !== 'admin' && !seenIds.has(u.id)) {
+        collabs.push(u);
+        seenIds.add(u.id);
+      }
+    });
+
+    // 3. Colaboradores da equipe cadastrados (teamEmployees)
+    (teamEmployees || []).forEach((emp: any) => {
+      const empId = emp.userId || emp.id;
+      if (!seenIds.has(empId) && !seenIds.has(emp.id)) {
+        collabs.push({
+          id: empId,
+          name: emp.name,
+          username: emp.email || emp.username || emp.name,
+          role: emp.role === 'administrador' || emp.role === 'admin' ? 'admin' : 'colaborador',
+          photo: emp.photoUrl || emp.photo || null,
+          specialty: emp.specialty || (emp.role === 'tecnico' ? 'Técnico' : 'Vendedor')
+        });
+        seenIds.add(empId);
+        if (emp.id) seenIds.add(emp.id);
+      }
+    });
+
+    return { adminOptions: admins, collaboratorOptions: collabs };
+  }, [settings?.users, teamEmployees, currentUser]);
 
   return (
     <header className={`${
@@ -181,29 +235,59 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
 
       {/* Lado Direito: Atalhos do Teclado & Vendedor & Histórico & Alternador de Tema */}
       <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
-        {/* Vendedor */}
-        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs ${
+        {/* Vendedor / Operador de Caixa com Troca de Usuário e Proteção por Senha */}
+        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs transition-colors ${
           isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
         }`}>
-          <UserIcon size={13} className={`${isDark ? 'text-blue-400' : 'text-blue-600'} shrink-0`} />
+          {currentUser?.role === 'admin' ? (
+            <Crown size={13} className="text-amber-400 shrink-0" />
+          ) : (
+            <UserIcon size={13} className={`${isDark ? 'text-blue-400' : 'text-blue-600'} shrink-0`} />
+          )}
           <select
-            value={selectedSellerId}
-            onChange={(e) => setSelectedSellerId(e.target.value)}
-            className={`bg-transparent text-[10px] font-bold outline-none cursor-pointer max-w-[130px] truncate ${
+            value={currentUser?.id || selectedSellerId || ''}
+            onChange={(e) => {
+              const targetId = e.target.value;
+              const allUsers = [...adminOptions, ...collaboratorOptions];
+              const targetUser = allUsers.find(u => u.id === targetId || (u as any).userId === targetId);
+              if (targetUser && onSwitchUserRequest) {
+                onSwitchUserRequest(targetUser);
+              } else {
+                setSelectedSellerId(targetId);
+              }
+            }}
+            className={`bg-transparent text-[10px] font-bold outline-none cursor-pointer max-w-[140px] truncate ${
               isDark ? 'text-slate-200' : 'text-slate-800'
             }`}
-            title="Operador do Caixa"
+            title="Clique para alternar operador ou logar como outro usuário"
           >
-            <option value={currentUser?.id || 'admin'} className={isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-800'}>
-              {currentUser?.name || 'Operador'} (Atual)
-            </option>
-            {teamEmployees
-              .filter((e: any) => e.id !== currentUser?.id && e.userId !== currentUser?.id)
-              .map((emp: any) => (
-                <option key={emp.id} value={emp.id} className={isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-800'}>
-                  {emp.name}
+            {/* Administrador */}
+            <optgroup label="Administrador" className={isDark ? 'bg-slate-900 text-slate-300' : 'bg-white text-slate-700'}>
+              {adminOptions.map(adm => (
+                <option 
+                  key={adm.id} 
+                  value={adm.id} 
+                  className={isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-800'}
+                >
+                  👑 {adm.name} {adm.id === currentUser?.id ? '(Atual)' : ''}
                 </option>
               ))}
+            </optgroup>
+
+            {/* Vendedores e Colaboradores */}
+            {collaboratorOptions.length > 0 && (
+              <optgroup label="Vendedores e Colaboradores" className={isDark ? 'bg-slate-900 text-slate-300' : 'bg-white text-slate-700'}>
+                {collaboratorOptions.map(colab => (
+                  <option 
+                    key={colab.id} 
+                    value={colab.id} 
+                    className={isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-800'}
+                  >
+                    👤 {colab.name} {colab.id === currentUser?.id ? '(Atual)' : ''}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </div>
 

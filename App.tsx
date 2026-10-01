@@ -2146,7 +2146,21 @@ const App: React.FC = () => {
               enabledFeatures={session.enabledFeatures}
             />
           )}
-          {activeTab === 'vendas' && <SalesTab products={products} setProducts={saveProducts} sales={sales.filter(s => !s.isDeleted)} setSales={saveSales} settings={settings} onUpdateSettings={saveSettings} currentUser={currentUser} onDeleteSale={removeSale} tenantId={session.tenantId || ''} enabledFeatures={session?.enabledFeatures} />}
+          {activeTab === 'vendas' && (
+            <SalesTab 
+              products={products} 
+              setProducts={saveProducts} 
+              sales={sales.filter(s => !s.isDeleted)} 
+              setSales={saveSales} 
+              settings={settings} 
+              onUpdateSettings={saveSettings} 
+              currentUser={currentUser} 
+              onDeleteSale={removeSale} 
+              tenantId={session.tenantId || ''} 
+              enabledFeatures={session?.enabledFeatures} 
+              onSwitchProfile={handleSwitchProfile}
+            />
+          )}
           {activeTab === 'fiscal' && (
             <FiscalTab
               settings={settings}

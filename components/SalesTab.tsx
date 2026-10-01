@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer, LayoutGrid, Grid, List, Rows, CreditCard, Camera, Image as ImageIcon, AlertTriangle, Sparkles, TrendingUp, ShieldAlert, MessageCircle, FileText, Send, QrCode, User as UserIcon, Banknote, Zap, RotateCcw, Tag } from 'lucide-react';
+import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer, LayoutGrid, Grid, List, Rows, CreditCard, Camera, Image as ImageIcon, AlertTriangle, Sparkles, TrendingUp, ShieldAlert, ShieldCheck, MessageCircle, FileText, Send, QrCode, User as UserIcon, Banknote, Zap, RotateCcw, Tag } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { Product, Sale, AppSettings, User, NfceNfeItem, NfceNfeProductItem } from '../types';
@@ -28,6 +28,7 @@ interface Props {
   onDeleteSale: (sale: Sale) => Promise<void>;
   tenantId: string;
   enabledFeatures?: any;
+  onSwitchProfile?: (user: User) => void;
 }
 
 interface CartItem {
@@ -41,7 +42,19 @@ interface PaymentEntry {
   installments?: number;
 }
 
-const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, settings, onUpdateSettings, currentUser, onDeleteSale, tenantId, enabledFeatures }) => {
+const SalesTab: React.FC<Props> = ({ 
+  products, 
+  setProducts, 
+  sales, 
+  setSales, 
+  settings, 
+  onUpdateSettings, 
+  currentUser, 
+  onDeleteSale, 
+  tenantId, 
+  enabledFeatures,
+  onSwitchProfile
+}) => {
   const isFiscalModeActive = !!(
     enabledFeatures?.fiscalMode || 
     (settings as any)?.fiscalModeEnabled
@@ -64,7 +77,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
   const [isCancelling, setIsCancelling] = useState<string | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authAction, setAuthAction] = useState<'cancel_sale' | 'remove_banner' | null>(null);
+  const [authAction, setAuthAction] = useState<'cancel_sale' | 'remove_banner' | 'switch_user' | null>(null);
+  const [pendingSwitchUser, setPendingSwitchUser] = useState<User | null>(null);
   const [passwordInput, setPasswordInput] = useState('');
   const [verifyingPassword, setVerifyingPassword] = useState(false);
   const [authError, setAuthError] = useState(false);
@@ -422,19 +436,66 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     setAuthError(false);
   };
 
+  // Troca inteligente de operador/usuário com regras de segurança de Administrador
+  const handleRequestSwitchUser = (targetUser: User) => {
+    if (!targetUser) return;
+    if (targetUser.id === currentUser?.id) return;
+
+    // 1. Se o usuário atual for Administrador e estiver selecionando um vendedor ou colaborador:
+    // O sistema loga direto na conta dele!
+    if (currentUser?.role === 'admin' && targetUser.role !== 'admin') {
+      if (onSwitchProfile) {
+        onSwitchProfile(targetUser);
+      }
+      setSelectedSellerId(targetUser.id);
+      return;
+    }
+
+    // 2. Se o usuário atual for vendedor ou colaborador e tentar trocar para o login do adm ou outro:
+    // Pede a senha do administrador para confirmar a mudança!
+    setPendingSwitchUser(targetUser);
+    setAuthAction('switch_user');
+    setPasswordInput('');
+    setAuthError(false);
+    setIsAuthModalOpen(true);
+  };
+
   const confirmAuth = async () => {
     if (!passwordInput || !tenantId) return;
     
     // Se for cancelamento de venda, precisa ter a venda selecionada
     if (authAction === 'cancel_sale' && !selectedSaleToCancel) return;
+    if (authAction === 'switch_user' && !pendingSwitchUser) return;
 
     setVerifyingPassword(true);
     setAuthError(false);
 
     try {
+      let isAuthorized = false;
       const authResult = await OnlineDB.verifyAdminPassword(tenantId, passwordInput);
       if (authResult.success) {
-        if (authAction === 'cancel_sale' && selectedSaleToCancel) {
+        isAuthorized = true;
+      } else {
+        // Fallback local caso offline ou cadastrado em settings
+        const adminUser = settings?.users?.find(u => u.role === 'admin');
+        if (adminUser?.password && adminUser.password === passwordInput) {
+          isAuthorized = true;
+        } else if ((settings as any)?.adminPassword && (settings as any).adminPassword === passwordInput) {
+          isAuthorized = true;
+        }
+      }
+
+      if (isAuthorized) {
+        if (authAction === 'switch_user' && pendingSwitchUser) {
+          if (onSwitchProfile) {
+            onSwitchProfile(pendingSwitchUser);
+          }
+          setSelectedSellerId(pendingSwitchUser.id);
+          setIsAuthModalOpen(false);
+          setPendingSwitchUser(null);
+          setAuthAction(null);
+          setPasswordInput('');
+        } else if (authAction === 'cancel_sale' && selectedSaleToCancel) {
           setIsCancelling(selectedSaleToCancel.id);
           setIsAuthModalOpen(false);
           try {
@@ -458,7 +519,8 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
         setTimeout(() => setAuthError(false), 2000);
       }
     } catch (err) {
-      alert("Falha de rede ao verificar autorização.");
+      setAuthError(true);
+      setTimeout(() => setAuthError(false), 2000);
     } finally {
       setVerifyingPassword(false);
     }
@@ -1125,6 +1187,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
               terminalName={terminalName}
               totalActiveTerminals={totalActiveTerminals}
               onOpenTerminalsModal={() => setIsTerminalsModalOpen(true)}
+              onSwitchUserRequest={handleRequestSwitchUser}
             />
 
             {/* GRID PRINCIPAL DO PDV DE MERCADO (DESKTOP) */}
@@ -1748,38 +1811,71 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
         </div>
       )}
 
-      {/* MODAL DE AUTENTICAÇÃO PARA CANCELAMENTO */}
+      {/* MODAL DE AUTENTICAÇÃO PARA CANCELAMENTO OU TROCA DE USUÁRIO */}
       {isAuthModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/90 z-[200] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
-           <div className="bg-white w-full max-w-xs rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-100">
-              <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-inner">
-                 <Lock size={24} />
+        <div className="fixed inset-0 bg-slate-950/90 z-[10002] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
+           <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-inner ${
+                authAction === 'switch_user' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'
+              }`}>
+                 {authAction === 'switch_user' ? <ShieldCheck size={24} /> : <Lock size={24} />}
               </div>
-              <h3 className="text-center font-black text-slate-800 uppercase text-xs mb-1">Autorização Requerida</h3>
-              <p className="text-center text-[8px] text-slate-400 font-bold uppercase tracking-widest mb-6 leading-tight">
-                {authAction === 'cancel_sale' ? 'Insira a senha do administrador para cancelar esta venda' : 'Insira a senha do administrador para remover o banner'}
+              <h3 className="text-center font-black text-slate-800 uppercase text-xs mb-1">
+                {authAction === 'switch_user' ? 'Autorização de Operador' : 'Autorização Requerida'}
+              </h3>
+              <p className="text-center text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-5 leading-relaxed">
+                {authAction === 'switch_user' 
+                  ? `Insira a senha do administrador para trocar o login de ${currentUser?.name || 'Colaborador'} para ${pendingSwitchUser?.name || 'novo usuário'}`
+                  : authAction === 'cancel_sale' 
+                    ? 'Insira a senha do administrador para cancelar esta venda' 
+                    : 'Insira a senha do administrador para remover o banner'}
               </p>
               
-              <div className={`flex items-center gap-2 bg-slate-50 border rounded-xl px-4 py-3 mb-3 transition-all ${authError ? 'border-red-500 bg-red-50 ring-2 ring-red-100' : 'border-slate-100 focus-within:border-blue-500'}`}>
-                 <KeyRound size={16} className={authError ? 'text-red-500' : 'text-slate-300'} />
+              <div className={`flex items-center gap-2 bg-slate-50 border rounded-xl px-4 py-3 mb-3 transition-all ${authError ? 'border-red-500 bg-red-50 ring-2 ring-red-100' : 'border-slate-200 focus-within:border-blue-500'}`}>
+                 <KeyRound size={16} className={authError ? 'text-red-500' : 'text-slate-400'} />
                  <input 
                    type="password" 
                    autoFocus
                    value={passwordInput}
                    onChange={(e) => setPasswordInput(e.target.value)}
                    onKeyDown={(e) => e.key === 'Enter' && confirmAuth()}
-                   placeholder="SENHA DO ADM"
-                   className="bg-transparent w-full outline-none font-black text-[10px] uppercase placeholder:text-slate-200"
+                   placeholder="SENHA DO ADMINISTRADOR"
+                   className="bg-transparent w-full outline-none font-black text-[11px] uppercase placeholder:text-slate-300"
                  />
               </div>
               
-              {authError && <p className="text-center text-[8px] font-black text-red-500 uppercase mb-3 animate-bounce">Senha Incorreta!</p>}
+              {authError && <p className="text-center text-[9px] font-black text-red-500 uppercase mb-3 animate-bounce">Senha do Administrador Incorreta!</p>}
 
-              <div className="flex flex-col gap-1.5">
-                 <button onClick={confirmAuth} disabled={verifyingPassword} className="w-full py-3 bg-red-600 text-white rounded-lg font-black uppercase text-[9px] tracking-widest shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
-                   {verifyingPassword ? <Loader2 size={16} className="animate-spin" /> : authAction === 'cancel_sale' ? 'AUTORIZAR CANCELAMENTO' : 'AUTORIZAR REMOÇÃO'}
+              <div className="flex flex-col gap-2">
+                 <button 
+                   onClick={confirmAuth} 
+                   disabled={verifyingPassword || !passwordInput.trim()} 
+                   className={`w-full py-3 text-white rounded-xl font-black uppercase text-[10px] tracking-wider shadow-lg active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 cursor-pointer ${
+                     authAction === 'switch_user' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20' : 'bg-red-600 hover:bg-red-500 shadow-red-500/20'
+                   }`}
+                 >
+                   {verifyingPassword ? (
+                     <Loader2 size={16} className="animate-spin" />
+                   ) : authAction === 'switch_user' ? (
+                     'CONFIRMAR TROCA DE USUÁRIO'
+                   ) : authAction === 'cancel_sale' ? (
+                     'AUTORIZAR CANCELAMENTO'
+                   ) : (
+                     'AUTORIZAR REMOÇÃO'
+                   )}
                  </button>
-                 <button onClick={() => { setIsAuthModalOpen(false); setPasswordInput(''); setSelectedSaleToCancel(null); setAuthAction(null); }} className="w-full py-2 text-slate-400 font-black uppercase text-[8px] tracking-widest">VOLTAR</button>
+                 <button 
+                   onClick={() => { 
+                     setIsAuthModalOpen(false); 
+                     setPasswordInput(''); 
+                     setSelectedSaleToCancel(null); 
+                     setPendingSwitchUser(null);
+                     setAuthAction(null); 
+                   }} 
+                   className="w-full py-2 text-slate-400 hover:text-slate-600 font-black uppercase text-[9px] tracking-wider transition-colors cursor-pointer"
+                 >
+                   CANCELAR
+                 </button>
               </div>
            </div>
         </div>

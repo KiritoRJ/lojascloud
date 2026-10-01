@@ -197,6 +197,22 @@ const App: React.FC = () => {
   const [isAiGloballyDisabled, setIsAiGloballyDisabled] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    const handleCustomFs = (e: any) => {
+      setIsFullscreen(!!e.detail);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    window.addEventListener('pos-fullscreen-change' as any, handleCustomFs);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      window.removeEventListener('pos-fullscreen-change' as any, handleCustomFs);
+    };
+  }, []);
 
   const currentUser = useMemo(() => {
     if (!settings?.users) return session?.user || null;
@@ -1805,7 +1821,7 @@ const App: React.FC = () => {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      <aside className={`hidden md:flex flex-col ${isSidebarCollapsed ? 'w-0 p-0 border-none opacity-0 pointer-events-none overflow-hidden' : 'w-72 p-6 opacity-100 overflow-y-auto'} bg-slate-900 text-white h-[100dvh] sticky top-0 transition-all duration-300 ease-in-out hide-scrollbar [&::-webkit-scrollbar]:hidden`}>
+      <aside className={`${isFullscreen ? 'hidden' : 'hidden md:flex'} flex-col ${isSidebarCollapsed ? 'w-0 p-0 border-none opacity-0 pointer-events-none overflow-hidden' : 'w-72 p-6 opacity-100 overflow-y-auto'} bg-slate-900 text-white h-[100dvh] sticky top-0 transition-all duration-300 ease-in-out hide-scrollbar [&::-webkit-scrollbar]:hidden`}>
         <div className="flex items-center justify-between mb-12 min-w-[240px]">
           <div className="flex items-center gap-4 overflow-hidden animate-in fade-in">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shrink-0">
@@ -1894,7 +1910,7 @@ const App: React.FC = () => {
 
       <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden relative">
         {/* Barra superior permanente de modo Super Administrador */}
-        {session?.impersonatedBySuper && (
+        {session?.impersonatedBySuper && !isFullscreen && (
           <div className="w-full bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 text-white px-3 sm:px-5 py-2.5 shadow-lg flex items-center justify-between shrink-0 z-30 border-b border-purple-500/40 animate-in slide-in-from-top">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <span className="flex h-2.5 w-2.5 relative shrink-0">
@@ -1925,141 +1941,160 @@ const App: React.FC = () => {
         )}
 
         {/* Mobile Top Header */}
-        <div className="md:hidden flex items-center justify-between bg-white border-b border-slate-100 px-3 py-2 shrink-0 z-20 shadow-sm gap-2">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <button
-              id="tour-mobile-header-menu"
-              type="button"
-              onClick={() => setIsSidebarOpen(true)}
-              className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all overflow-hidden border-2 border-white ring-2 ring-blue-500/30 cursor-pointer shrink-0"
-              title="Toque na foto para abrir o menu lateral"
-            >
-              {settings.logoUrl ? (
-                <img src={settings.logoUrl} className="w-full h-full object-cover rounded-lg" alt={settings.storeName} />
-              ) : (
-                <Smartphone size={18} />
+        {!isFullscreen && (
+          <div className="md:hidden flex items-center justify-between bg-white border-b border-slate-100 px-3 py-2 shrink-0 z-20 shadow-sm gap-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <button
+                id="tour-mobile-header-menu"
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all overflow-hidden border-2 border-white ring-2 ring-blue-500/30 cursor-pointer shrink-0"
+                title="Toque na foto para abrir o menu lateral"
+              >
+                {settings.logoUrl ? (
+                  <img src={settings.logoUrl} className="w-full h-full object-cover rounded-lg" alt={settings.storeName} />
+                ) : (
+                  <Smartphone size={18} />
+                )}
+              </button>
+              <div 
+                onClick={() => setIsSidebarOpen(true)} 
+                className="cursor-pointer flex flex-col justify-center select-none min-w-0"
+              >
+                <span className="font-black text-xs uppercase tracking-tight text-slate-900 truncate max-w-[140px] leading-tight">
+                  {settings.storeName}
+                </span>
+                <span className="text-[9px] font-bold text-blue-600 tracking-wider flex items-center gap-0.5 leading-tight mt-0.5">
+                  Abrir Menu ▾
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {session?.impersonatedBySuper && (
+                <button
+                  type="button"
+                  onClick={returnToSuperAdmin}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-sm cursor-pointer border border-purple-400/40"
+                  title="Voltar ao Painel Super ADM"
+                >
+                  <ArrowLeft size={11} />
+                  <span>Super ADM</span>
+                </button>
               )}
-            </button>
-            <div 
-              onClick={() => setIsSidebarOpen(true)} 
-              className="cursor-pointer flex flex-col justify-center select-none min-w-0"
-            >
-              <span className="font-black text-xs uppercase tracking-tight text-slate-900 truncate max-w-[140px] leading-tight">
-                {settings.storeName}
-              </span>
-              <span className="text-[9px] font-bold text-blue-600 tracking-wider flex items-center gap-0.5 leading-tight mt-0.5">
-                Abrir Menu ▾
-              </span>
+              <button
+                id="tour-mobile-install-btn"
+                type="button"
+                onClick={() => setIsInstallModalOpen(true)}
+                className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
+                title="Instalar App no celular"
+              >
+                <Download size={10} />
+                <span>Instalar</span>
+              </button>
+              {session?.subscriptionStatus === 'trial' && (
+                <button
+                  type="button"
+                  onClick={() => setIsSubscriptionModalOpen(true)}
+                  className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border border-amber-300 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer flex items-center gap-1"
+                  title="Plano de Teste - Clique para assinar"
+                >
+                  <Sparkles size={10} className="text-amber-600 animate-pulse" />
+                  <span>Assinar</span>
+                </button>
+              )}
+              <ConnectionStatusTag />
             </div>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {session?.impersonatedBySuper && (
-              <button
-                type="button"
-                onClick={returnToSuperAdmin}
-                className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-sm cursor-pointer border border-purple-400/40"
-                title="Voltar ao Painel Super ADM"
-              >
-                <ArrowLeft size={11} />
-                <span>Super ADM</span>
-              </button>
-            )}
-            <button
-              id="tour-mobile-install-btn"
-              type="button"
-              onClick={() => setIsInstallModalOpen(true)}
-              className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
-              title="Instalar App no celular"
-            >
-              <Download size={10} />
-              <span>Instalar</span>
-            </button>
-            {session?.subscriptionStatus === 'trial' && (
-              <button
-                type="button"
-                onClick={() => setIsSubscriptionModalOpen(true)}
-                className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border border-amber-300 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer flex items-center gap-1"
-                title="Plano de Teste - Clique para assinar"
-              >
-                <Sparkles size={10} className="text-amber-600 animate-pulse" />
-                <span>Assinar</span>
-              </button>
-            )}
-            <ConnectionStatusTag />
-          </div>
-        </div>
+        )}
 
         {/* Desktop Top Header (Barra Superior de Status) */}
-        <div className="hidden md:flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 shrink-0 z-10">
-          <div className="flex items-center gap-3">
-            {isSidebarCollapsed && (
-              <button 
-                onClick={() => setIsSidebarCollapsed(false)}
-                className="w-9 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-xs"
-                title="Expandir menu lateral"
-              >
-                <Menu size={18} />
-              </button>
-            )}
-          </div>
+        {!isFullscreen && (
+          <div className="hidden md:flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 shrink-0 z-10">
+            <div className="flex items-center gap-3">
+              {isSidebarCollapsed && (
+                <button 
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  className="w-9 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-xs"
+                  title="Expandir menu lateral"
+                >
+                  <Menu size={18} />
+                </button>
+              )}
+            </div>
 
-          <div className="flex items-center gap-2.5">
-            <button
-              id="tour-header-install"
-              type="button"
-              onClick={() => setIsInstallModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-md shadow-blue-500/20 cursor-pointer"
-              title="Instalar o aplicativo no PC ou Celular"
-            >
-              <Download size={13} />
-              <span>Instalar App</span>
-            </button>
-
-            {session?.subscriptionStatus === 'trial' && (
+            <div className="flex items-center gap-2.5">
               <button
+                id="tour-header-install"
                 type="button"
-                onClick={() => setIsSubscriptionModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border border-amber-300 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
-                title="Sua loja está em plano de teste gratuito. Clique para assinar."
+                onClick={() => setIsInstallModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-md shadow-blue-500/20 cursor-pointer"
+                title="Instalar o aplicativo no PC ou Celular"
               >
-                <Sparkles size={12} className="text-amber-600 animate-pulse" />
-                <span>Plano de Teste</span>
-                <span className="text-[9px] bg-amber-600 text-white px-1.5 py-0.5 rounded font-black">Assinar</span>
+                <Download size={13} />
+                <span>Instalar App</span>
               </button>
-            )}
-            <ConnectionStatusTag />
+
+              {session?.subscriptionStatus === 'trial' && (
+                <button
+                  type="button"
+                  onClick={() => setIsSubscriptionModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border border-amber-300 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
+                  title="Sua loja está em plano de teste gratuito. Clique para assinar."
+                >
+                  <Sparkles size={12} className="text-amber-600 animate-pulse" />
+                  <span>Plano de Teste</span>
+                  <span className="text-[9px] bg-amber-600 text-white px-1.5 py-0.5 rounded font-black">Assinar</span>
+                </button>
+              )}
+              <ConnectionStatusTag />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Banner de Plano de Teste (Trial) com Botão para Assinar */}
-        <TrialBanner 
-          subscriptionStatus={session?.subscriptionStatus}
-          subscriptionExpiresAt={session?.subscriptionExpiresAt}
-          onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
-        />
+        {!isFullscreen && (
+          <TrialBanner 
+            subscriptionStatus={session?.subscriptionStatus}
+            subscriptionExpiresAt={session?.subscriptionExpiresAt}
+            onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
+          />
+        )}
 
         {/* Alerta de Banco SQL Offline / Modo Offline */}
-        <DatabaseOfflineBanner 
-          tenantId={session?.tenantId} 
-          onRefreshData={() => session?.tenantId && loadData(session.tenantId)} 
-        />
+        {!isFullscreen && (
+          <DatabaseOfflineBanner 
+            tenantId={session?.tenantId} 
+            onRefreshData={() => session?.tenantId && loadData(session.tenantId)} 
+          />
+        )}
 
         {/* Alça Lateral Ergonômica para Celulares com Borda Infinita / Gestos */}
-        <div 
-          onClick={() => setIsSidebarOpen(true)}
-          onTouchStart={(e) => {
-            e.stopPropagation();
-            setIsSidebarOpen(true);
-          }}
-          className="md:hidden fixed left-0 top-1/2 -translate-y-1/2 z-30 cursor-pointer group select-none py-2 pr-2"
-          title="Deslize ou toque para abrir o menu"
-        >
-          <div className="w-2.5 h-16 bg-blue-600/70 hover:bg-blue-600 active:bg-blue-700 rounded-r-xl shadow-md shadow-blue-600/30 flex items-center justify-center transition-all">
-            <div className="w-0.5 h-6 bg-white/90 rounded-full"></div>
+        {!isFullscreen && (
+          <div 
+            onClick={() => setIsSidebarOpen(true)}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              setIsSidebarOpen(true);
+            }}
+            className="md:hidden fixed left-0 top-1/2 -translate-y-1/2 z-30 cursor-pointer group select-none py-2 pr-2"
+            title="Deslize ou toque para abrir o menu"
+          >
+            <div className="w-2.5 h-16 bg-blue-600/70 hover:bg-blue-600 active:bg-blue-700 rounded-r-xl shadow-md shadow-blue-600/30 flex items-center justify-center transition-all">
+              <div className="w-0.5 h-6 bg-white/90 rounded-full"></div>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div id="app-main-scroll-container" className={`flex-1 overflow-y-auto p-4 pt-4 pb-6 md:pt-6 md:pb-4 max-w-none mx-auto w-full animate-in fade-in duration-700 hide-scrollbar [&::-webkit-scrollbar]:hidden ${isSidebarCollapsed ? 'md:pl-6' : 'md:pl-6'}`}>
+        <div 
+          id="app-main-scroll-container" 
+          className={`flex-1 max-w-none mx-auto w-full animate-in fade-in duration-700 hide-scrollbar [&::-webkit-scrollbar]:hidden ${
+            isFullscreen
+              ? 'p-0 overflow-hidden w-full h-full flex flex-col min-h-0'
+              : activeTab === 'vendas'
+              ? 'overflow-y-auto p-3 pb-28 lg:overflow-hidden lg:p-2 lg:h-full lg:flex lg:flex-col lg:min-h-0'
+              : `overflow-y-auto p-4 pt-4 pb-6 md:pt-6 md:pb-4 ${isSidebarCollapsed ? 'md:pl-6' : 'md:pl-6'}`
+          }`}
+        >
           {activeTab === 'os' && (
             <ServiceOrderTab 
               orders={orders} 

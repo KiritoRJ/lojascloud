@@ -372,6 +372,19 @@ export interface Sale {
   fiscalProtocol?: string;
   fiscalQrCodeUrl?: string;
   fiscalIssuedAt?: string;
+  terminalNumber?: number;
+  terminalName?: string;
+}
+
+export interface PosTerminalInfo {
+  terminalNumber: number;
+  terminalName: string;
+  operatorName: string;
+  operatorRole?: string;
+  isCurrent: boolean;
+  deviceInfo?: string;
+  lastSeen: number;
+  isOnline: boolean;
 }
 
 export interface Transaction {
@@ -733,6 +746,8 @@ export interface NfceNfeItem {
     registeredAt: string;
     protocol: string;
   }>;
+  terminalNumber?: number;
+  terminalName?: string;
 }
 
 export interface NfceNfeConfig {

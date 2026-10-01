@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer, LayoutGrid, Grid, List, Rows, CreditCard, Camera, Image as ImageIcon, AlertTriangle, Sparkles, TrendingUp, ShieldAlert, MessageCircle, FileText, Send, QrCode, User as UserIcon } from 'lucide-react';
+import { ShoppingBag, Search, X, History, ShoppingCart, Package, ArrowLeft, CheckCircle2, Eye, Loader2, Plus, Minus, Trash2, ChevronUp, ChevronDown, Receipt, Share2, Download, ScanBarcode, Lock, KeyRound, Printer, LayoutGrid, Grid, List, Rows, CreditCard, Camera, Image as ImageIcon, AlertTriangle, Sparkles, TrendingUp, ShieldAlert, MessageCircle, FileText, Send, QrCode, User as UserIcon, Banknote, Zap, RotateCcw, Tag } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { Product, Sale, AppSettings, User, NfceNfeItem, NfceNfeProductItem } from '../types';
@@ -10,6 +10,12 @@ import { FiscalEmissionService } from '../utils/fiscalEmissionService';
 import { formatCurrency, parseCurrencyString, formatDate, formatDateTime, playBeepSound, generateRandomNumericCode, getProductEffectivePrice } from '../utils';
 import { OnlineDB } from '../utils/api';
 import { Html5Qrcode } from 'html5-qrcode';
+import { PosHeader } from './pos/PosHeader';
+import { PosTicket } from './pos/PosTicket';
+import { PosScannerCatalog } from './pos/PosScannerCatalog';
+import { PosCheckoutModal } from './pos/PosCheckoutModal';
+import { PosTerminalsModal } from './pos/PosTerminalsModal';
+import { usePosTerminals } from '../utils/usePosTerminals';
 
 interface Props {
   products: Product[];
@@ -65,6 +71,18 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [selectedSaleToCancel, setSelectedSaleToCancel] = useState<Sale | null>(null);
 
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [posTheme, setPosTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('pos_theme') as 'dark' | 'light') || 'dark';
+  });
+
+  const togglePosTheme = () => {
+    setPosTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('pos_theme', next);
+      return next;
+    });
+  };
+
   const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showPrintConfirmModal, setShowPrintConfirmModal] = useState(false);
@@ -82,6 +100,54 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
   const isSubmittingSaleRef = useRef(false);
   const bannerInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Sincroniza estado com a API de Tela Cheia do Navegador
+  useEffect(() => {
+    const handleFsChange = () => {
+      const isFs = !!document.fullscreenElement;
+      setIsFullscreen(isFs);
+      window.dispatchEvent(new CustomEvent('pos-fullscreen-change', { detail: isFs }));
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  // Trava scroll da página ao entrar em tela cheia para nunca haver rolagem externa
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    window.dispatchEvent(new CustomEvent('pos-fullscreen-change', { detail: isFullscreen }));
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen]);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement && !isFullscreen) {
+      if (document.documentElement?.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+      setIsFullscreen(true);
+    } else {
+      if (document.exitFullscreen && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setIsFullscreen(false);
+    }
+  };
+
+  // Relógio digital em tempo real estilo Frente de Caixa
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Vendedores e Colaboradores da Equipe
   const [teamEmployees, setTeamEmployees] = useState<any[]>([]);
@@ -102,6 +168,24 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       }).catch(() => {});
     }
   }, [tenantId]);
+
+  // Identificação e Gerenciamento Inteligente de Terminais (PDVs em Rede do Mercado)
+  const resolvedOperator = useMemo(() => {
+    return teamEmployees.find((e: any) => e.id === selectedSellerId || e.userId === selectedSellerId) ||
+      (selectedSellerId === currentUser?.id ? currentUser : null) || currentUser;
+  }, [teamEmployees, selectedSellerId, currentUser]);
+
+  const {
+    terminalNumber,
+    terminalName,
+    totalActiveTerminals,
+    activeTerminals,
+    configuredTerminalNumber,
+    setConfiguredTerminalNumber,
+    isTerminalsModalOpen,
+    setIsTerminalsModalOpen,
+    refreshTerminals
+  } = usePosTerminals(tenantId, resolvedOperator);
 
   // Recupera carrinho do PDV caso o app seja minimizado ou recarregado no celular
   useEffect(() => {
@@ -560,7 +644,9 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           change: change,
           sellerName: resolvedSellerName,
           sellerId: resolvedSellerId,
-          transactionId
+          transactionId,
+          terminalNumber,
+          terminalName
         };
 
         // Calcula comissão em background
@@ -640,7 +726,11 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           }, { timeoutMs: 15000 });
 
           if (result.noteItem) {
-            autoNote = result.noteItem;
+            autoNote = {
+              ...result.noteItem,
+              terminalNumber,
+              terminalName
+            };
             if (settings.nfceNfeConfig) {
               onUpdateSettings({
                 ...settings,
@@ -658,6 +748,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
       setEmittedFiscalNote(autoNote);
 
       setCart([]);
+      setLastAddedProduct(null);
       setTotalDiscount(0);
       setTotalSurcharge(0);
       setPaymentEntries([{ method: 'Dinheiro', amount: 0 }]);
@@ -754,27 +845,163 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
     }, 500);
   };
 
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    products.forEach(p => {
+      if (p.category && p.category.trim()) cats.add(p.category.trim());
+    });
+    return ['Todos', 'Mais Vendidos', ...Array.from(cats)];
+  }, [products]);
+
   const { sortedProducts, topSellers } = useMemo(() => {
     const salesCount: Record<string, number> = {};
     sales.forEach(sale => {
       salesCount[sale.productId] = (salesCount[sale.productId] || 0) + sale.quantity;
     });
 
-    const filtered = products.filter(p => 
-      p.quantity > 0 && 
-      (p.name.toLowerCase().includes(productSearch.toLowerCase()) || (p.barcode && p.barcode.includes(productSearch)))
-    );
+    let filtered = products.filter(p => p.quantity > 0);
+
+    if (selectedCategory === 'Mais Vendidos') {
+      filtered = filtered.filter(p => (salesCount[p.id] || 0) > 0);
+    } else if (selectedCategory !== 'Todos') {
+      filtered = filtered.filter(p => p.category?.toLowerCase() === selectedCategory.toLowerCase());
+    }
+
+    if (productSearch.trim()) {
+      const q = productSearch.toLowerCase().trim();
+      filtered = filtered.filter(p => 
+        p.name.toLowerCase().includes(q) || 
+        (p.barcode && p.barcode.includes(q)) ||
+        (p.id && p.id.toLowerCase().includes(q))
+      );
+    }
 
     const sorted = [...filtered].sort((a, b) => (salesCount[b.id] || 0) - (salesCount[a.id] || 0));
     
-    // Identifica os IDs dos top 3 mais vendidos (que tenham pelo menos 1 venda)
+    // Identifica os IDs dos top 3 mais vendidos
     const topIds = sorted
       .filter(p => (salesCount[p.id] || 0) > 0)
       .slice(0, 3)
       .map(p => p.id);
 
     return { sortedProducts: sorted, topSellers: topIds };
-  }, [products, sales, productSearch]);
+  }, [products, sales, productSearch, selectedCategory]);
+
+  const totalVolumes = useMemo(() => {
+    return cart.reduce((acc, item) => acc + item.quantity, 0);
+  }, [cart]);
+
+  const formattedPosDate = useMemo(() => {
+    const days = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+    const dayName = days[currentTime.getDay()];
+    const dateStr = currentTime.toLocaleDateString('pt-BR');
+    const timeStr = currentTime.toLocaleTimeString('pt-BR');
+    return `${dayName} · ${dateStr} · ${timeStr}`;
+  }, [currentTime]);
+
+  const quickCashValues = useMemo(() => {
+    if (finalTotal <= 0) return [];
+    const vals = [Math.ceil(finalTotal)];
+    [10, 20, 50, 100, 200].forEach(note => {
+      if (note >= finalTotal && !vals.includes(note)) vals.push(note);
+    });
+    const round10 = Math.ceil(finalTotal / 10) * 10;
+    if (round10 > finalTotal && !vals.includes(round10)) vals.push(round10);
+    const round50 = Math.ceil(finalTotal / 50) * 50;
+    if (round50 > finalTotal && !vals.includes(round50)) vals.push(round50);
+    return vals.sort((a, b) => a - b).slice(0, 5);
+  }, [finalTotal]);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const query = productSearch.trim();
+      if (!query) {
+        if (cart.length > 0 && !showCheckoutModal) {
+          setPaymentEntries([{ method: 'Dinheiro', amount: finalTotal }]);
+          setShowCheckoutModal(true);
+        }
+        return;
+      }
+      
+      // 1. Tenta match exato por código de barras
+      const matchBarcode = products.find(p => p.barcode && p.barcode.trim() === query);
+      if (matchBarcode) {
+        if (matchBarcode.quantity > 0) {
+          playBeepSound();
+          addToCart(matchBarcode);
+          setProductSearch('');
+        } else {
+          alert(`Produto "${matchBarcode.name}" está sem estoque.`);
+        }
+        return;
+      }
+
+      // 2. Tenta match exato por nome
+      const matchName = products.find(p => p.name.toLowerCase() === query.toLowerCase());
+      if (matchName) {
+        if (matchName.quantity > 0) {
+          playBeepSound();
+          addToCart(matchName);
+          setProductSearch('');
+        } else {
+          alert(`Produto "${matchName.name}" está sem estoque.`);
+        }
+        return;
+      }
+
+      // 3. Se a busca filtrou exatamente 1 produto
+      if (sortedProducts.length === 1) {
+        const single = sortedProducts[0];
+        if (single.quantity > 0) {
+          playBeepSound();
+          addToCart(single);
+          setProductSearch('');
+        }
+      }
+    }
+  };
+
+  // Atalhos de Teclado Globais de Frente de Caixa (F2, F4, F7, F10, Esc)
+  useEffect(() => {
+    const handleGlobalKeys = (e: KeyboardEvent) => {
+      if (isAuthModalOpen) return;
+
+      if (e.key === 'F2') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      } else if (e.key === 'F4') {
+        e.preventDefault();
+        if (cart.length > 0) {
+          if (window.confirm('Deseja realmente cancelar este cupom e limpar todos os itens?')) {
+            setCart([]);
+            setLastAddedProduct(null);
+          }
+        }
+      } else if (e.key === 'F7') {
+        e.preventDefault();
+        setShowHistory(prev => !prev);
+      } else if (e.key === 'F10') {
+        e.preventDefault();
+        if (cart.length > 0 && !showCheckoutModal) {
+          setPaymentEntries([{ method: 'Dinheiro', amount: finalTotal }]);
+          setShowCheckoutModal(true);
+        }
+      } else if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+      } else if (e.key === 'Escape') {
+        if (showCheckoutModal) setShowCheckoutModal(false);
+        if (showHistory) setShowHistory(false);
+        if (isScannerOpen) stopScanner();
+        if (isFullscreen) toggleFullscreen();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeys);
+    return () => window.removeEventListener('keydown', handleGlobalKeys);
+  }, [cart, finalTotal, showCheckoutModal, showHistory, isScannerOpen, isAuthModalOpen]);
 
   const sortedSales = useMemo(() => {
     let filtered = [...sales];
@@ -797,9 +1024,13 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
   };
 
   return (
-    <div className="space-y-4 pb-32">
+    <div className={`w-full min-h-0 ${
+      isFullscreen 
+        ? `${posTheme === 'dark' ? 'bg-slate-950' : 'bg-slate-100'} fixed inset-0 z-[9990] p-2 sm:p-3 w-screen h-[100dvh] flex flex-col overflow-hidden select-none` 
+        : 'flex-1 min-h-0 h-full flex flex-col overflow-hidden pb-28 lg:pb-0'
+    }`}>
       {showHistory ? (
-        <div className="space-y-4 animate-in fade-in slide-in-from-right duration-300">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4 p-2 custom-scrollbar animate-in fade-in slide-in-from-right duration-300">
            <div className="flex items-center gap-3">
             <button onClick={() => setShowHistory(false)} className="p-2 bg-slate-100 rounded-full"><ArrowLeft size={20} /></button>
             <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Histórico de Vendas</h2>
@@ -852,364 +1083,136 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           </div>
         </div>
       ) : (
-        <div className="h-full">
-          {/* --- LAYOUT DESKTOP --- */}
-          <div className="hidden lg:flex flex-col gap-3 h-full">
-            {/* Top Banner Area (Desktop) */}
-            <div className="flex items-center justify-between bg-white rounded-xl p-3 border-b border-slate-100 shadow-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center shadow-sm">
-                  <ShoppingCart size={16} />
-                </div>
-                <h2 className="text-base font-black text-slate-800 uppercase tracking-tighter">VENDAS</h2>
-              </div>
-              
-              <div className="flex-1 flex items-center justify-center">
-                <div 
-                  onClick={() => currentUser?.role === 'admin' && bannerInputRef.current?.click()}
-                  className={`relative group ${currentUser?.role === 'admin' ? 'cursor-pointer' : ''} max-w-[400px] w-full h-12 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center overflow-hidden hover:border-blue-400 transition-all`}
-                >
-                  {isCompressingBanner ? (
-                    <Loader2 className="animate-spin text-blue-500" size={20} />
-                  ) : settings.salesBannerUrl ? (
-                    <>
-                      <img src={settings.salesBannerUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-                      {currentUser?.role === 'admin' && (
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-all">
-                          <Camera size={16} className="text-white" />
-                          <button 
-                            onClick={(e) => { 
-                              e.preventDefault();
-                              e.stopPropagation(); 
-                              initiateRemoveBanner(); 
-                            }}
-                            className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shadow-lg pointer-events-auto"
-                            title="Remover Banner"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-2 text-slate-300">
-                      <ImageIcon size={16} />
-                      <h1 className="text-[10px] font-black uppercase tracking-[0.2em]">
-                        {currentUser?.role === 'admin' ? 'ANEXAR LOGO / BANNER' : 'LOGO BANNER'}
-                      </h1>
-                    </div>
-                  )}
-                  <input 
-                    type="file" 
-                    ref={bannerInputRef} 
-                    onChange={handleBannerUpload} 
-                    accept="image/*" 
-                    className="hidden" 
-                  />
-                </div>
-              </div>
+        <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden">
+          {/* --- LAYOUT DESKTOP (AJUSTADO À TELA VISÍVEL SEM SCROLL / TELA CHEIA) --- */}
+          <div className="hidden lg:flex flex-col gap-2.5 h-full min-h-0 overflow-hidden w-full">
+            <PosHeader
+              cartLength={cart.length}
+              totalVolumes={totalVolumes}
+              formattedPosDate={formattedPosDate}
+              currentUser={currentUser}
+              selectedSellerId={selectedSellerId}
+              setSelectedSellerId={setSelectedSellerId}
+              teamEmployees={teamEmployees}
+              settings={settings}
+              isFiscalModeActive={isFiscalModeActive}
+              onOpenHistory={() => setShowHistory(true)}
+              isCompressingBanner={isCompressingBanner}
+              bannerInputRef={bannerInputRef}
+              onBannerUpload={handleBannerUpload}
+              onInitiateRemoveBanner={initiateRemoveBanner}
+              onFocusSearch={() => {
+                searchInputRef.current?.focus();
+                searchInputRef.current?.select();
+              }}
+              onClearCart={() => {
+                if (cart.length > 0 && window.confirm('Deseja realmente cancelar este cupom e limpar todos os itens?')) {
+                  setCart([]);
+                  setLastAddedProduct(null);
+                }
+              }}
+              onOpenCheckout={() => {
+                if (cart.length > 0) {
+                  setPaymentEntries([{ method: 'Dinheiro', amount: finalTotal }]);
+                  setShowCheckoutModal(true);
+                }
+              }}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={toggleFullscreen}
+              theme={posTheme}
+              onToggleTheme={togglePosTheme}
+              terminalNumber={terminalNumber}
+              terminalName={terminalName}
+              totalActiveTerminals={totalActiveTerminals}
+              onOpenTerminalsModal={() => setIsTerminalsModalOpen(true)}
+            />
 
-              <button onClick={() => setShowHistory(true)} className="p-2.5 text-slate-400 bg-white border border-slate-100 rounded-lg active:scale-90 transition-all shadow-sm hover:text-slate-600">
-                <History size={18} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-12 gap-3 flex-1 min-h-0">
-              {/* Coluna Esquerda: Lista de Produtos */}
-              <div className="col-span-4 flex flex-col gap-2.5 min-h-0">
-                {/* Layout Toggle for Desktop */}
-                <div className="flex items-center justify-end">
-                  <button onClick={toggleLayout} className="p-2 bg-white text-slate-400 hover:text-slate-600 transition-colors rounded-lg shadow-sm active:scale-95 border border-slate-100 flex items-center gap-2 text-[8px] font-black uppercase tracking-widest">
-                     {layoutMode === 'small' ? <Grid size={14} /> : layoutMode === 'medium' ? <LayoutGrid size={14} /> : <Rows size={14} />}
-                     Visualização
-                  </button>
-                </div>
-
-                {/* --- GRID DE VENDAS --- */}
-                <div className={`grid gap-2 overflow-y-auto custom-scrollbar pr-1 flex-1 ${
-                  layoutMode === 'small' ? 'grid-cols-2 lg:grid-cols-2 xl:grid-cols-3' :
-                  layoutMode === 'medium' ? 'lg:grid-cols-1 xl:grid-cols-2' :
-                  'grid-cols-1'
-                }`}>
-                  {sortedProducts.slice(0, 6).map(product => {
-                    const isTopSeller = topSellers.includes(product.id);
-                    return (
-                      <button 
-                        key={product.id} 
-                        onClick={() => addToCart(product)} 
-                        className={`bg-white border overflow-hidden shadow-sm text-left active:scale-95 transition-all flex group ${
-                          layoutMode === 'list' ? 'rounded-lg p-1.5 pr-2 border' : 'rounded-xl border-b'
-                        } ${
-                          isTopSeller ? 'border-emerald-400 bg-emerald-50/30' : 'border-slate-100'
-                        } ${layoutMode === 'list' ? 'flex-row items-center gap-2' : 'flex-col'}`}
-                      >
-                        {/* Imagem */}
-                        <div className={`bg-slate-50 relative overflow-hidden shrink-0 ${
-                          layoutMode === 'list' ? 'w-10 h-10 rounded-md ml-0.5' : 
-                          layoutMode === 'small' ? 'h-16' : 
-                          'h-24'
-                        }`}>
-                          {product.photo ? (
-                            <img src={product.photo} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-slate-200"><Package size={layoutMode === 'small' || layoutMode === 'list' ? 14 : 18} /></div>
-                          )}
-                          
-                          {isTopSeller && (
-                            <div className={`absolute top-1 left-1 bg-emerald-500 text-white font-black flex items-center justify-center shadow-lg uppercase tracking-tighter px-1 py-0.5 rounded-full text-[5px]`}>
-                              MAIS VENDIDO
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Conteúdo */}
-                        <div className={`${layoutMode === 'list' ? 'flex-1 flex items-center justify-between pr-1 min-w-0' : 'p-2'}`}>
-                          <div className="min-w-0 flex-1 mr-1">
-                            <h3 className={`font-black text-slate-800 uppercase truncate mb-0.5 ${layoutMode === 'small' ? 'text-[7px]' : 'text-[9px]'}`}>{product.name}</h3>
-                            <div className="flex items-center justify-between gap-1">
-                              {(() => {
-                                const effPrice = getProductEffectivePrice(product);
-                                const hasPromo = effPrice < product.salePrice;
-                                return (
-                                  <div className="flex items-center gap-1">
-                                    <p className="text-emerald-600 font-black text-[9px] sm:text-[10px] whitespace-nowrap">{formatCurrency(effPrice)}</p>
-                                    {hasPromo && (
-                                      <span className="text-[7px] text-slate-400 line-through">
-                                        {formatCurrency(product.salePrice)}
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                              <span className={`text-[6px] font-black uppercase px-1.5 py-0.5 rounded-md shrink-0 ${
-                                product.quantity <= 0 ? 'bg-red-500 text-white' : 
-                                product.quantity <= 2 ? 'bg-amber-500 text-white' : 
-                                'bg-slate-900 text-white'
-                              }`}>
-                                Estoque: {product.quantity}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          {layoutMode === 'list' && (
-                            <div className="flex items-center justify-center w-6 h-6 bg-emerald-500 text-white rounded-full shrink-0 shadow-lg group-hover:scale-110 transition-transform">
-                              <Plus size={12} />
-                            </div>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+            {/* GRID PRINCIPAL DO PDV DE MERCADO (DESKTOP) */}
+            <div className="grid grid-cols-12 gap-2.5 flex-1 min-h-0 overflow-hidden">
+              {/* Coluna Esquerda: A Bobina / Cupom Fiscal Eletrônico (5 Colunas) */}
+              <div className="col-span-5 h-full min-h-0 overflow-hidden">
+                <PosTicket
+                  cart={cart}
+                  cartTotal={cartTotal}
+                  totalDiscount={totalDiscount}
+                  totalSurcharge={totalSurcharge}
+                  finalTotal={finalTotal}
+                  cartCost={cartCost}
+                  cartProfit={cartProfit}
+                  profitMarginPercent={profitMarginPercent}
+                  isCartInLoss={isCartInLoss}
+                  crossSellSuggestions={crossSellSuggestions}
+                  totalVolumes={totalVolumes}
+                  storeName={settings.storeName}
+                  onUpdateQuantity={updateCartQuantity}
+                  onRemoveFromCart={removeFromCart}
+                  onClearCart={() => {
+                    if (cart.length > 0 && window.confirm('Deseja realmente cancelar este cupom e limpar todos os itens?')) {
+                      setCart([]);
+                      setLastAddedProduct(null);
+                    }
+                  }}
+                  onAddToCart={addToCart}
+                  onSelectProduct={(p) => setLastAddedProduct(p)}
+                  onOpenCheckout={() => {
+                    if (cart.length > 0) {
+                      setPaymentEntries([{ method: 'Dinheiro', amount: finalTotal }]);
+                      setShowCheckoutModal(true);
+                    }
+                  }}
+                  theme={posTheme}
+                  terminalNumber={terminalNumber}
+                  terminalName={terminalName}
+                />
               </div>
 
-              {/* Coluna Central: Banner/Display (Desktop) */}
-              <div className="flex col-span-4 flex-col gap-3 min-h-0">
-                <div className="flex-1 bg-white rounded-xl border border-slate-100 flex flex-col items-center justify-center p-6 text-center gap-6 relative overflow-hidden shadow-sm">
-                  <div className="absolute inset-0 bg-gradient-to-b from-slate-50 to-transparent opacity-50"></div>
-                  
-                  {lastAddedProduct ? (
-                    <div className="flex flex-col items-center gap-6 animate-in zoom-in-95 duration-300 relative z-10 w-full">
-                      <div className="w-full aspect-square bg-slate-50 rounded-2xl shadow-inner flex items-center justify-center overflow-hidden border border-slate-100 max-w-[240px]">
-                        {lastAddedProduct.photo ? (
-                          <img src={lastAddedProduct.photo} className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
-                        ) : (
-                          <Package size={100} className="text-slate-200" strokeWidth={0.5} />
-                        )}
-                      </div>
-                      <div className="space-y-1">
-                        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-tight">{lastAddedProduct.name}</h2>
-                        {(() => {
-                          const eff = getProductEffectivePrice(lastAddedProduct);
-                          return (
-                            <div className="flex items-center justify-center gap-2">
-                              <p className="text-xl font-black text-emerald-600">{formatCurrency(eff)}</p>
-                              {eff < lastAddedProduct.salePrice && (
-                                <span className="text-sm text-slate-400 line-through">
-                                  {formatCurrency(lastAddedProduct.salePrice)}
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-4 opacity-20 relative z-10">
-                      <Package size={100} strokeWidth={0.5} />
-                      <h2 className="text-xl font-black uppercase tracking-widest">Aguardando Produto</h2>
-                    </div>
-                  )}
-
-                  {/* Search Bar moved here for Desktop */}
-                  <div className="w-full max-w-sm mt-4 space-y-3 relative z-10">
-                     <div className="flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <ScanBarcode className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input 
-                          type="text" 
-                          placeholder="BIPAR CÓDIGO OU NOME..." 
-                          className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black shadow-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 transition-all uppercase placeholder:text-slate-300" 
-                          value={productSearch} 
-                          onChange={(e) => setProductSearch(e.target.value)} 
-                          autoFocus
-                        />
-                      </div>
-                      <button onClick={() => startScanner('search')} className="p-4 bg-slate-900 text-white rounded-xl shadow-lg active:scale-95 shrink-0">
-                        <Search size={18} />
-                      </button>
-                    </div>
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Passe o produto no leitor ou digite o nome</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Coluna Direita: Cupom de Venda (Desktop) */}
-              <div className="flex col-span-4 flex-col bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden h-full sticky top-4">
-                <div className="p-3 bg-slate-900 text-white flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 bg-white/10 rounded-lg flex items-center justify-center text-emerald-400">
-                      <Receipt size={14} />
-                    </div>
-                    <div>
-                      <h3 className="font-black uppercase text-[9px] tracking-widest">Cupom de Venda</h3>
-                      <p className="text-[7px] text-slate-400 font-bold uppercase">Itens: {cart.length}</p>
-                    </div>
-                  </div>
-                  {cart.length > 0 && (
-                    <button onClick={() => setCart([])} className="p-1.5 text-slate-400 hover:text-red-400 transition-colors">
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-                  {cart.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-2 opacity-50">
-                      <ShoppingCart size={28} strokeWidth={1} />
-                      <p className="text-[7px] font-black uppercase tracking-widest">Carrinho Vazio</p>
-                    </div>
-                  ) : (
-                    cart.map(item => {
-                      const eff = getProductEffectivePrice(item.product);
-                      return (
-                        <div key={item.product.id} className="flex items-start justify-between gap-2 group">
-                          <div className="flex gap-2 min-w-0">
-                            <div className="w-7 h-7 bg-slate-50 rounded-md flex items-center justify-center text-slate-300 shrink-0 overflow-hidden border border-slate-100">
-                              {item.product.photo ? <img src={item.product.photo} className="w-full h-full object-cover" /> : <Package size={12} />}
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="text-[8px] font-black text-slate-800 uppercase truncate leading-tight">{item.product.name}</h4>
-                              <p className="text-[7px] font-bold text-slate-400 uppercase mt-0.5">
-                                {item.quantity} UN x {formatCurrency(eff)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-0.5">
-                            <p className="text-[9px] font-black text-slate-900">{formatCurrency(eff * item.quantity)}</p>
-                            <div className="flex items-center gap-1">
-                              <button onClick={() => updateCartQuantity(item.product.id, -1)} className="p-0.5 text-slate-400 hover:text-slate-900"><Minus size={8} /></button>
-                              <button onClick={() => updateCartQuantity(item.product.id, 1)} className="p-0.5 text-slate-400 hover:text-slate-900"><Plus size={8} /></button>
-                              <button onClick={() => removeFromCart(item.product.id)} className="p-1 text-red-400 hover:text-red-600 ml-0.5 bg-red-50 rounded-md transition-colors"><Trash2 size={10} /></button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div className="p-3 bg-slate-50 border-t border-slate-100 space-y-2">
-                  {/* ALERTA DE PREJUÍZO / MARGEM DE LUCRO */}
-                  {cart.length > 0 && (
-                    isCartInLoss ? (
-                      <div className="p-2 bg-red-500 text-white rounded-lg text-[8px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm animate-pulse">
-                        <AlertTriangle size={12} className="shrink-0" />
-                        <span>Atenção: Prejuízo de {formatCurrency(cartCost - finalTotal)}</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between px-2 py-1 bg-emerald-50 text-emerald-800 rounded-md text-[8px] font-bold border border-emerald-100">
-                        <span className="flex items-center gap-1">
-                          <TrendingUp size={10} className="text-emerald-600" /> Lucro Est.:
-                        </span>
-                        <span className="font-black text-emerald-700">
-                          {formatCurrency(cartProfit)} ({(profitMarginPercent ?? 0).toFixed(0)}%)
-                        </span>
-                      </div>
-                    )
-                  )}
-
-                  {/* SUGESTÃO DE VENDA CASADA (CROSS-SELLING) */}
-                  {cart.length > 0 && crossSellSuggestions.length > 0 && (
-                    <div className="bg-blue-50/70 border border-blue-100 rounded-lg p-2 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[8px] font-black text-blue-900 uppercase tracking-wider flex items-center gap-1">
-                          <Sparkles size={10} className="text-blue-600" /> Venda Casada (+Ticket)
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 custom-scrollbar">
-                        {crossSellSuggestions.map(p => (
-                          <button
-                            key={p.id}
-                            onClick={() => addToCart(p)}
-                            className="px-2 py-1 bg-white hover:bg-blue-600 hover:text-white border border-blue-200 rounded-md text-[8px] font-black uppercase text-blue-800 shrink-0 transition-all flex items-center gap-1 active:scale-95 shadow-2xs"
-                            title={`Adicionar ${p.name}`}
-                          >
-                            <Plus size={8} />
-                            <span className="max-w-[70px] truncate">{p.name}</span>
-                            <span className="text-emerald-600 group-hover:text-white font-bold">+{formatCurrency(p.salePrice)}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-lg font-bold text-slate-400 uppercase">
-                      <span>Subtotal</span>
-                      <span>{formatCurrency(cartTotal)}</span>
-                    </div>
-                    {totalDiscount > 0 && (
-                      <div className="flex justify-between text-[8px] font-bold text-red-500 uppercase">
-                        <span>Desconto</span>
-                        <span>- {formatCurrency(totalDiscount)}</span>
-                      </div>
-                    )}
-                    {totalSurcharge > 0 && (
-                      <div className="flex justify-between text-[8px] font-bold text-blue-500 uppercase">
-                        <span>Acréscimo ({totalSurcharge}%)</span>
-                        <span>+ {formatCurrency(cartTotal * (totalSurcharge / 100))}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between items-end pt-2 border-t border-slate-200">
-                      <span className="text-xs font-black text-slate-900 uppercase tracking-widest">Total</span>
-                      <span className="text-4xl font-black text-emerald-600 leading-none">{formatCurrency(finalTotal)}</span>
-                    </div>
-                  </div>
-
-                  <button 
-                    onClick={() => {
-                      if(cart.length > 0) {
-                        setPaymentEntries([{ method: 'Dinheiro', amount: finalTotal }]);
-                        setShowCheckoutModal(true);
-                      }
-                    }}
-                    disabled={cart.length === 0}
-                    className="w-full py-3 bg-emerald-500 text-white rounded-lg font-black uppercase text-[9px] tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-20 flex items-center justify-center gap-2"
-                  >
-                    <CreditCard size={14} /> Finalizar Venda
-                  </button>
-                </div>
+              {/* Coluna Direita: Display do Scanner + Bipagem + Catálogo Rápido PLU (7 Colunas) */}
+              <div className="col-span-7 h-full min-h-0 overflow-hidden">
+                <PosScannerCatalog
+                  products={products}
+                  sortedProducts={sortedProducts}
+                  topSellers={topSellers}
+                  lastAddedProduct={lastAddedProduct}
+                  productSearch={productSearch}
+                  setProductSearch={setProductSearch}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                  categories={categories}
+                  layoutMode={layoutMode}
+                  onToggleLayout={toggleLayout}
+                  searchInputRef={searchInputRef}
+                  onSearchKeyDown={handleSearchKeyDown}
+                  onStartScanner={startScanner}
+                  onAddToCart={(p) => {
+                    playBeepSound();
+                    addToCart(p);
+                  }}
+                  cartLength={cart.length}
+                  theme={posTheme}
+                  terminalNumber={terminalNumber}
+                  terminalName={terminalName}
+                />
               </div>
             </div>
           </div>
 
-          {/* --- LAYOUT MOBILE --- */}
-          <div className="lg:hidden flex flex-col gap-1.5 h-full relative">
+          {/* --- LAYOUT MOBILE (RESTAURADO EXATAMENTE COMO ESTAVA ANTES) --- */}
+          <div className="lg:hidden flex flex-col gap-1.5 flex-1 min-h-0 relative">
             <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-black text-slate-800 uppercase tracking-tighter flex items-center gap-1.5">
-                <ShoppingCart size={16} className="text-emerald-600" /> VENDAS
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-black text-slate-800 uppercase tracking-tighter flex items-center gap-1.5">
+                  <ShoppingCart size={16} className="text-emerald-600" /> VENDAS
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setIsTerminalsModalOpen(true)}
+                  className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 transition-all"
+                  title="Identificação do Terminal no Mercado"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {terminalName}
+                </button>
+              </div>
               <button onClick={() => setShowHistory(true)} className="p-1.5 text-slate-400 bg-white border border-slate-100 rounded-lg active:scale-90 transition-all shadow-sm">
                 <History size={14} />
               </button>
@@ -1242,7 +1245,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
               layoutMode === 'medium' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4' :
               'grid-cols-1'
             }`}>
-              {sortedProducts.slice(0, 6).map(product => {
+              {sortedProducts.map(product => {
                 const isTopSeller = topSellers.includes(product.id);
                 return (
                   <button 
@@ -1436,7 +1439,10 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
                     <div className="grid grid-cols-2 gap-2">
                       <button 
-                        onClick={() => setCart([])}
+                        onClick={() => {
+                          setCart([]);
+                          setLastAddedProduct(null);
+                        }}
                         className="py-2.5 bg-white border border-slate-200 text-slate-400 rounded-lg font-black uppercase text-[8px] tracking-widest active:scale-95 transition-all"
                       >
                         Limpar
@@ -1460,263 +1466,39 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
         </div>
       )}
 
-      {/* MODAL DE CHECKOUT */}
+      {/* MODAL DE CHECKOUT / FECHAMENTO DE CAIXA */}
       {showCheckoutModal && (
-        <div className="fixed inset-0 bg-slate-950/80 flex items-center justify-center z-[100] p-4 backdrop-blur-md">
-          <div className="bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 overflow-y-auto max-h-[90vh] shadow-2xl border border-slate-100">
-            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter text-center">Checkout</h3>
-            
-            <div className="space-y-2.5">
-              {/* DESCONTO E ACRÉSCIMO (Compact) */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[7px] font-black text-slate-400 uppercase tracking-widest ml-3">Desconto (R$)</label>
-                  <div className="relative">
-                    <Minus className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={12} />
-                    <input 
-                      type="number" 
-                      value={totalDiscount || ''} 
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setTotalDiscount(val);
-                        if (paymentEntries.length === 1) {
-                          setPaymentEntries([{ ...paymentEntries[0], amount: calculateFinalTotal(val, totalSurcharge) }]);
-                        }
-                      }}
-                      className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-black outline-none focus:border-emerald-500 transition-colors"
-                      placeholder="0,00"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[7px] font-black text-slate-400 uppercase tracking-widest ml-3">Acréscimo (%)</label>
-                  <div className="relative">
-                    <Plus className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={12} />
-                    <input 
-                      type="number" 
-                      value={totalSurcharge || ''} 
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setTotalSurcharge(val);
-                        if (paymentEntries.length === 1) {
-                          setPaymentEntries([{ ...paymentEntries[0], amount: calculateFinalTotal(totalDiscount, val) }]);
-                        }
-                      }}
-                      className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-black outline-none focus:border-blue-500 transition-colors"
-                      placeholder="0%"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* SELEÇÃO DO VENDEDOR / COLABORADOR */}
-              <div className="space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                <div className="flex items-center justify-between">
-                  <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                    <UserIcon size={12} className="text-blue-500" />
-                    Vendedor da Venda
-                  </label>
-                  <span className="text-[8px] font-bold text-slate-400">Comissão & Meta</span>
-                </div>
-                <select
-                  value={selectedSellerId}
-                  onChange={(e) => setSelectedSellerId(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] font-black text-slate-800 outline-none focus:border-blue-500 cursor-pointer shadow-xs"
-                >
-                  <option value={currentUser?.id || 'admin'}>
-                    {currentUser?.name || 'Administrador'} (Atual)
-                  </option>
-                  {teamEmployees
-                    .filter((e: any) => e.id !== currentUser?.id && e.userId !== currentUser?.id)
-                    .map((emp: any) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.name} ({emp.role === 'tecnico' ? 'Técnico' : emp.role === 'vendedor' ? 'Vendedor' : emp.role})
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              {/* FORMAS DE PAGAMENTO (Max 2) */}
-              <div className="space-y-2">
-                <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest ml-3">Pagamento</p>
-                {paymentEntries.map((entry, index) => (
-                  <div key={index} className="space-y-1">
-                    <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-100">
-                      <select
-                        value={entry.method}
-                        onChange={(e) => updatePaymentEntry(index, 'method', e.target.value as 'Dinheiro' | 'Cartão' | 'PIX')}
-                        className="bg-transparent outline-none font-bold text-[7px] uppercase w-14"
-                      >
-                        <option>Dinheiro</option>
-                        <option>Cartão</option>
-                        <option>PIX</option>
-                      </select>
-                      <input
-                        type="number"
-                        value={entry.amount || ''}
-                        onChange={(e) => updatePaymentEntry(index, 'amount', Number(e.target.value))}
-                        placeholder="0.00"
-                        className="flex-1 bg-white px-1 py-0.5 rounded-md outline-none font-black text-[10px] text-right border border-slate-200 focus:border-emerald-500 transition-all"
-                      />
-                      {paymentEntries.length > 1 && (
-                        <button onClick={() => removePaymentEntry(index)} className="p-1 text-red-500 hover:bg-red-50 rounded-md">
-                          <X size={12} />
-                        </button>
-                      )}
-                    </div>
-                    {entry.method === 'Cartão' && (
-                      <div className="flex items-center justify-between px-4 animate-in fade-in slide-in-from-top-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[7px] font-black text-slate-400 uppercase">Parcelas:</span>
-                          <select 
-                            value={entry.installments || 1}
-                            onChange={(e) => updatePaymentEntry(index, 'installments', Number(e.target.value))}
-                            className="bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-black outline-none"
-                          >
-                            {[...Array(12)].map((_, i) => (
-                              <option key={`opt-${index}-${i+1}`} value={i+1}>{i+1}x</option>
-                            ))}
-                          </select>
-                        </div>
-                        {entry.installments && entry.installments > 1 && entry.amount > 0 && (
-                          <span className="text-[8px] font-black text-emerald-600">
-                            {entry.installments}x {formatCurrency(entry.amount / entry.installments)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {paymentEntries.length < 2 && (
-                  <button onClick={addPaymentEntry} className="w-full py-2 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[8px] flex items-center justify-center gap-2 active:scale-95 transition-all">
-                    <Plus size={12} /> Adicionar Forma
-                  </button>
-                )}
-              </div>
-
-              {/* INFORMAÇÕES DE PAGAMENTO DINÂMICAS (TROCO / RESTANTE) */}
-              {(() => {
-                const totalPaid = paymentEntries.reduce((acc, curr) => acc + curr.amount, 0);
-                const remaining = finalTotal - totalPaid;
-
-                if (totalPaid > finalTotal && paymentEntries.length < 2) {
-                  const totalCash = paymentEntries.filter(p => p.method === 'Dinheiro').reduce((acc, curr) => acc + curr.amount, 0);
-                  const displayChange = Math.min(totalPaid - finalTotal, totalCash);
-                  
-                  if (displayChange <= 0) return null;
-
-                  return (
-                    <div className="bg-blue-50 p-4 rounded-2xl text-center mt-2 animate-in fade-in slide-in-from-top-2">
-                      <p className="text-[8px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Troco</p>
-                      <p className="text-2xl font-black text-blue-800">{formatCurrency(displayChange)}</p>
-                    </div>
-                  );
-                } else if (remaining > 0) {
-                  return (
-                    <div className="bg-red-50 p-4 rounded-2xl text-center mt-2 animate-in fade-in slide-in-from-top-2">
-                      <p className="text-[8px] font-black text-red-600 uppercase tracking-widest mb-0.5">Faltam</p>
-                      <p className="text-2xl font-black text-red-800">{formatCurrency(remaining)}</p>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              {/* TOTAL A PAGAR COM TRAVA / MARGEM DE LUCRO */}
-              <div className="bg-emerald-50 p-3.5 rounded-xl text-center mt-2 border border-emerald-100 space-y-1">
-                <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest leading-none">Total a Pagar</p>
-                <p className="text-2xl font-black text-emerald-800 leading-tight">{formatCurrency(finalTotal)}</p>
-                
-                {/* STATUS DE MARGEM / PREJUÍZO */}
-                {cartCost > 0 && (
-                  <div className="pt-1.5 border-t border-emerald-200/60 mt-1">
-                    {isCartInLoss ? (
-                      <div className="bg-red-500 text-white py-1 px-2 rounded-lg text-[9px] font-black flex items-center justify-center gap-1 animate-pulse">
-                        <AlertTriangle size={12} />
-                        <span>PREJUÍZO: -{formatCurrency(cartCost - finalTotal)} (Custo: {formatCurrency(cartCost)})</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between text-[9px] font-bold text-emerald-900 px-1">
-                        <span className="text-emerald-700">Lucro Líquido:</span>
-                        <span className="font-black text-emerald-800">
-                          {formatCurrency(cartProfit)} ({(profitMarginPercent ?? 0).toFixed(0)}% de margem)
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* IDENTIFICAÇÃO FISCAL NFC-e (Apenas se o Modo Fiscal estiver ativado para a loja) */}
-              {isFiscalModeActive && (
-                <div className="p-2.5 rounded-xl border space-y-2 bg-purple-50/70 border-purple-200">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[8px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                      <input
-                        type="checkbox"
-                        checked={true}
-                        disabled={true}
-                        className="rounded text-purple-600 focus:ring-purple-500 w-3.5 h-3.5 disabled:opacity-80"
-                      />
-                      <FileText size={12} className="text-purple-600 animate-pulse" />
-                      Modo Fiscal Ativo (Emissão Obrigatória)
-                    </label>
-                    <span className="text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-200 text-purple-800">
-                      Modelo 65
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-1.5 pt-1">
-                    <input
-                      type="text"
-                      value={customerFiscalCpf}
-                      onChange={(e) => setCustomerFiscalCpf(e.target.value)}
-                      placeholder="CPF/CNPJ na Nota (opcional)"
-                      className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-[9px] font-medium outline-none focus:border-purple-500"
-                    />
-                    <input
-                      type="text"
-                      value={customerFiscalPhone}
-                      onChange={(e) => setCustomerFiscalPhone(e.target.value)}
-                      placeholder="WhatsApp (ex: 11999998888)"
-                      className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-[9px] font-medium outline-none focus:border-purple-500"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-1.5 pt-1">
-              <button 
-                type="button"
-                onClick={handleFinalizeSale} 
-                disabled={isSubmittingSale || paymentEntries.reduce((acc, curr) => acc + curr.amount, 0) < finalTotal - 0.001} 
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase text-[10px] tracking-wider shadow-lg shadow-emerald-600/20 disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
-              >
-                {isSubmittingSale ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin text-white" />
-                    <span>PROCESSANDO VENDA E NFC-E...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={16} />
-                    <span>FINALIZAR VENDA</span>
-                  </>
-                )}
-              </button>
-              <button 
-                type="button"
-                disabled={isSubmittingSale}
-                onClick={() => setShowCheckoutModal(false)} 
-                className="w-full py-2 text-slate-400 hover:text-slate-600 font-black uppercase text-[8px] tracking-widest cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
+        <PosCheckoutModal
+          finalTotal={finalTotal}
+          cartTotal={cartTotal}
+          cartCost={cartCost}
+          cartProfit={cartProfit}
+          profitMarginPercent={profitMarginPercent}
+          isCartInLoss={isCartInLoss}
+          totalDiscount={totalDiscount}
+          setTotalDiscount={setTotalDiscount}
+          totalSurcharge={totalSurcharge}
+          setTotalSurcharge={setTotalSurcharge}
+          paymentEntries={paymentEntries}
+          setPaymentEntries={setPaymentEntries}
+          addPaymentEntry={addPaymentEntry}
+          removePaymentEntry={removePaymentEntry}
+          updatePaymentEntry={updatePaymentEntry}
+          calculateFinalTotal={calculateFinalTotal}
+          quickCashValues={quickCashValues}
+          selectedSellerId={selectedSellerId}
+          setSelectedSellerId={setSelectedSellerId}
+          teamEmployees={teamEmployees}
+          currentUser={currentUser}
+          isFiscalModeActive={isFiscalModeActive}
+          customerFiscalCpf={customerFiscalCpf}
+          setCustomerFiscalCpf={setCustomerFiscalCpf}
+          customerFiscalPhone={customerFiscalPhone}
+          setCustomerFiscalPhone={setCustomerFiscalPhone}
+          isSubmittingSale={isSubmittingSale}
+          onFinalizeSale={handleFinalizeSale}
+          onClose={() => setShowCheckoutModal(false)}
+        />
       )}
 
 
@@ -1952,7 +1734,7 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
 
       {/* MODAL SCANNER */}
       {isScannerOpen && (
-        <div className="fixed inset-0 bg-slate-950 z-[200] flex flex-col animate-in fade-in">
+        <div className="fixed inset-0 bg-slate-950 z-[10001] flex flex-col animate-in fade-in">
            <div className="p-6 flex items-center justify-between border-b border-white/10">
               <h3 className="font-black text-white uppercase text-xs tracking-widest">Scanner de Código</h3>
               <button onClick={stopScanner} className="p-2 bg-white/10 text-white rounded-full"><X size={20} /></button>
@@ -2123,6 +1905,20 @@ const SalesTab: React.FC<Props> = ({ products, setProducts, sales, setSales, set
           onClose={() => setShowFiscalDanfeModal(false)}
         />
       )}
+
+      {/* MODAL DE GERENCIAMENTO DE TERMINAIS (PC / PDV DO MERCADO) */}
+      <PosTerminalsModal
+        isOpen={isTerminalsModalOpen}
+        onClose={() => setIsTerminalsModalOpen(false)}
+        terminalNumber={terminalNumber}
+        terminalName={terminalName}
+        totalActiveTerminals={totalActiveTerminals}
+        activeTerminals={activeTerminals}
+        configuredTerminalNumber={configuredTerminalNumber}
+        onSelectTerminalNumber={setConfiguredTerminalNumber}
+        onRefresh={refreshTerminals}
+        theme={posTheme}
+      />
     </div>
   );
 };

@@ -1,14 +1,48 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PosTerminalInfo, User } from '../types';
 
+export function getDeviceTypeAndName(): { isMobile: boolean; isTablet: boolean; deviceInfo: string } {
+  if (typeof navigator === 'undefined') {
+    return { isMobile: false, isTablet: false, deviceInfo: 'Computador PDV' };
+  }
+  const ua = navigator.userAgent || '';
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPod/i.test(ua);
+  const isIPad = /iPad/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isTablet = isIPad || (isAndroid && !/Mobile/i.test(ua));
+  const isMobile = (isAndroid && /Mobile/i.test(ua)) || isIOS || /Windows Phone|BlackBerry/i.test(ua);
+  const isWindows = /Windows/i.test(ua);
+  const isMac = /Macintosh|Mac OS/i.test(ua) && !isIPad;
+  const isLinux = /Linux/i.test(ua) && !isAndroid;
+
+  let deviceInfo = 'Computador PDV';
+  if (isAndroid && isMobile) deviceInfo = 'Celular Android';
+  else if (isIOS) deviceInfo = 'Celular iPhone';
+  else if (isIPad) deviceInfo = 'Tablet iPad';
+  else if (isTablet) deviceInfo = 'Tablet Android';
+  else if (isMobile) deviceInfo = 'Smartphone / Mobile';
+  else if (isWindows) deviceInfo = 'PC Windows';
+  else if (isMac) deviceInfo = 'Computador Mac';
+  else if (isLinux) deviceInfo = 'Computador Linux';
+
+  return { isMobile, isTablet, deviceInfo };
+}
+
 export function usePosTerminals(tenantId: string | undefined, currentUser: User | null) {
-  // 1. Identificador único e estável por janela/aba/computador
+  // 1. Identificador único e estável por dispositivo/janela/celular/computador
   const [machineId] = useState<string>(() => {
     let saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('pos_terminal_session_id') : null;
+    if (!saved && typeof localStorage !== 'undefined') {
+      // Verifica se há um ID exclusivo salvo no dispositivo
+      saved = localStorage.getItem('pos_terminal_device_id');
+    }
     if (!saved) {
-      saved = 'term_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now().toString(36);
+      const { isMobile, isTablet } = getDeviceTypeAndName();
+      const prefix = isMobile ? 'cel_' : isTablet ? 'tab_' : 'pc_';
+      saved = prefix + Math.random().toString(36).substring(2, 9) + '_' + Date.now().toString(36);
       try {
-        sessionStorage.setItem('pos_terminal_session_id', saved);
+        sessionStorage?.setItem('pos_terminal_session_id', saved);
+        localStorage?.setItem('pos_terminal_device_id', saved);
       } catch (e) {
         // ignore
       }
@@ -19,9 +53,6 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
   // 2. Número de terminal fixado manualmente (0 = Detecção Automática)
   const [configuredTerminalNumber, setConfiguredTerminalNumberState] = useState<number>(() => {
     let saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('pos_configured_terminal_number') : null;
-    if (!saved && typeof localStorage !== 'undefined') {
-      saved = localStorage.getItem('pos_configured_terminal_number');
-    }
     return saved ? parseInt(saved, 10) : 0;
   });
 
@@ -42,7 +73,7 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
       operatorName: currentUser?.name || 'Operador',
       operatorRole: currentUser?.role || 'colaborador',
       isCurrent: true,
-      deviceInfo: typeof navigator !== 'undefined' ? (navigator.userAgent.includes('Windows') ? 'PC Windows' : navigator.userAgent.includes('Mac') ? 'Mac' : 'Computador') : 'PC',
+      deviceInfo: getDeviceTypeAndName().deviceInfo,
       lastSeen: Date.now(),
       isOnline: true
     }
@@ -57,14 +88,12 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
     if (num > 0) {
       try {
         sessionStorage.setItem('pos_configured_terminal_number', String(num));
-        localStorage.setItem('pos_configured_terminal_number', String(num));
       } catch (e) {}
       setTerminalNumber(num);
       setTerminalName(`PDV ${String(num).padStart(2, '0')}`);
     } else {
       try {
         sessionStorage.removeItem('pos_configured_terminal_number');
-        localStorage.removeItem('pos_configured_terminal_number');
       } catch (e) {}
     }
     // Dispara heartbeat imediato para atualizar toda a rede
@@ -73,9 +102,7 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
 
   const triggerHeartbeat = useCallback(async () => {
     const tId = tenantId || 'default';
-    const deviceInfo = typeof navigator !== 'undefined' 
-      ? (navigator.userAgent.includes('Windows') ? 'PC - Windows' : navigator.userAgent.includes('Mac') ? 'PC - Mac' : 'Computador PDV') 
-      : 'PC';
+    const { deviceInfo } = getDeviceTypeAndName();
 
     try {
       const res = await fetch('/api/pos/terminal-heartbeat', {
@@ -100,7 +127,7 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
           setTotalActiveTerminals(data.totalActiveTerminals);
           setActiveTerminals(data.activeTerminals);
 
-          // Sincroniza via BroadcastChannel para outras abas no mesmo PC
+          // Sincroniza via BroadcastChannel para outras abas no mesmo dispositivo
           if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
             try {
               const bc = new BroadcastChannel('pos_terminals_sync');

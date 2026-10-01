@@ -1,5 +1,5 @@
 import React from 'react';
-import { Monitor, X, Check, RefreshCw, Radio, User, ShieldCheck, Laptop } from 'lucide-react';
+import { Monitor, X, Check, RefreshCw, Radio, User, ShieldCheck, Laptop, Smartphone, Tablet } from 'lucide-react';
 import { PosTerminalInfo } from '../../types';
 
 interface PosTerminalsModalProps {
@@ -13,6 +13,20 @@ interface PosTerminalsModalProps {
   onSelectTerminalNumber: (num: number) => void;
   onRefresh: () => void;
   theme?: 'dark' | 'light';
+}
+
+function getDeviceIcon(deviceInfo?: string) {
+  const d = (deviceInfo || '').toLowerCase();
+  if (d.includes('celular') || d.includes('iphone') || d.includes('android') || d.includes('smartphone') || d.includes('mobile')) {
+    return <Smartphone size={13} className="text-pink-500 shrink-0" />;
+  }
+  if (d.includes('tablet') || d.includes('ipad')) {
+    return <Tablet size={13} className="text-amber-500 shrink-0" />;
+  }
+  if (d.includes('mac') || d.includes('laptop')) {
+    return <Laptop size={13} className="text-blue-500 shrink-0" />;
+  }
+  return <Monitor size={13} className="text-blue-400 shrink-0" />;
 }
 
 export const PosTerminalsModal: React.FC<PosTerminalsModalProps> = ({
@@ -47,7 +61,7 @@ export const PosTerminalsModal: React.FC<PosTerminalsModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className={`font-black text-sm uppercase tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  Rede de Terminais do Mercado
+                  Rede de Terminais do Estabelecimento
                 </h3>
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
@@ -55,7 +69,7 @@ export const PosTerminalsModal: React.FC<PosTerminalsModalProps> = ({
                 </span>
               </div>
               <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Identificação em tempo real de cada computador em operação
+                Identificação automática e em tempo real de computadores e celulares no PDV
               </p>
             </div>
           </div>
@@ -70,7 +84,7 @@ export const PosTerminalsModal: React.FC<PosTerminalsModalProps> = ({
         </div>
 
         <div className="p-4 sm:p-5 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
-          {/* Card deste Computador */}
+          {/* Card deste Dispositivo */}
           <div className={`p-4 rounded-xl border-2 transition-all ${
             isDark ? 'bg-slate-950 border-blue-500/50 shadow-inner' : 'bg-blue-50/60 border-blue-400 shadow-xs'
           }`}>
@@ -78,7 +92,7 @@ export const PosTerminalsModal: React.FC<PosTerminalsModalProps> = ({
               <div className="flex items-center gap-2">
                 <Laptop size={16} className="text-blue-500" />
                 <span className={`text-[10px] font-mono font-black uppercase tracking-wider ${isDark ? 'text-blue-400' : 'text-blue-800'}`}>
-                  Este Computador (Terminal Atual)
+                  Este Dispositivo (Terminal Atual)
                 </span>
               </div>
               <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-600 text-white">
@@ -87,7 +101,7 @@ export const PosTerminalsModal: React.FC<PosTerminalsModalProps> = ({
             </div>
 
             <p className={`text-xs font-medium mb-3 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-              Você pode deixar o sistema detectar o terminal automaticamente ou fixar este PC para um caixa específico:
+              O sistema sincroniza automaticamente celulares e PCs em caixas separados (PDV 01, PDV 02...). Você também pode fixar este aparelho manualmente:
             </p>
 
             {/* Opções de Atribuição de Caixa */}
@@ -133,7 +147,7 @@ export const PosTerminalsModal: React.FC<PosTerminalsModalProps> = ({
                 isDark ? 'text-slate-400' : 'text-slate-500'
               }`}>
                 <Radio size={13} className="text-emerald-500 animate-pulse" />
-                Terminais Operando no Momento ({activeTerminals.length})
+                Dispositivos Conectados ({activeTerminals.length})
               </span>
               <button 
                 onClick={onRefresh}
@@ -172,7 +186,13 @@ export const PosTerminalsModal: React.FC<PosTerminalsModalProps> = ({
                         </span>
                         {term.isCurrent && (
                           <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 uppercase">
-                            Este PC
+                            Este Aparelho
+                          </span>
+                        )}
+                        {term.deviceInfo && (
+                          <span className="inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.2 rounded bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                            {getDeviceIcon(term.deviceInfo)}
+                            <span>{term.deviceInfo}</span>
                           </span>
                         )}
                       </div>

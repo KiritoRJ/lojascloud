@@ -1496,25 +1496,70 @@ export class OnlineDB {
     if (!tenantId || !sales.length) return { success: true };
     await this.ensureTenant(tenantId);
     try {
-      const payload = sales.map(s => ({
-        id: s.id,
-        tenant_id: tenantId,
-        product_id: s.productId,
-        product_name: s.category ? `[CAT:${s.category}] ${s.productName}` : s.productName,
-        date: s.date,
-        quantity: s.quantity,
-        original_price: s.originalPrice,
-        discount: s.discount,
-        final_price: s.finalPrice,
-        cost_at_sale: s.costAtSale,
-        payment_method: s.paymentMethod,
-        seller_name: s.sellerName,
-        seller_id: s.sellerId,
-        transaction_id: s.transactionId,
-        is_deleted: s.isDeleted || false
-      }));
+      const buildPayload = (sanitizeSeller = false, sanitizeProduct = false) => {
+        return sales.map(s => {
+          let sellerId = s.sellerId;
+          // Se for string vazia ou IDs fictícios, neutraliza
+          if (!sellerId || sellerId === 'admin' || sellerId === 'sistema') {
+            sellerId = null;
+          }
+          if (sanitizeSeller) {
+            sellerId = null;
+          }
+
+          let productId = s.productId;
+          if (sanitizeProduct || !productId) {
+            productId = null;
+          }
+
+          return {
+            id: s.id,
+            tenant_id: tenantId,
+            product_id: productId,
+            product_name: s.category ? `[CAT:${s.category}] ${s.productName}` : s.productName,
+            date: s.date,
+            quantity: s.quantity,
+            original_price: s.originalPrice,
+            discount: s.discount,
+            final_price: s.finalPrice,
+            cost_at_sale: s.costAtSale,
+            payment_method: s.paymentMethod,
+            seller_name: s.sellerName,
+            seller_id: sellerId,
+            transaction_id: s.transactionId,
+            is_deleted: s.isDeleted || false
+          };
+        });
+      };
+
+      let payload = buildPayload(false, false);
       const { error } = await supabase.from('sales').upsert(payload, { onConflict: 'id' });
-      if (error) throw error;
+      
+      if (error) {
+        const isFkeyError = error.code === '23503' || 
+          error.message?.includes('foreign key constraint') || 
+          error.message?.includes('sales_seller_id_fkey') || 
+          error.message?.includes('violates foreign key');
+
+        if (isFkeyError) {
+          console.warn('[Supabase] Chave estrangeira não correspondente detectada em vendas (sales_seller_id_fkey). Reenviando com seller_id nulo para preservar dados e liberar fila offline...');
+          payload = buildPayload(true, false);
+          const retryRes = await supabase.from('sales').upsert(payload, { onConflict: 'id' });
+          if (!retryRes.error) {
+            return { success: true };
+          }
+
+          // Se falhar por causa de product_id fkey
+          if (retryRes.error.code === '23503' || retryRes.error.message?.includes('foreign key')) {
+            payload = buildPayload(true, true);
+            const retryRes2 = await supabase.from('sales').upsert(payload, { onConflict: 'id' });
+            if (!retryRes2.error) return { success: true };
+            throw retryRes2.error;
+          }
+          throw retryRes.error;
+        }
+        throw error;
+      }
       return { success: true };
     } catch (e: any) {
       logSupabaseNotice("Erro ao salvar vendas no Supabase", e);

@@ -13,6 +13,8 @@ import NfceNfeManager from './nfce/NfceNfeManager';
 import { ConnectionStatusTag, ConnectionStatusDetailModal } from './DatabaseOfflineAlert';
 import { AICreditsModal } from './AICreditsModal';
 
+import { isAppRunningStandalone } from '../utils/usePWAInstall';
+
 interface Props {
   products: Product[];
   setProducts: (products: Product[]) => void;
@@ -26,6 +28,7 @@ interface Props {
   onSwitchProfile: (user: User) => void;
   tenantId?: string; 
   deferredPrompt?: any;
+  isInstalled?: boolean;
   onInstallApp?: () => void;
   onOpenInstallModal?: () => void;
   subscriptionStatus?: string;
@@ -60,6 +63,7 @@ const SettingsTab: React.FC<Props> = ({
   onSwitchProfile, 
   tenantId, 
   deferredPrompt, 
+  isInstalled = false,
   onInstallApp, 
   onOpenInstallModal,
   subscriptionStatus, 
@@ -72,6 +76,7 @@ const SettingsTab: React.FC<Props> = ({
   onLogout, 
   onOpenSubscription 
 }) => {
+  const isActuallyInstalled = isInstalled || isAppRunningStandalone();
   const isAdmin = useMemo(() => currentUser.role === 'admin' || (currentUser as any).role === 'super', [currentUser]);
   const isFiscalModeActive = !!((enabledFeatures as any)?.fiscalMode || (settings as any)?.fiscalModeEnabled);
   const getPlanName = () => {
@@ -1995,7 +2000,7 @@ const SettingsTab: React.FC<Props> = ({
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
               <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-100 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden animate-in zoom-in-95 origin-top-right">
-                {onOpenInstallModal && (
+                {onOpenInstallModal && !isActuallyInstalled && (
                   <button onClick={() => { onOpenInstallModal(); setShowMenu(false); }} className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent">
                     <Smartphone size={16} /> Instalar Aplicativo
                   </button>
@@ -2109,24 +2114,26 @@ const SettingsTab: React.FC<Props> = ({
           </div>
         )}
 
-        {/* INSTALAR APP (Banner de Destaque) */}
-        <div>
-          <button
-            type="button"
-            onClick={onOpenInstallModal || onInstallApp}
-            className="w-full p-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[2rem] text-left transition-all active:scale-98 flex items-center gap-3 shadow-md shadow-blue-500/20 cursor-pointer group"
-          >
-            <div className="w-11 h-11 bg-white/20 backdrop-blur-xs text-white rounded-2xl flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform shrink-0">
-              <Smartphone size={20} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[9px] font-black text-blue-100 uppercase tracking-widest">Aplicativo Oficial</p>
-              <p className="text-xs font-black text-white uppercase tracking-tight truncate">Instalar no Aparelho</p>
-              <p className="text-[10px] text-blue-100 truncate">Android, iPhone e Computador</p>
-            </div>
-            <ChevronRight size={16} className="text-white/80 shrink-0" />
-          </button>
-        </div>
+        {/* INSTALAR APP (Banner de Destaque - Apenas se ainda não estiver instalado) */}
+        {!isActuallyInstalled && (
+          <div>
+            <button
+              type="button"
+              onClick={onOpenInstallModal || onInstallApp}
+              className="w-full p-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[2rem] text-left transition-all active:scale-98 flex items-center gap-3 shadow-md shadow-blue-500/20 cursor-pointer group"
+            >
+              <div className="w-11 h-11 bg-white/20 backdrop-blur-xs text-white rounded-2xl flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform shrink-0">
+                <Smartphone size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[9px] font-black text-blue-100 uppercase tracking-widest">Aplicativo Oficial</p>
+                <p className="text-xs font-black text-white uppercase tracking-tight truncate">Instalar no Aparelho</p>
+                <p className="text-[10px] text-blue-100 truncate">Android, iPhone e Computador</p>
+              </div>
+              <ChevronRight size={16} className="text-white/80 shrink-0" />
+            </button>
+          </div>
+        )}
 
         {/* ALERTA AMIGÁVEL SE O PERFIL ESTIVER INCOMPLETO */}
         {(!settings.storePhone || !settings.storeName || settings.storeName === 'Minha Loja') && (
@@ -2379,7 +2386,7 @@ const SettingsTab: React.FC<Props> = ({
            </div>
         </div>
 
-        {deferredPrompt && (
+        {deferredPrompt && !isActuallyInstalled && (
           <button 
             onClick={onInstallApp}
             className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"

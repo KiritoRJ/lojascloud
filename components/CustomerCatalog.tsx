@@ -3,6 +3,7 @@ import { Search, ShoppingBag, MessageCircle, ArrowLeft, Loader2, Image as ImageI
 import { Product, AppSettings } from '../types';
 import { OnlineDB } from '../utils/api';
 import { InstallAppModal } from './InstallAppModal';
+import { isAppRunningStandalone } from '../utils/usePWAInstall';
 
 interface CustomerCatalogProps {
   tenantId?: string | null;
@@ -23,14 +24,10 @@ const CustomerCatalog: React.FC<CustomerCatalogProps> = ({ tenantId, catalogSlug
   const [resolvedTikToks, setResolvedTikToks] = useState<Record<string, string>>({});
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [pwaPrompt, setPwaPrompt] = useState<any>(deferredPrompt || (typeof window !== 'undefined' ? (window as any).deferredPrompt : null));
-  const [isStandalone, setIsStandalone] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(() => isAppRunningStandalone());
 
   useEffect(() => {
-    const isStandaloneMode = 
-      window.matchMedia('(display-mode: standalone)').matches || 
-      (window.navigator as any).standalone === true ||
-      document.referrer.includes('android-app://');
-    setIsStandalone(isStandaloneMode);
+    setIsStandalone(isAppRunningStandalone());
 
     const handlePrompt = (e: any) => {
       e.preventDefault();

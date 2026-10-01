@@ -31,9 +31,10 @@ interface SpotlightTourProps {
   onOpenSidebar?: () => void;
   onCloseSidebar?: () => void;
   tenantId?: string;
+  isInstalled?: boolean;
 }
 
-const TOUR_STEPS: TourStep[] = [
+const BASE_TOUR_STEPS: TourStep[] = [
   {
     id: 'store_profile',
     targetId: 'tour-store-profile',
@@ -79,12 +80,21 @@ export const SpotlightTour: React.FC<SpotlightTourProps> = ({
   onOpenInstallModal,
   onOpenSidebar,
   onCloseSidebar,
-  tenantId
+  tenantId,
+  isInstalled = false
 }) => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isCompletedState, setIsCompletedState] = useState(false);
 
-  const step = TOUR_STEPS[currentStepIndex];
+  const activeSteps = React.useMemo(() => {
+    const raw = isInstalled ? BASE_TOUR_STEPS.filter(s => s.id !== 'install_app') : BASE_TOUR_STEPS;
+    return raw.map((s, idx) => ({
+      ...s,
+      badge: `${idx + 1}/${raw.length}`
+    }));
+  }, [isInstalled]);
+
+  const step = activeSteps[currentStepIndex] || activeSteps[0];
 
   // Alterna a aba se a etapa exigir e abre/fecha o menu na etapa 2
   useEffect(() => {
@@ -173,7 +183,7 @@ export const SpotlightTour: React.FC<SpotlightTourProps> = ({
   if (!isActive) return null;
 
   const handleNext = () => {
-    if (currentStepIndex < TOUR_STEPS.length - 1) {
+    if (currentStepIndex < activeSteps.length - 1) {
       setCurrentStepIndex(prev => prev + 1);
     } else {
       setIsCompletedState(true);
@@ -225,7 +235,7 @@ export const SpotlightTour: React.FC<SpotlightTourProps> = ({
             {/* Marcadores de Progresso + Botão Fechar */}
             <div className="flex items-center gap-2 shrink-0">
               <div className="flex items-center gap-1">
-                {TOUR_STEPS.map((_, idx) => (
+                {activeSteps.map((_, idx) => (
                   <button
                     key={idx}
                     type="button"
@@ -287,7 +297,7 @@ export const SpotlightTour: React.FC<SpotlightTourProps> = ({
                 onClick={handleNext}
                 className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
               >
-                <span>{currentStepIndex === TOUR_STEPS.length - 1 ? 'Concluir' : 'Próximo'}</span>
+                <span>{currentStepIndex === activeSteps.length - 1 ? 'Concluir' : 'Próximo'}</span>
                 <ChevronRight size={13} />
               </button>
             </div>

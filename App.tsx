@@ -19,6 +19,7 @@ import PublicTrackingPage from './components/PublicTrackingPage';
 import { DeviceHardwareTestPage } from './components/DeviceHardwareTestPage';
 import { InstallAppModal } from './components/InstallAppModal';
 import { SpotlightTour } from './components/SpotlightTour';
+import { usePWAInstall } from './utils/usePWAInstall';
 import { OnlineDB, supabase } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { OfflineAuth } from './utils/offlineAuth';
@@ -190,7 +191,7 @@ const App: React.FC = () => {
   const [logoutError, setLogoutError] = useState(false);
   const [isCloudConnected, setIsCloudConnected] = useState(true);
   const [isInitializing, setIsInitializing] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const { isInstalled, deferredPrompt, install: handleInstallApp } = usePWAInstall();
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -331,36 +332,10 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const handler = (e: any) => {
-      console.log('beforeinstallprompt event fired');
-      e.preventDefault();
-      setDeferredPrompt(e);
-      (window as any).deferredPrompt = e;
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    
-    // Debug: check if app is already installed or standalone
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      console.log('App is running in standalone mode');
-    }
-
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  useEffect(() => {
     OnlineDB.getAISystemStatus().then(status => {
       setIsAiGloballyDisabled(!!status?.disabled);
     }).catch(() => {});
   }, [session?.tenantId]);
-
-  const handleInstallApp = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-    }
-  };
 
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ storeName: '', username: '', password: '' });
@@ -1981,16 +1956,18 @@ const App: React.FC = () => {
                   <span>Super ADM</span>
                 </button>
               )}
-              <button
-                id="tour-mobile-install-btn"
-                type="button"
-                onClick={() => setIsInstallModalOpen(true)}
-                className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
-                title="Instalar App no celular"
-              >
-                <Download size={10} />
-                <span>Instalar</span>
-              </button>
+              {!isInstalled && (
+                <button
+                  id="tour-mobile-install-btn"
+                  type="button"
+                  onClick={() => setIsInstallModalOpen(true)}
+                  className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
+                  title="Instalar App no celular"
+                >
+                  <Download size={10} />
+                  <span>Instalar</span>
+                </button>
+              )}
               {session?.subscriptionStatus === 'trial' && (
                 <button
                   type="button"
@@ -2023,16 +2000,18 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2.5">
-              <button
-                id="tour-header-install"
-                type="button"
-                onClick={() => setIsInstallModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-md shadow-blue-500/20 cursor-pointer"
-                title="Instalar o aplicativo no PC ou Celular"
-              >
-                <Download size={13} />
-                <span>Instalar App</span>
-              </button>
+              {!isInstalled && (
+                <button
+                  id="tour-header-install"
+                  type="button"
+                  onClick={() => setIsInstallModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-md shadow-blue-500/20 cursor-pointer"
+                  title="Instalar o aplicativo no PC ou Celular"
+                >
+                  <Download size={13} />
+                  <span>Instalar App</span>
+                </button>
+              )}
 
               {session?.subscriptionStatus === 'trial' && (
                 <button
@@ -2198,6 +2177,7 @@ const App: React.FC = () => {
               onSwitchProfile={handleSwitchProfile} 
               tenantId={session.tenantId} 
               deferredPrompt={deferredPrompt} 
+              isInstalled={isInstalled}
               onInstallApp={handleInstallApp} 
               onOpenInstallModal={() => setIsInstallModalOpen(true)}
               subscriptionStatus={session.subscriptionStatus} 
@@ -2257,19 +2237,21 @@ const App: React.FC = () => {
                 </button>
               ))}
 
-              <div className="pt-2">
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setIsSidebarOpen(false);
-                    setIsInstallModalOpen(true);
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 active:scale-95 transition-all"
-                >
-                  <Download size={15} />
-                  <span>Instalar App no Celular</span>
-                </button>
-              </div>
+              {!isInstalled && (
+                <div className="pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setIsSidebarOpen(false);
+                      setIsInstallModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 active:scale-95 transition-all"
+                  >
+                    <Download size={15} />
+                    <span>Instalar App no Celular</span>
+                  </button>
+                </div>
+              )}
             </nav>
 
             <div className="mt-3 pt-3 border-t border-slate-200/80 shrink-0 space-y-2">
@@ -2331,6 +2313,7 @@ const App: React.FC = () => {
         activeTab={activeTab}
         setActiveTab={(tab) => setActiveTab(tab as Tab)}
         onOpenInstallModal={() => setIsInstallModalOpen(true)}
+        isInstalled={isInstalled}
         onOpenSidebar={() => {
           setIsSidebarOpen(true);
           setIsSidebarCollapsed(false);

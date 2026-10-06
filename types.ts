@@ -466,6 +466,38 @@ export interface AppSettings {
   certificateA1?: CertificateA1Data;
   nfceNfeConfig?: NfceNfeConfig;
   nfseConfig?: NfseConfig;
+  businessCard?: BusinessCardSettings;
+}
+
+export interface BusinessCardSettings {
+  enabled?: boolean;
+  customTitle?: string;
+  subtitle?: string;
+  bio?: string;
+  googleMapsReviewUrl?: string;
+  googleMapsPlaceName?: string;
+  googleMapsLocationUrl?: string;
+  instagram?: string;
+  pixKey?: string;
+  pixKeyType?: 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
+  pixReceiverName?: string;
+  pixCity?: string;
+  whatsapp?: string;
+  whatsappMessage?: string;
+  phone?: string;
+  address?: string;
+  openingHours?: string;
+  themeStyle?: 'cyber_dark' | 'emerald_luxury' | 'gold_vip' | 'ocean_tech' | 'clean_minimal';
+  wifiSsid?: string;
+  wifiPassword?: string;
+  showCatalogButton?: boolean;
+  showReviewsButton?: boolean;
+  showPixButton?: boolean;
+  showWhatsAppButton?: boolean;
+  showInstagramButton?: boolean;
+  showLocationButton?: boolean;
+  showWifiButton?: boolean;
+  customLinks?: Array<{ id: string; title: string; url: string; icon?: string }>;
 }
 
 export interface Employee {

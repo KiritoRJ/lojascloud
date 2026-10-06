@@ -1,4 +1,4 @@
-import { ServiceOrder, Sale, Transaction } from '../types';
+import { ServiceOrder, Sale, Transaction, Product } from '../types';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, differenceInDays, getDaysInMonth, subMonths, isSameMonth, startOfDay, endOfDay } from 'date-fns';
 
 // --- Interfaces de Normalização ---
@@ -57,7 +57,8 @@ export const useFinanceCalculations = (
   sales: Sale[],
   manualTransactions: Transaction[],
   periodStart: Date = startOfMonth(new Date()),
-  periodEnd: Date = endOfMonth(new Date())
+  periodEnd: Date = endOfMonth(new Date()),
+  products?: Product[]
 ) => {
 
   // 1. Normalização de Dados (Unified Ledger)
@@ -71,8 +72,8 @@ export const useFinanceCalculations = (
         transactions.push({
           id: `os-${os.id}`,
           type: 'income',
-          amount: os.total,
-          cost: os.partsCost,
+          amount: Number(os.total || 0),
+          cost: Number(os.partsCost || 0),
           date: parseISO(os.date),
           description: `OS #${os.id} - ${os.deviceModel}`,
           category: 'Serviços',
@@ -85,11 +86,21 @@ export const useFinanceCalculations = (
     // Vendas
     sales.forEach(sale => {
       if (!sale.isDeleted) {
+        let cost = Number(sale.costAtSale || 0);
+
+        // Fallback inteligente: se o custo gravado na venda for 0 ou ausente, busca do cadastro de produtos
+        if (cost === 0 && products && products.length > 0) {
+          const prod = products.find(p => p.id === sale.productId || (p.name && sale.productName && p.name.trim().toLowerCase() === sale.productName.trim().toLowerCase()));
+          if (prod && Number(prod.costPrice) > 0) {
+            cost = Number(prod.costPrice) * (Number(sale.quantity) || 1);
+          }
+        }
+
         transactions.push({
           id: `sale-${sale.id}`,
           type: 'income',
-          amount: sale.finalPrice,
-          cost: sale.costAtSale,
+          amount: Number(sale.finalPrice || 0),
+          cost: cost,
           date: parseISO(sale.date),
           description: `Venda - ${sale.productName}`,
           category: 'Vendas',
@@ -117,7 +128,7 @@ export const useFinanceCalculations = (
         transactions.push({
           id: `manual-${t.id}`,
           type: t.type === 'entrada' ? 'income' : 'expense',
-          amount: t.amount,
+          amount: Number(t.amount || 0),
           cost: 0,
           date: parseISO(t.date),
           dueDate: t.dueDate ? parseISO(t.dueDate) : undefined,

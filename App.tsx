@@ -16,6 +16,7 @@ import { ResellerDashboard } from './components/ResellerDashboard';
 import SubscriptionView from './components/SubscriptionView';
 import CustomerCatalog from './components/CustomerCatalog';
 import PublicTrackingPage from './components/PublicTrackingPage';
+import { StoreBusinessCardPage } from './components/businessCard/StoreBusinessCardPage';
 import { DeviceHardwareTestPage } from './components/DeviceHardwareTestPage';
 import { InstallAppModal } from './components/InstallAppModal';
 import { SpotlightTour } from './components/SpotlightTour';
@@ -28,6 +29,7 @@ import { getChangedOrders } from './utils/orderUtils';
 import { db } from './utils/localDb';
 import { useAppNotifications } from './utils/useAppNotifications';
 import { ConnectionStatusManager } from './utils/connectionStatus';
+import { getDeviceTypeAndName } from './utils/usePosTerminals';
 import { 
   ConnectionStatusTag, 
   DatabaseOfflineBanner, 
@@ -311,6 +313,26 @@ const App: React.FC = () => {
     catalogTenantId = pathname.split('/catalogo/')[1].replace(/\/$/, '');
   } else if (pathname.startsWith('/loja/')) {
     catalogTenantId = pathname.split('/loja/')[1].replace(/\/$/, '');
+  }
+
+  // 4. Cartão de Visita Digital da Loja (acesso externo cliente)
+  let businessCardTenantId: string | null = searchParams.get('cartao') || searchParams.get('card') || searchParams.get('bio') || null;
+  if (pathname.startsWith('/cartao/')) {
+    businessCardTenantId = pathname.split('/cartao/')[1]?.split('/')[0]?.split('?')[0]?.split('#')[0] || null;
+  } else if (pathname.startsWith('/card/')) {
+    businessCardTenantId = pathname.split('/card/')[1]?.split('/')[0]?.split('?')[0]?.split('#')[0] || null;
+  } else if (pathname.startsWith('/bio/')) {
+    businessCardTenantId = pathname.split('/bio/')[1]?.split('/')[0]?.split('?')[0]?.split('#')[0] || null;
+  } else if (pathname === '/cartao' || pathname === '/card' || pathname === '/bio') {
+    businessCardTenantId = searchParams.get('loja') || searchParams.get('id') || searchParams.get('tenant') || null;
+  }
+  if (!businessCardTenantId && hash) {
+    const cleanHash = hash.replace(/^#\/?/, '');
+    if (cleanHash.startsWith('cartao/')) {
+      businessCardTenantId = cleanHash.split('cartao/')[1]?.split('/')[0]?.split('?')[0] || null;
+    } else if (cleanHash.startsWith('card/')) {
+      businessCardTenantId = cleanHash.split('card/')[1]?.split('/')[0]?.split('?')[0] || null;
+    }
   }
 
   useEffect(() => {
@@ -710,6 +732,14 @@ const App: React.FC = () => {
         { event: '*', schema: 'public', table: 'tenants', filter: `id=eq.${tenantId}` },
         () => debouncedLoad(500)
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'active_sessions', filter: `tenant_id=eq.${tenantId}` },
+        () => {
+          // Notifica imediatamente todos os componentes de PDV da alteração de terminais/sessões
+          window.dispatchEvent(new CustomEvent('pos_terminals_updated'));
+        }
+      )
       .subscribe();
 
     // 2. BroadcastChannel para sincronização instantânea de testes de hardware entre abas
@@ -774,10 +804,21 @@ const App: React.FC = () => {
 
     const deviceId = localStorage.getItem('device_id') || '';
     const maxUsers = session.maxUsers || 1;
+    const { deviceInfo } = getDeviceTypeAndName();
+
+    // Dispara sinal de vida imediatamente ao montar a tela para não esperar 2 minutos
+    if (navigator.onLine && deviceId) {
+      OnlineDB.heartbeatSession(session.tenantId!, deviceId, maxUsers, currentUser?.name, deviceInfo).then((res) => {
+        if (res && res.kicked) {
+          handleLogout();
+          alert("Sua sessão foi encerrada porque o limite de acessos simultâneos da loja foi atingido por outro dispositivo.");
+        }
+      }).catch(() => {});
+    }
 
     const interval = setInterval(async () => {
       if (!navigator.onLine) return;
-      const res = await OnlineDB.heartbeatSession(session.tenantId!, deviceId, maxUsers);
+      const res = await OnlineDB.heartbeatSession(session.tenantId!, deviceId, maxUsers, currentUser?.name, deviceInfo);
       if (res && res.kicked) {
         handleLogout();
         alert("Sua sessão foi encerrada porque o limite de acessos simultâneos da loja foi atingido por outro dispositivo.");
@@ -785,7 +826,7 @@ const App: React.FC = () => {
     }, 2 * 60 * 1000); // Heartbeat a cada 2 minutos
 
     return () => clearInterval(interval);
-  }, [session]);
+  }, [session, currentUser]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -883,9 +924,10 @@ const App: React.FC = () => {
           const tenantId = result.tenant?.id;
           const maxUsers = result.tenant?.maxUsers || 1;
           const deviceId = localStorage.getItem('device_id') || '';
+          const { deviceInfo } = getDeviceTypeAndName();
           
           try {
-            const sessionRes = await OnlineDB.checkAndRegisterSession(tenantId, maxUsers, deviceId, loginForm.username);
+            const sessionRes = await OnlineDB.checkAndRegisterSession(tenantId, maxUsers, deviceId, loginForm.username, deviceInfo);
             if (!sessionRes.success) {
               setLoginError(sessionRes.message);
               setIsLoggingIn(false);
@@ -1395,6 +1437,11 @@ const App: React.FC = () => {
   // Acompanhamento público de O.S. (acesso externo cliente)
   if (publicTrackingToken) {
     return <PublicTrackingPage token={publicTrackingToken} />;
+  }
+
+  // Cartão de Visita Digital da Loja (acesso externo cliente com Google Maps, Instagram, Pix, etc.)
+  if (businessCardTenantId) {
+    return <StoreBusinessCardPage tenantIdOrSlug={businessCardTenantId} />;
   }
 
   if (catalogTenantId || catalogSlug) {
@@ -2152,7 +2199,7 @@ const App: React.FC = () => {
               tenantId={session.tenantId || ''}
             />
           )}
-          {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} setOrders={saveOrders} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
+          {activeTab === 'financeiro' && <FinanceTab orders={orders} sales={sales} products={products} transactions={transactions} setTransactions={saveTransactions} setOrders={saveOrders} onDeleteOrder={removeOrder} onDeleteTransaction={removeTransaction} onDeleteSale={removeSale} tenantId={session.tenantId || ''} settings={settings} enabledFeatures={session.enabledFeatures} />}
           {activeTab === 'team' && (
             <EmployeeManagementTab 
               tenantId={session.tenantId || ''} 

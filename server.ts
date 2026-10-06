@@ -21,6 +21,12 @@ const getPort = () => {
   if (portIndex !== -1 && process.argv[portIndex + 1]) {
     return parseInt(process.argv[portIndex + 1], 10);
   }
+  if (process.env.DEFAULT_APP_PORT) {
+    return parseInt(process.env.DEFAULT_APP_PORT, 10);
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    return 3000;
+  }
   return parseInt(process.env.PORT || "3000", 10);
 };
 const PORT = getPort();
@@ -525,8 +531,6 @@ interface PosTerminalRecord {
   firstConnectedAt: number;
 }
 
-const activeTerminalsMap = new Map<string, Map<string, PosTerminalRecord>>();
-
 app.post('/api/pos/terminal-heartbeat', async (req, res) => {
   try {
     const { tenantId, machineId, configuredNumber, operatorName, operatorRole, operatorId, deviceInfo } = req.body;
@@ -534,90 +538,16 @@ app.post('/api/pos/terminal-heartbeat', async (req, res) => {
       return res.status(400).json({ error: 'tenantId e machineId são obrigatórios' });
     }
 
-    const now = Date.now();
-    let tenantTerminals = activeTerminalsMap.get(tenantId);
-    if (!tenantTerminals) {
-      tenantTerminals = new Map<string, PosTerminalRecord>();
-      activeTerminalsMap.set(tenantId, tenantTerminals);
-    }
-
-    // Remove terminais inativos há mais de 45 segundos
-    for (const [mid, term] of tenantTerminals.entries()) {
-      if (now - term.lastSeen > 45000 && mid !== machineId) {
-        tenantTerminals.delete(mid);
-      }
-    }
-
-    const existing = tenantTerminals.get(machineId);
-    const firstConnectedAt = existing ? existing.firstConnectedAt : now;
-
-    tenantTerminals.set(machineId, {
-      machineId,
+    const result = await OnlineDB.syncPosTerminal({
       tenantId,
-      configuredNumber: (configuredNumber && Number(configuredNumber) > 0) ? Number(configuredNumber) : undefined,
-      terminalNumber: 1,
-      terminalName: 'PDV 01',
-      operatorName: operatorName || 'Operador',
-      operatorRole: operatorRole || 'colaborador',
-      operatorId: operatorId || undefined,
-      deviceInfo: deviceInfo || 'PC',
-      lastSeen: now,
-      firstConnectedAt
+      deviceId: machineId,
+      operatorName,
+      operatorRole,
+      deviceInfo,
+      configuredNumber: (configuredNumber && Number(configuredNumber) > 0) ? Number(configuredNumber) : undefined
     });
 
-    const allList = Array.from(tenantTerminals.values());
-    const manualAssignedNumbers = new Set<number>();
-
-    // 1. Terminais fixados manualmente pelo usuário no mercado (ex: Caixa 01, Caixa 02 fixo)
-    allList.forEach(t => {
-      if (t.configuredNumber && t.configuredNumber > 0) {
-        manualAssignedNumbers.add(t.configuredNumber);
-        t.terminalNumber = t.configuredNumber;
-        t.terminalName = `PDV ${String(t.configuredNumber).padStart(2, '0')}`;
-      }
-    });
-
-    // 2. Terminais automáticos recebem a numeração sequencial por ordem de conexão estável
-    const unconfigured = allList
-      .filter(t => !t.configuredNumber || t.configuredNumber <= 0)
-      .sort((a, b) => a.firstConnectedAt - b.firstConnectedAt || a.machineId.localeCompare(b.machineId));
-
-    let nextNum = 1;
-    unconfigured.forEach(t => {
-      while (manualAssignedNumbers.has(nextNum)) {
-        nextNum++;
-      }
-      t.terminalNumber = nextNum;
-      t.terminalName = `PDV ${String(nextNum).padStart(2, '0')}`;
-      manualAssignedNumbers.add(nextNum);
-      nextNum++;
-    });
-
-    allList.forEach(t => {
-      tenantTerminals?.set(t.machineId, t);
-    });
-
-    const currentTerm = tenantTerminals.get(machineId);
-    const terminalList = allList
-      .sort((a, b) => a.terminalNumber - b.terminalNumber)
-      .map(t => ({
-        terminalNumber: t.terminalNumber,
-        terminalName: t.terminalName,
-        operatorName: t.operatorName,
-        operatorRole: t.operatorRole,
-        isCurrent: t.machineId === machineId,
-        deviceInfo: t.deviceInfo,
-        lastSeen: t.lastSeen,
-        isOnline: (now - t.lastSeen) < 30000
-      }));
-
-    return res.json({
-      success: true,
-      currentTerminalNumber: currentTerm?.terminalNumber || 1,
-      currentTerminalName: currentTerm?.terminalName || 'PDV 01',
-      totalActiveTerminals: terminalList.length,
-      activeTerminals: terminalList
-    });
+    return res.json(result);
   } catch (error: any) {
     console.error('Erro no heartbeat de terminal do PDV:', error);
     return res.status(500).json({ error: error?.message || 'Falha no heartbeat do terminal' });
@@ -628,10 +558,7 @@ app.post('/api/pos/terminal-leave', async (req, res) => {
   try {
     const { tenantId, machineId } = req.body;
     if (tenantId && machineId) {
-      const tenantTerminals = activeTerminalsMap.get(tenantId);
-      if (tenantTerminals) {
-        tenantTerminals.delete(machineId);
-      }
+      await OnlineDB.removeSession(tenantId, machineId);
     }
     return res.json({ success: true });
   } catch (e) {

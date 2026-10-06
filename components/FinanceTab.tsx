@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, ClipboardList, Target, Zap, ArrowUpRight, History, BarChart3, PieChart as PieIcon, Search, Trash2, AlertCircle, Loader2, Lock, KeyRound, X, Plus, Minus, Wallet, FileText, User as UserIcon, Printer, Menu, AlertTriangle, CheckCircle2, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, ClipboardList, Target, Zap, ArrowUpRight, History, BarChart3, PieChart as PieIcon, Search, Trash2, AlertCircle, Loader2, Lock, KeyRound, X, Plus, Minus, Wallet, FileText, User as UserIcon, Printer, Menu, AlertTriangle, CheckCircle2, CheckCircle, Eye, EyeOff, Calendar } from 'lucide-react';
 import { ServiceOrder, Sale, Product, Transaction, AppSettings, User } from '../types';
 import { formatCurrency, formatDate } from '../utils';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line, AreaChart, Area } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line, AreaChart, Area, Legend } from 'recharts';
 import { OnlineDB } from '../utils/api';
 import { jsPDF } from 'jspdf';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { addMonths, subMonths, startOfDay, endOfDay, isBefore, isAfter, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, getDaysInMonth } from 'date-fns';
+import { addMonths, subMonths, startOfDay, endOfDay, isBefore, isAfter, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, getDaysInMonth, eachMonthOfInterval, eachDayOfInterval, startOfYear, endOfYear, isSameMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useFinanceCalculations, FinancialTransaction } from '../utils/finance';
 
@@ -18,6 +18,7 @@ interface Props {
   transactions: Transaction[];
   setTransactions: (transactions: Transaction[]) => Promise<void>;
   setOrders?: (orders: ServiceOrder[]) => Promise<void>;
+  onDeleteOrder?: (id: string) => Promise<void>;
   onDeleteTransaction: (id: string) => Promise<void>;
   onDeleteSale: (sale: Sale) => Promise<void>;
   tenantId: string;
@@ -27,16 +28,26 @@ interface Props {
   };
 }
 
-const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, setTransactions, setOrders, onDeleteTransaction, onDeleteSale, tenantId, settings, enabledFeatures }) => {
+const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, setTransactions, setOrders, onDeleteOrder, onDeleteTransaction, onDeleteSale, tenantId, settings, enabledFeatures }) => {
   const [saleSearch, setSaleSearch] = useState('');
   const [isCancelling, setIsCancelling] = useState<string | null>(null);
   
-  // Estados para Modal de Senha
+  // Estados para Modal de Senha e Ações Protegidas (Exclusão de Contas, Vendas e Lançamentos)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [verifyingPassword, setVerifyingPassword] = useState(false);
   const [authError, setAuthError] = useState(false);
   const [selectedSaleToCancel, setSelectedSaleToCancel] = useState<Sale | null>(null);
+  const [authAction, setAuthAction] = useState<{
+    type: 'cancel_sale' | 'delete_account' | 'delete_transaction';
+    targetSale?: Sale;
+    targetAccount?: FinancialTransaction;
+    targetTransactionId?: string;
+    title: string;
+    subtitle?: string;
+    description: string;
+    amount?: number;
+  } | null>(null);
   const [transactionToPay, setTransactionToPay] = useState<FinancialTransaction | null>(null);
 
   // Estados para Confirmação de Exclusão Manual
@@ -78,7 +89,7 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
   const [periodEnd, setPeriodEnd] = useState<Date>(endOfMonth(new Date()));
 
   // Hook de Cálculos Financeiros Avançados
-  const { summary, transactions: periodTransactions, allTransactions } = useFinanceCalculations(orders, sales, transactions, periodStart, periodEnd);
+  const { summary, transactions: periodTransactions, allTransactions } = useFinanceCalculations(orders, sales, transactions, periodStart, periodEnd, products);
 
   // Limpeza automática ao carregar (Remove dados com mais de X meses, conforme config da loja)
   useEffect(() => {
@@ -108,35 +119,190 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
 
   const COLORS = ['#3b82f6', '#10b981', '#8b5cf6'];
 
-  // Dados para Gráfico de Evolução Mensal
+  // Meses no período selecionado pelo usuário
+  const monthsInSelectedPeriod = useMemo(() => {
+    try {
+      const s = startOfMonth(periodStart);
+      const e = endOfMonth(periodEnd);
+      if (s > e) return [s];
+      return eachMonthOfInterval({ start: s, end: e });
+    } catch {
+      return [startOfMonth(new Date())];
+    }
+  }, [periodStart, periodEnd]);
+
+  const isSingleMonth = monthsInSelectedPeriod.length <= 1;
+
+  // Preset ativo de seleção de período
+  const activePreset = useMemo(() => {
+    const now = new Date();
+    const isCurrent = isSameMonth(periodStart, now) && isSameMonth(periodEnd, now);
+    if (isCurrent) return 'current';
+    const prev = subMonths(now, 1);
+    if (isSameMonth(periodStart, prev) && isSameMonth(periodEnd, prev)) return 'prev';
+    if (isSameMonth(periodStart, subMonths(now, 2)) && isSameMonth(periodEnd, now)) return '3months';
+    if (isSameMonth(periodStart, subMonths(now, 5)) && isSameMonth(periodEnd, now)) return '6months';
+    if (isSameMonth(periodStart, startOfYear(now)) && isSameMonth(periodEnd, endOfYear(now))) return 'year';
+    return 'custom';
+  }, [periodStart, periodEnd]);
+
+  const handleSelectPresetPeriod = (preset: 'current' | 'prev' | '3months' | '6months' | 'year') => {
+    const now = new Date();
+    if (preset === 'current') {
+      setPeriodStart(startOfMonth(now));
+      setPeriodEnd(endOfMonth(now));
+    } else if (preset === 'prev') {
+      const prev = subMonths(now, 1);
+      setPeriodStart(startOfMonth(prev));
+      setPeriodEnd(endOfMonth(prev));
+    } else if (preset === '3months') {
+      setPeriodStart(startOfMonth(subMonths(now, 2)));
+      setPeriodEnd(endOfMonth(now));
+    } else if (preset === '6months') {
+      setPeriodStart(startOfMonth(subMonths(now, 5)));
+      setPeriodEnd(endOfMonth(now));
+    } else if (preset === 'year') {
+      setPeriodStart(startOfYear(now));
+      setPeriodEnd(endOfYear(now));
+    }
+  };
+
+  // Dados para Gráfico de Evolução (Exclusivo do Mês Vigente ou dos Meses Selecionados)
   const evolutionData = useMemo(() => {
-    const data = [];
-    for (let i = 5; i >= 0; i--) {
-      const date = subMonths(new Date(), i);
-      const start = startOfMonth(date);
-      const end = endOfMonth(date);
-      
-      // Calcular totais para este mês histórico
-      // Nota: Isso é uma simplificação. Idealmente o hook faria isso, mas para não complicar demais o hook agora, faremos aqui usando allTransactions
-      const monthTrans = allTransactions.filter(t => isWithinInterval(t.date, { start, end }));
-      
-      let rev = 0;
-      let exp = 0;
-      
-      monthTrans.forEach(t => {
-        if (t.type === 'income' && t.status === 'paid') rev += t.amount;
-        if (t.type === 'expense' && t.status === 'paid') exp += t.amount;
+    // Caso 1: Apenas 1 mês selecionado (por padrão, Mês Vigente)
+    // Mostra a evolução dia a dia daquele mês específico
+    if (isSingleMonth) {
+      const targetMonth = monthsInSelectedPeriod[0] || startOfMonth(new Date());
+      const days = eachDayOfInterval({
+        start: startOfMonth(targetMonth),
+        end: endOfMonth(targetMonth)
       });
 
-      data.push({
-        name: format(date, 'MMM', { locale: ptBR }).toUpperCase(),
-        Receita: rev,
-        Despesas: exp,
-        Lucro: rev - exp
+      return days.map(day => {
+        const dayStart = startOfDay(day);
+        const dayEnd = endOfDay(day);
+        const dayTrans = allTransactions.filter(t => isWithinInterval(t.date, { start: dayStart, end: dayEnd }));
+
+        let grossRevenue = 0;
+        let variableCosts = 0;
+        let operatingExpenses = 0;
+
+        dayTrans.forEach(t => {
+          if (t.type === 'income' && t.status === 'paid') {
+            grossRevenue += Number(t.amount || 0);
+            variableCosts += Number(t.cost || 0);
+          }
+          if (t.type === 'expense' && t.status === 'paid') {
+            operatingExpenses += Number(t.amount || 0);
+          }
+        });
+
+        const grossProfit = grossRevenue - variableCosts;
+        const netProfit = grossProfit - operatingExpenses;
+        const margin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
+
+        return {
+          name: format(day, 'dd/MM'),
+          fullName: format(day, "dd 'de' MMMM", { locale: ptBR }),
+          rawDate: day,
+          'Receita Bruta': Number(grossRevenue.toFixed(2)),
+          'Lucro Líquido': Number(netProfit.toFixed(2)),
+          'Lucro Bruto': Number(grossProfit.toFixed(2)),
+          'Custos': Number(variableCosts.toFixed(2)),
+          'Despesas': Number(operatingExpenses.toFixed(2)),
+          margin: Number(margin.toFixed(1)),
+          Receita: Number(grossRevenue.toFixed(2)),
+          Lucro: Number(netProfit.toFixed(2)),
+          CustosVar: Number(variableCosts.toFixed(2)),
+          DespesasFix: Number(operatingExpenses.toFixed(2)),
+        };
       });
     }
-    return data;
-  }, [allTransactions]);
+
+    // Caso 2: Múltiplos meses selecionados (ex: 2, 3, 6 meses ou ano todo)
+    // Mostra a evolução mês a mês apenas dos meses selecionados pelo usuário
+    return monthsInSelectedPeriod.map(monthDate => {
+      const monthStart = startOfMonth(monthDate);
+      const monthEnd = endOfMonth(monthDate);
+      const monthTrans = allTransactions.filter(t => isWithinInterval(t.date, { start: startOfDay(monthStart), end: endOfDay(monthEnd) }));
+
+      let grossRevenue = 0;
+      let variableCosts = 0;
+      let operatingExpenses = 0;
+
+      monthTrans.forEach(t => {
+        if (t.type === 'income' && t.status === 'paid') {
+          grossRevenue += Number(t.amount || 0);
+          variableCosts += Number(t.cost || 0);
+        }
+        if (t.type === 'expense' && t.status === 'paid') {
+          operatingExpenses += Number(t.amount || 0);
+        }
+      });
+
+      const grossProfit = grossRevenue - variableCosts;
+      const netProfit = grossProfit - operatingExpenses;
+      const margin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
+
+      return {
+        name: format(monthDate, 'MMM', { locale: ptBR }).toUpperCase(),
+        fullName: format(monthDate, 'MMMM yyyy', { locale: ptBR }),
+        rawDate: monthDate,
+        'Receita Bruta': Number(grossRevenue.toFixed(2)),
+        'Lucro Líquido': Number(netProfit.toFixed(2)),
+        'Lucro Bruto': Number(grossProfit.toFixed(2)),
+        'Custos': Number(variableCosts.toFixed(2)),
+        'Despesas': Number(operatingExpenses.toFixed(2)),
+        margin: Number(margin.toFixed(1)),
+        Receita: Number(grossRevenue.toFixed(2)),
+        Lucro: Number(netProfit.toFixed(2)),
+        CustosVar: Number(variableCosts.toFixed(2)),
+        DespesasFix: Number(operatingExpenses.toFixed(2)),
+      };
+    });
+  }, [allTransactions, isSingleMonth, monthsInSelectedPeriod]);
+
+  // Resumo consolidado estritamente do período selecionado (mês vigente por padrão)
+  const evolutionSummary = useMemo(() => {
+    let totalRevenue = 0;
+    let totalCosts = 0;
+    let totalExpenses = 0;
+    let totalNetProfit = 0;
+    let totalGrossProfit = 0;
+
+    // Filtra estritamente dentro do período ativo [periodStart, periodEnd]
+    const periodTrans = allTransactions.filter(t => 
+      isWithinInterval(t.date, { start: startOfDay(periodStart), end: endOfDay(periodEnd) })
+    );
+
+    periodTrans.forEach(t => {
+      if (t.type === 'income' && t.status === 'paid') {
+        totalRevenue += Number(t.amount || 0);
+        totalCosts += Number(t.cost || 0);
+      }
+      if (t.type === 'expense' && t.status === 'paid') {
+        totalExpenses += Number(t.amount || 0);
+      }
+    });
+
+    totalGrossProfit = totalRevenue - totalCosts;
+    totalNetProfit = totalGrossProfit - totalExpenses;
+    const avgMargin = totalRevenue > 0 ? (totalNetProfit / totalRevenue) * 100 : 0;
+
+    return {
+      totalRevenue,
+      totalCosts,
+      totalExpenses,
+      totalNetProfit,
+      totalGrossProfit,
+      avgMargin,
+      isSingleMonth,
+      monthsCount: monthsInSelectedPeriod.length,
+      periodLabel: isSingleMonth 
+        ? format(periodStart, "MMMM 'de' yyyy", { locale: ptBR }).toUpperCase()
+        : `${format(periodStart, 'MMM/yy', { locale: ptBR })} a ${format(periodEnd, 'MMM/yy', { locale: ptBR })}`.toUpperCase()
+    };
+  }, [allTransactions, periodStart, periodEnd, isSingleMonth, monthsInSelectedPeriod]);
 
   const handleGenerateReport = async (onlyCanceled = false) => {
     setIsGeneratingReport(true);
@@ -477,29 +643,101 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
 
   const initiateCancelSale = (sale: Sale) => {
     setSelectedSaleToCancel(sale);
+    setAuthAction({
+      type: 'cancel_sale',
+      targetSale: sale,
+      title: 'Cancelar Venda',
+      subtitle: 'Confirmação com Senha Administrativa',
+      description: `Venda #${sale.transactionId || sale.id.substring(0, 8)} - ${sale.productName}`,
+      amount: sale.finalPrice
+    });
     setIsAuthModalOpen(true);
     setPasswordInput('');
     setAuthError(false);
   };
 
-  const confirmCancellation = async () => {
-    if (!selectedSaleToCancel || !passwordInput) return;
+  const initiateDeleteAccount = (account: FinancialTransaction) => {
+    const isPayable = account.type === 'expense';
+    setAuthAction({
+      type: 'delete_account',
+      targetAccount: account,
+      title: isPayable ? 'Excluir Conta a Pagar' : 'Excluir Conta a Receber',
+      subtitle: 'Confirmação com Senha Administrativa',
+      description: account.description,
+      amount: account.amount
+    });
+    setIsAuthModalOpen(true);
+    setPasswordInput('');
+    setAuthError(false);
+  };
+
+  const initiateDeleteManualTransaction = (id: string, description?: string, amount?: number) => {
+    setAuthAction({
+      type: 'delete_transaction',
+      targetTransactionId: id,
+      title: 'Excluir Lançamento',
+      subtitle: 'Confirmação com Senha Administrativa',
+      description: description || 'Lançamento financeiro',
+      amount: amount
+    });
+    setIsAuthModalOpen(true);
+    setPasswordInput('');
+    setAuthError(false);
+  };
+
+  const confirmAuthAction = async () => {
+    if (!passwordInput || !authAction) return;
     setVerifyingPassword(true);
     setAuthError(false);
 
     try {
       const authResult = await OnlineDB.verifyAdminPassword(tenantId, passwordInput);
       if (authResult.success) {
-        setIsCancelling(selectedSaleToCancel.id);
         setIsAuthModalOpen(false);
-        try {
-          await onDeleteSale(selectedSaleToCancel);
-        } catch (e: any) {
-          alert(`ERRO AO CANCELAR: ${e.message}`);
-        } finally {
-          setIsCancelling(null);
-          setSelectedSaleToCancel(null);
+
+        if (authAction.type === 'cancel_sale' && authAction.targetSale) {
+          setIsCancelling(authAction.targetSale.id);
+          try {
+            await onDeleteSale(authAction.targetSale);
+          } catch (e: any) {
+            alert(`ERRO AO CANCELAR: ${e.message}`);
+          } finally {
+            setIsCancelling(null);
+            setSelectedSaleToCancel(null);
+          }
+        } else if (authAction.type === 'delete_account' && authAction.targetAccount) {
+          const acc = authAction.targetAccount;
+          try {
+            if (acc.source === 'manual') {
+              const rawId = acc.id.replace('manual-', '');
+              await onDeleteTransaction(rawId);
+            } else if (acc.source === 'sale') {
+              const rawId = acc.id.replace('sale-', '');
+              const foundSale = sales.find(s => s.id === rawId);
+              if (foundSale) {
+                await onDeleteSale(foundSale);
+              }
+            } else if (acc.source === 'os') {
+              const rawId = acc.id.replace('os-', '');
+              if (onDeleteOrder) {
+                await onDeleteOrder(rawId);
+              } else if (setOrders) {
+                await setOrders(orders.map(o => o.id === rawId ? { ...o, isDeleted: true } : o));
+              }
+            }
+          } catch (e: any) {
+            alert(`Erro ao excluir conta: ${e.message}`);
+          }
+        } else if (authAction.type === 'delete_transaction' && authAction.targetTransactionId) {
+          try {
+            await onDeleteTransaction(authAction.targetTransactionId);
+          } catch (e: any) {
+            alert(`Erro ao excluir lançamento: ${e.message}`);
+          }
         }
+
+        setAuthAction(null);
+        setPasswordInput('');
       } else {
         setAuthError(true);
         setTimeout(() => setAuthError(false), 2000);
@@ -881,8 +1119,9 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
                       <span className="text-[7px] font-black text-slate-400 uppercase">{t.paymentMethod}</span>
                     </div>
                     <button 
-                      onClick={() => setTransactionToDelete(t.id)} 
-                      className="p-2 text-slate-300 hover:text-red-500 bg-slate-50 rounded-xl active:scale-90"
+                      onClick={() => initiateDeleteManualTransaction(t.id, t.description, t.amount)} 
+                      className="p-2 text-slate-300 hover:text-red-500 bg-slate-50 hover:bg-red-50 rounded-xl active:scale-90 transition-colors"
+                      title="Excluir Lançamento (Requer Senha)"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -1034,12 +1273,19 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
                              {t.status !== 'paid' && (
                                <button 
                                   onClick={() => setTransactionToPay(t)}
-                                  className="bg-emerald-50 text-emerald-600 p-0.5 rounded-md hover:bg-emerald-100 active:scale-90 transition-all"
+                                  className="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 p-1 rounded-lg active:scale-90 transition-all"
                                   title="Marcar como Pago"
                                >
                                   <CheckCircle size={12} />
                                </button>
                              )}
+                             <button 
+                                onClick={() => initiateDeleteAccount(t)}
+                                className="bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 p-1 rounded-lg active:scale-90 transition-all"
+                                title="Excluir Conta (Requer Senha)"
+                             >
+                                <Trash2 size={12} />
+                             </button>
                           </div>
                        </div>
                     </div>
@@ -1116,28 +1362,440 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
       {/* VIEW: EVOLUÇÃO MENSAL */}
       {viewMode === 'evolution' && (
         <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
-           <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4">Evolução Mensal (Últimos 6 Meses)</h3>
-           <div className="bg-white p-4 rounded-[2rem] border border-slate-50 shadow-sm h-[300px] min-w-0">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
-                 <AreaChart data={evolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                       <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                       </linearGradient>
-                       <linearGradient id="colorLucro" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                       </linearGradient>
-                    </defs>
-                    <XAxis dataKey="name" fontSize={9} fontWeight="900" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
-                    <YAxis fontSize={9} axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px', fontWeight: 'bold' }} />
-                    <Area type="monotone" dataKey="Receita" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
-                    <Area type="monotone" dataKey="Lucro" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorLucro)" />
-                 </AreaChart>
-              </ResponsiveContainer>
+           {/* Topo com título e ação de retorno */}
+           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-3xl border border-slate-50 shadow-sm">
+              <div>
+                 <div className="flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                       <History size={16} />
+                    </span>
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">
+                       {isSingleMonth 
+                          ? `Evolução do Mês Vigente (${evolutionSummary.periodLabel})`
+                          : `Evolução do Período (${evolutionSummary.monthsCount} Meses Selecionados)`
+                       }
+                    </h3>
+                 </div>
+                 <p className="text-[10px] text-slate-400 font-bold mt-1 ml-10">
+                    {isSingleMonth 
+                       ? "Cálculos e evolução calculados exclusivamente para o mês vigente. Selecione mais meses abaixo caso queira comparar o histórico."
+                       : `Cálculos consolidados para os ${evolutionSummary.monthsCount} meses selecionados (${evolutionSummary.periodLabel}).`
+                    }
+                 </p>
+              </div>
+              <button 
+                 onClick={() => setViewMode('dashboard')}
+                 className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95 shrink-0 self-start sm:self-auto border border-slate-100"
+              >
+                 <ArrowUpRight size={14} />
+                 Voltar ao Dashboard
+              </button>
+           </div>
+
+           {/* Seletor Rápido de Período (Mês Vigente por padrão, ou mais meses) */}
+           <div className="bg-white p-3 sm:p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                 <Calendar size={14} className="text-purple-500" />
+                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Período de Apuração:</span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                 <button
+                    onClick={() => handleSelectPresetPeriod('current')}
+                    className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 ${
+                       activePreset === 'current'
+                          ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100'
+                    }`}
+                 >
+                    Mês Vigente
+                 </button>
+
+                 <button
+                    onClick={() => handleSelectPresetPeriod('prev')}
+                    className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 ${
+                       activePreset === 'prev'
+                          ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100'
+                    }`}
+                 >
+                    Mês Anterior
+                 </button>
+
+                 <button
+                    onClick={() => handleSelectPresetPeriod('3months')}
+                    className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 ${
+                       activePreset === '3months'
+                          ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100'
+                    }`}
+                 >
+                    Últimos 3 Meses
+                 </button>
+
+                 <button
+                    onClick={() => handleSelectPresetPeriod('6months')}
+                    className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 ${
+                       activePreset === '6months'
+                          ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100'
+                    }`}
+                 >
+                    Últimos 6 Meses
+                 </button>
+
+                 <button
+                    onClick={() => handleSelectPresetPeriod('year')}
+                    className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 ${
+                       activePreset === 'year'
+                          ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100'
+                    }`}
+                 >
+                    Ano Vigente
+                 </button>
+
+                 {/* Seletor Manual Inline */}
+                 <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 rounded-xl px-2 py-1">
+                    <DatePicker
+                       selected={periodStart}
+                       onChange={(date) => { if (date) setPeriodStart(startOfDay(date)); }}
+                       selectsStart
+                       startDate={periodStart}
+                       endDate={periodEnd}
+                       dateFormat="MMM/yy"
+                       locale="pt-BR"
+                       className="bg-transparent w-14 text-[9px] font-black uppercase text-slate-700 outline-none text-center cursor-pointer"
+                       title="Mês Inicial"
+                    />
+                    <span className="text-[9px] text-slate-300 font-bold">-</span>
+                    <DatePicker
+                       selected={periodEnd}
+                       onChange={(date) => { if (date) setPeriodEnd(endOfDay(date)); }}
+                       selectsEnd
+                       startDate={periodStart}
+                       endDate={periodEnd}
+                       minDate={periodStart}
+                       dateFormat="MMM/yy"
+                       locale="pt-BR"
+                       className="bg-transparent w-14 text-[9px] font-black uppercase text-slate-700 outline-none text-center cursor-pointer"
+                       title="Mês Final"
+                    />
+                 </div>
+              </div>
+           </div>
+
+           {/* Cards de Resumo Consolidado (Mês Vigente ou Meses Selecionados) */}
+           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
+              <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
+                 <div className="flex items-center gap-2 mb-1">
+                    <span className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                       <Wallet size={12} />
+                    </span>
+                    <p className="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">
+                       {isSingleMonth ? 'Receita Bruta (Mês)' : 'Receita Bruta Total'}
+                    </p>
+                 </div>
+                 <p className="text-xs sm:text-base font-black text-blue-600 truncate">{formatCurrency(evolutionSummary.totalRevenue)}</p>
+                 <p className="text-[7px] text-slate-400 font-bold mt-0.5 truncate">
+                    {isSingleMonth ? 'Vendas + OS + Entradas do mês' : `${evolutionSummary.monthsCount} meses somados`}
+                 </p>
+              </div>
+
+              <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
+                 <div className="flex items-center gap-2 mb-1">
+                    <span className="w-6 h-6 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center shrink-0">
+                       <TrendingUp size={12} />
+                    </span>
+                    <p className="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">
+                       {isSingleMonth ? 'Lucro Bruto (Mês)' : 'Lucro Bruto Total'}
+                    </p>
+                 </div>
+                 <p className="text-xs sm:text-base font-black text-cyan-600 truncate">{formatCurrency(evolutionSummary.totalGrossProfit)}</p>
+                 <p className="text-[7px] text-slate-400 font-bold mt-0.5 truncate">Receita - Custos de Produtos</p>
+              </div>
+
+              <div className="bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-800 shadow-lg text-white">
+                 <div className="flex items-center gap-2 mb-1">
+                    <span className="w-6 h-6 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                       <Target size={12} />
+                    </span>
+                    <p className="text-[7px] sm:text-[8px] font-black text-slate-300 uppercase tracking-widest truncate">
+                       {isSingleMonth ? 'Lucro Líquido Real' : 'Lucro Líquido Total'}
+                    </p>
+                 </div>
+                 <p className={`text-xs sm:text-base font-black ${evolutionSummary.totalNetProfit >= 0 ? 'text-emerald-400' : 'text-red-400'} truncate`}>
+                    {formatCurrency(evolutionSummary.totalNetProfit)}
+                 </p>
+                 <p className="text-[7px] text-slate-400 font-bold mt-0.5 truncate">Margem: {evolutionSummary.avgMargin.toFixed(1)}%</p>
+              </div>
+
+              <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
+                 <div className="flex items-center gap-2 mb-1">
+                    <span className="w-6 h-6 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                       <ShoppingBag size={12} />
+                    </span>
+                    <p className="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">
+                       {isSingleMonth ? 'Custos Var. (CMV)' : 'Custos Var. Total'}
+                    </p>
+                 </div>
+                 <p className="text-xs sm:text-base font-black text-amber-600 truncate">-{formatCurrency(evolutionSummary.totalCosts)}</p>
+                 <p className="text-[7px] text-slate-400 font-bold mt-0.5 truncate">Mercadorias e Peças de OS</p>
+              </div>
+
+              <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-100 shadow-sm col-span-2 sm:col-span-1">
+                 <div className="flex items-center gap-2 mb-1">
+                    <span className="w-6 h-6 rounded-lg bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+                       <TrendingDown size={12} />
+                    </span>
+                    <p className="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">
+                       {isSingleMonth ? 'Despesas Fixas' : 'Despesas Fixas Total'}
+                    </p>
+                 </div>
+                 <p className="text-xs sm:text-base font-black text-red-600 truncate">-{formatCurrency(evolutionSummary.totalExpenses)}</p>
+                 <p className="text-[7px] text-slate-400 font-bold mt-0.5 truncate">Gastos Operacionais Pagos</p>
+              </div>
+           </div>
+
+           {/* Gráfico de Evolução (Diário no mês vigente ou Mês a Mês no período selecionado) */}
+           <div className="bg-white p-4 sm:p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-50 pb-3">
+                 <div>
+                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">
+                       {isSingleMonth 
+                          ? `Evolução Diária - ${evolutionSummary.periodLabel}`
+                          : `Evolução Mês a Mês (${evolutionSummary.monthsCount} Meses)`
+                       }
+                    </h4>
+                    <p className="text-[8px] text-slate-400 font-bold">
+                       {isSingleMonth 
+                          ? "Acompanhamento diário da Receita Bruta, Lucro Bruto e Lucro Líquido Real ao longo deste mês"
+                          : "Comparativo de faturamento e lucros apurados mês a mês no período selecionado"
+                       }
+                    </p>
+                 </div>
+                 <div className="flex flex-wrap items-center gap-3 text-[8px] font-black uppercase">
+                    <div className="flex items-center gap-1.5">
+                       <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                       <span className="text-slate-600">Receita Bruta</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                       <span className="w-2.5 h-2.5 rounded-full bg-cyan-500"></span>
+                       <span className="text-slate-600">Lucro Bruto</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                       <span className="text-slate-600">Lucro Líquido Real</span>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="h-[320px] w-full min-w-0">
+                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={280}>
+                    <AreaChart data={evolutionData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                       <defs>
+                          <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                             <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25}/>
+                             <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorLucroBruto" x1="0" y1="0" x2="0" y2="1">
+                             <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.2}/>
+                             <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorLucroLiq" x1="0" y1="0" x2="0" y2="1">
+                             <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                             <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                          </linearGradient>
+                       </defs>
+                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                       <XAxis 
+                          dataKey="name" 
+                          fontSize={9} 
+                          fontWeight="900" 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fill: '#64748b' }} 
+                       />
+                       <YAxis 
+                          fontSize={9} 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fill: '#94a3b8' }} 
+                          tickFormatter={(val) => `R$ ${val >= 1000 ? (val / 1000).toFixed(1) + 'k' : val}`}
+                       />
+                       <Tooltip 
+                          contentStyle={{ 
+                             borderRadius: '16px', 
+                             border: 'none', 
+                             boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)', 
+                             fontSize: '11px', 
+                             fontWeight: 'bold',
+                             backgroundColor: '#0f172a',
+                             color: '#f8fafc',
+                             padding: '12px 16px'
+                          }}
+                          itemStyle={{ color: '#f8fafc', padding: '2px 0' }}
+                          labelStyle={{ color: '#94a3b8', fontSize: '10px', textTransform: 'uppercase', marginBottom: '6px', fontWeight: '900' }}
+                          labelFormatter={(label, payload) => {
+                             const item = payload && payload[0] && payload[0].payload;
+                             return item ? item.fullName : label;
+                          }}
+                          formatter={(value: any, name: string) => [
+                             formatCurrency(Number(value || 0)), 
+                             name === 'Receita Bruta' ? 'Receita Bruta' :
+                             name === 'Lucro Bruto' ? 'Lucro Bruto (após custos)' :
+                             name === 'Lucro Líquido' ? 'Lucro Líquido (Real)' : name
+                          ]}
+                       />
+                       <Area 
+                          type="monotone" 
+                          dataKey="Receita Bruta" 
+                          stroke="#3b82f6" 
+                          strokeWidth={3} 
+                          fillOpacity={1} 
+                          fill="url(#colorRev)" 
+                       />
+                       <Area 
+                          type="monotone" 
+                          dataKey="Lucro Bruto" 
+                          stroke="#06b6d4" 
+                          strokeWidth={2.5} 
+                          strokeDasharray="4 4"
+                          fillOpacity={1} 
+                          fill="url(#colorLucroBruto)" 
+                       />
+                       <Area 
+                          type="monotone" 
+                          dataKey="Lucro Líquido" 
+                          stroke="#10b981" 
+                          strokeWidth={3} 
+                          fillOpacity={1} 
+                          fill="url(#colorLucroLiq)" 
+                       />
+                    </AreaChart>
+                 </ResponsiveContainer>
+              </div>
+           </div>
+
+           {/* Tabela Detalhada (Mês a Mês se múltiplos meses, ou Dias com Movimentação se Mês Vigente) */}
+           <div className="bg-white p-4 sm:p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                 <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">
+                    {isSingleMonth ? `Demonstrativo do Mês Vigente (${evolutionSummary.periodLabel})` : `Demonstrativo Mês a Mês (${evolutionSummary.monthsCount} Meses)`}
+                 </h4>
+                 <span className="text-[8px] font-black uppercase text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg">
+                    {isSingleMonth ? 'Exclusivo Mês Vigente' : `${evolutionSummary.monthsCount} Meses`}
+                 </span>
+              </div>
+
+              <div className="overflow-x-auto custom-scrollbar">
+                 <table className="w-full text-left border-collapse">
+                    <thead>
+                       <tr className="border-b border-slate-100 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                          <th className="py-2.5 px-3">{isSingleMonth ? 'Dia / Data' : 'Mês'}</th>
+                          <th className="py-2.5 px-3">Receita Bruta</th>
+                          <th className="py-2.5 px-3">Custos CMV/Peças</th>
+                          <th className="py-2.5 px-3">Despesas Fixas</th>
+                          <th className="py-2.5 px-3">Lucro Bruto</th>
+                          <th className="py-2.5 px-3">Lucro Líquido</th>
+                          <th className="py-2.5 px-3 text-right">Margem Líq.</th>
+                       </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 text-[10px]">
+                       {/* Se for 1 mês, mostra os dias com movimentação (ou todos se desejar) */}
+                       {(isSingleMonth 
+                          ? evolutionData.filter(d => d['Receita Bruta'] > 0 || d['Custos'] > 0 || d['Despesas'] > 0)
+                          : evolutionData
+                       ).map((m, idx) => (
+                          <tr key={`row-${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                             <td className="py-3 px-3 font-black text-slate-800 uppercase">
+                                {m.fullName || m.name}
+                             </td>
+                             <td className="py-3 px-3 font-black text-blue-600">
+                                {formatCurrency(m['Receita Bruta'])}
+                             </td>
+                             <td className="py-3 px-3 font-bold text-amber-600">
+                                -{formatCurrency(m['Custos'])}
+                             </td>
+                             <td className="py-3 px-3 font-bold text-red-500">
+                                -{formatCurrency(m['Despesas'])}
+                             </td>
+                             <td className="py-3 px-3 font-black text-cyan-600">
+                                {formatCurrency(m['Lucro Bruto'])}
+                             </td>
+                             <td className="py-3 px-3">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-black text-[9px] ${
+                                   m['Lucro Líquido'] > 0 
+                                      ? 'bg-emerald-50 text-emerald-600' 
+                                      : m['Lucro Líquido'] < 0 
+                                      ? 'bg-red-50 text-red-600' 
+                                      : 'bg-slate-100 text-slate-500'
+                                }`}>
+                                   {m['Lucro Líquido'] >= 0 ? '+' : ''}{formatCurrency(m['Lucro Líquido'])}
+                                </span>
+                             </td>
+                             <td className="py-3 px-3 text-right font-black text-slate-700">
+                                {m['Receita Bruta'] > 0 ? `${m.margin}%` : '0%'}
+                             </td>
+                          </tr>
+                       ))}
+
+                       {isSingleMonth && evolutionData.filter(d => d['Receita Bruta'] > 0 || d['Custos'] > 0 || d['Despesas'] > 0).length === 0 && (
+                          <tr>
+                             <td colSpan={7} className="py-6 text-center text-slate-400 font-bold text-xs uppercase tracking-wider">
+                                Nenhuma movimentação registrada até o momento no mês vigente ({evolutionSummary.periodLabel})
+                             </td>
+                          </tr>
+                       )}
+
+                       {/* Linha de Totalização */}
+                       <tr className="bg-slate-900 text-white font-black text-[10px]">
+                          <td className="py-3 px-3 uppercase tracking-wider">
+                             TOTAL {isSingleMonth ? 'DO MÊS VIGENTE' : 'DO PERÍODO'}
+                          </td>
+                          <td className="py-3 px-3 text-blue-400">
+                             {formatCurrency(evolutionSummary.totalRevenue)}
+                          </td>
+                          <td className="py-3 px-3 text-amber-400">
+                             -{formatCurrency(evolutionSummary.totalCosts)}
+                          </td>
+                          <td className="py-3 px-3 text-red-400">
+                             -{formatCurrency(evolutionSummary.totalExpenses)}
+                          </td>
+                          <td className="py-3 px-3 text-cyan-400">
+                             {formatCurrency(evolutionSummary.totalGrossProfit)}
+                          </td>
+                          <td className="py-3 px-3">
+                             <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-black text-[9px] ${
+                                evolutionSummary.totalNetProfit >= 0 ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
+                             }`}>
+                                {evolutionSummary.totalNetProfit >= 0 ? '+' : ''}{formatCurrency(evolutionSummary.totalNetProfit)}
+                             </span>
+                          </td>
+                          <td className="py-3 px-3 text-right text-emerald-400">
+                             {evolutionSummary.avgMargin.toFixed(1)}%
+                          </td>
+                       </tr>
+                    </tbody>
+                 </table>
+              </div>
+           </div>
+
+           {/* Card Informativo Fiscal / Contábil */}
+           <div className="bg-amber-50/70 border border-amber-200/60 p-4 rounded-2xl flex items-start gap-3">
+              <span className="w-7 h-7 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 mt-0.5">
+                 <AlertCircle size={15} />
+              </span>
+              <div className="text-[10px] text-amber-900 space-y-1">
+                 <p className="font-black uppercase tracking-wider text-[9px] text-amber-950">
+                    Controle de Período e Apuração de Lucros:
+                 </p>
+                 <ul className="list-disc pl-4 space-y-0.5 text-amber-800 text-[9px]">
+                    <li><strong>Mês Vigente por Padrão:</strong> Os cálculos exibidos acima referem-se estritamente ao mês corrente ({evolutionSummary.periodLabel}).</li>
+                    <li><strong>Comparação Histórica:</strong> Para visualizar múltiplos meses, basta clicar nos botões de período (ex: <em>Últimos 3 Meses</em> ou <em>Últimos 6 Meses</em>) ou ajustar as datas no calendário.</li>
+                    <li><strong>Lucro Real:</strong> O Lucro Líquido é obtido deduzindo o custo de produtos/peças e as despesas operacionais da Receita Bruta. Mantenha os preços de custo cadastrados no Estoque para precisão contábil.</li>
+                 </ul>
+              </div>
            </div>
         </div>
       )}
@@ -1490,39 +2148,75 @@ const FinanceTab: React.FC<Props> = ({ orders, sales, products, transactions, se
         </div>
       )}
 
-      {/* MODAL DE AUTENTICAÇÃO PARA CANCELAMENTO */}
+      {/* MODAL DE AUTENTICAÇÃO PARA EXCLUSÕES E CANCELAMENTOS */}
       {isAuthModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/90 z-[200] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
-           <div className="bg-white w-full max-w-xs rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 border border-slate-100">
-              <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner">
-                 <Lock size={36} />
+        <div className="fixed inset-0 bg-slate-950/90 z-[350] flex items-center justify-center p-6 backdrop-blur-xl animate-in fade-in">
+           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 sm:p-10 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-red-50 text-red-600 rounded-[2rem] flex items-center justify-center mx-auto mb-5 shadow-inner">
+                 <Lock size={32} />
               </div>
-              <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">Autorização Requerida</h3>
-              <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-8">Digite a senha administrativa</p>
+              <h3 className="text-center font-black text-slate-800 uppercase text-sm mb-1">
+                 {authAction?.title || 'Autorização Requerida'}
+              </h3>
+              <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-5">
+                 {authAction?.subtitle || 'Digite a senha administrativa'}
+              </p>
+
+              {/* Detalhes do item a ser excluído */}
+              {authAction?.description && (
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 mb-5 text-center">
+                   <p className="text-[10px] font-black text-slate-700 uppercase leading-tight line-clamp-2">
+                      {authAction.description}
+                   </p>
+                   {authAction.amount !== undefined && (
+                      <p className="text-xs font-black text-red-600 mt-1">
+                         {formatCurrency(authAction.amount)}
+                      </p>
+                   )}
+                </div>
+              )}
               
               <div className="space-y-4">
                  <div className="bg-slate-50 rounded-2xl p-4 flex items-center gap-3 border border-slate-100 focus-within:border-slate-300 transition-colors">
-                    <KeyRound size={18} className="text-slate-300" />
+                    <KeyRound size={18} className="text-slate-300 shrink-0" />
                     <input 
                        type="password" 
                        value={passwordInput}
                        onChange={e => setPasswordInput(e.target.value)}
-                       className="bg-transparent w-full outline-none font-bold text-slate-800 text-center tracking-widest"
+                       onKeyDown={e => {
+                         if (e.key === 'Enter' && !verifyingPassword && passwordInput) {
+                           confirmAuthAction();
+                         }
+                       }}
+                       className="bg-transparent w-full outline-none font-bold text-slate-800 text-center tracking-widest text-sm"
                        placeholder="••••••"
                        autoFocus
                     />
                  </div>
                  
                  {authError && (
-                    <p className="text-center text-[9px] font-black text-red-500 uppercase tracking-widest animate-pulse">Senha Incorreta</p>
+                    <p className="text-center text-[9px] font-black text-red-500 uppercase tracking-widest animate-pulse">
+                       Senha Incorreta
+                    </p>
                  )}
 
                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <button onClick={() => setIsAuthModalOpen(false)} className="py-4 rounded-2xl font-black text-[9px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-colors">
+                    <button 
+                       onClick={() => {
+                          setIsAuthModalOpen(false);
+                          setAuthAction(null);
+                          setPasswordInput('');
+                       }} 
+                       className="py-3.5 rounded-2xl font-black text-[9px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 active:scale-95 transition-all"
+                    >
                        Cancelar
                     </button>
-                    <button onClick={confirmCancellation} disabled={verifyingPassword} className="py-4 bg-slate-900 text-white rounded-2xl font-black text-[9px] uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center">
-                       {verifyingPassword ? <Loader2 className="animate-spin" size={14} /> : 'Confirmar'}
+                    <button 
+                       onClick={confirmAuthAction} 
+                       disabled={verifyingPassword || !passwordInput} 
+                       className="py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black text-[9px] uppercase tracking-widest shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50"
+                    >
+                       {verifyingPassword ? <Loader2 className="animate-spin" size={14} /> : 'Excluir'}
                     </button>
                  </div>
               </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PosTerminalInfo, User } from '../types';
+import { OnlineDB } from './api';
 
 export function getDeviceTypeAndName(): { isMobile: boolean; isTablet: boolean; deviceInfo: string } {
   if (typeof navigator === 'undefined') {
@@ -29,47 +30,57 @@ export function getDeviceTypeAndName(): { isMobile: boolean; isTablet: boolean; 
 }
 
 export function usePosTerminals(tenantId: string | undefined, currentUser: User | null) {
-  // 1. Identificador único e estável por dispositivo/janela/celular/computador
+  // 1. Identificador único e estável do dispositivo (mesmo device_id da sessão da loja)
   const [machineId] = useState<string>(() => {
-    let saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('pos_terminal_session_id') : null;
+    let saved = typeof localStorage !== 'undefined' ? localStorage.getItem('device_id') : null;
+    if (!saved && typeof sessionStorage !== 'undefined') {
+      saved = sessionStorage.getItem('pos_terminal_session_id');
+    }
     if (!saved && typeof localStorage !== 'undefined') {
-      // Verifica se há um ID exclusivo salvo no dispositivo
       saved = localStorage.getItem('pos_terminal_device_id');
     }
     if (!saved) {
       const { isMobile, isTablet } = getDeviceTypeAndName();
       const prefix = isMobile ? 'cel_' : isTablet ? 'tab_' : 'pc_';
-      saved = prefix + Math.random().toString(36).substring(2, 9) + '_' + Date.now().toString(36);
+      saved = prefix + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 10);
       try {
+        localStorage?.setItem('device_id', saved);
         sessionStorage?.setItem('pos_terminal_session_id', saved);
         localStorage?.setItem('pos_terminal_device_id', saved);
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
+    } else {
+      try {
+        localStorage?.setItem('device_id', saved);
+        localStorage?.setItem('pos_terminal_device_id', saved);
+        sessionStorage?.setItem('pos_terminal_session_id', saved);
+      } catch (e) {}
     }
     return saved;
   });
 
-  // 2. Número de terminal fixado manualmente (0 = Detecção Automática)
+  // 2. Número de terminal fixado manualmente pelo usuário (0 = Detecção Automática Inteligente)
   const [configuredTerminalNumber, setConfiguredTerminalNumberState] = useState<number>(() => {
     let saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('pos_configured_terminal_number') : null;
     return saved ? parseInt(saved, 10) : 0;
   });
 
   const [terminalNumber, setTerminalNumber] = useState<number>(() => {
-    return configuredTerminalNumber > 0 ? configuredTerminalNumber : 1;
+    if (configuredTerminalNumber > 0) return configuredTerminalNumber;
+    const lastNum = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('pos_last_terminal_number') : null;
+    return lastNum ? parseInt(lastNum, 10) : 1;
   });
 
   const [terminalName, setTerminalName] = useState<string>(() => {
-    const num = configuredTerminalNumber > 0 ? configuredTerminalNumber : 1;
-    return `PDV ${String(num).padStart(2, '0')}`;
+    if (configuredTerminalNumber > 0) return `PDV ${String(configuredTerminalNumber).padStart(2, '0')}`;
+    const lastName = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('pos_last_terminal_name') : null;
+    return lastName || `PDV ${String(terminalNumber).padStart(2, '0')}`;
   });
 
   const [totalActiveTerminals, setTotalActiveTerminals] = useState<number>(1);
   const [activeTerminals, setActiveTerminals] = useState<PosTerminalInfo[]>([
     {
-      terminalNumber: configuredTerminalNumber > 0 ? configuredTerminalNumber : 1,
-      terminalName: `PDV ${String(configuredTerminalNumber > 0 ? configuredTerminalNumber : 1).padStart(2, '0')}`,
+      terminalNumber: terminalNumber,
+      terminalName: terminalName,
       operatorName: currentUser?.name || 'Operador',
       operatorRole: currentUser?.role || 'colaborador',
       isCurrent: true,
@@ -88,6 +99,8 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
     if (num > 0) {
       try {
         sessionStorage.setItem('pos_configured_terminal_number', String(num));
+        sessionStorage.setItem('pos_last_terminal_number', String(num));
+        sessionStorage.setItem('pos_last_terminal_name', `PDV ${String(num).padStart(2, '0')}`);
       } catch (e) {}
       setTerminalNumber(num);
       setTerminalName(`PDV ${String(num).padStart(2, '0')}`);
@@ -104,6 +117,43 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
     const tId = tenantId || 'default';
     const { deviceInfo } = getDeviceTypeAndName();
 
+    // 1. Tenta sincronização inteligente direta pelo Supabase (Persistência real entre PC e Celular)
+    try {
+      const data = await OnlineDB.syncPosTerminal({
+        tenantId: tId,
+        deviceId: machineId,
+        operatorName: currentUser?.name || 'Operador',
+        operatorRole: currentUser?.role || 'colaborador',
+        deviceInfo,
+        configuredNumber: configuredNumberRef.current
+      });
+
+      if (data && data.success) {
+        setTerminalNumber(data.currentTerminalNumber);
+        setTerminalName(data.currentTerminalName);
+        setTotalActiveTerminals(data.totalActiveTerminals);
+        setActiveTerminals(data.activeTerminals);
+
+        try {
+          sessionStorage.setItem('pos_last_terminal_number', String(data.currentTerminalNumber));
+          sessionStorage.setItem('pos_last_terminal_name', data.currentTerminalName);
+        } catch (e) {}
+
+        // Sincroniza abas abertas no mesmo aparelho
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          try {
+            const bc = new BroadcastChannel('pos_terminals_sync');
+            bc.postMessage({ type: 'TERMINAL_HEARTBEAT_ACK', sourceId: machineId, data });
+            bc.close();
+          } catch (err) {}
+        }
+        return;
+      }
+    } catch (e) {
+      // Fallback para endpoint express
+    }
+
+    // 2. Fallback para rota do servidor Express /api/pos/terminal-heartbeat
     try {
       const res = await fetch('/api/pos/terminal-heartbeat', {
         method: 'POST',
@@ -127,7 +177,11 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
           setTotalActiveTerminals(data.totalActiveTerminals);
           setActiveTerminals(data.activeTerminals);
 
-          // Sincroniza via BroadcastChannel para outras abas no mesmo dispositivo
+          try {
+            sessionStorage.setItem('pos_last_terminal_number', String(data.currentTerminalNumber));
+            sessionStorage.setItem('pos_last_terminal_name', data.currentTerminalName);
+          } catch (e) {}
+
           if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
             try {
               const bc = new BroadcastChannel('pos_terminals_sync');
@@ -138,15 +192,19 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
         }
       }
     } catch (e) {
-      // Fallback em caso de offline
+      // Falha de rede temporária mantendo estado atual
     }
   }, [tenantId, machineId, currentUser]);
 
   useEffect(() => {
     triggerHeartbeat();
-    const interval = setInterval(triggerHeartbeat, 5000);
+    const interval = setInterval(triggerHeartbeat, 3500);
     const handleFocus = () => triggerHeartbeat();
     window.addEventListener('focus', handleFocus);
+
+    // Evento disparado quando qualquer dispositivo entra ou altera sessões no Supabase Realtime
+    const handlePosTerminalsUpdated = () => triggerHeartbeat();
+    window.addEventListener('pos_terminals_updated', handlePosTerminalsUpdated);
 
     // Canal BroadcastChannel para sincronização instantânea inter-abas
     let bc: BroadcastChannel | null = null;
@@ -189,6 +247,7 @@ export function usePosTerminals(tenantId: string | undefined, currentUser: User 
     return () => {
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pos_terminals_updated', handlePosTerminalsUpdated);
       window.removeEventListener('beforeunload', handleUnload);
       if (bc) bc.close();
     };

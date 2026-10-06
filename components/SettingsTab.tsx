@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, ArrowRight, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus, Store, Key, Building } from 'lucide-react';
+import { Image as ImageIcon, Camera, FileText, Palette, MoveHorizontal, MoreVertical, ArrowLeft, ArrowRight, Check, Layout, Pipette, X, AlertCircle, Users, Shield, ShieldAlert, UserPlus, Trash2, User as UserIcon, Loader2, Lock, MapPin, Phone, KeyRound, Briefcase, Smartphone, Download, Upload, LogOut, Bell, Package, DollarSign, Percent, Save, Edit2, ChevronRight, Globe, Sparkles, Zap, Plus, Store, Key, Building, CreditCard } from 'lucide-react';
 import { AppSettings, User, ServiceOrder, Product, Sale, Transaction, Employee, Customer } from '../types';
 import { BRAZIL_STATES } from '../utils/taxProfiles';
 import { OnlineDB } from '../utils/api';
@@ -10,6 +10,7 @@ import CatalogManager from './CatalogManager';
 import AdbVirusCleaner from './AdbVirusCleaner';
 import NfseManager from './NfseManager';
 import NfceNfeManager from './nfce/NfceNfeManager';
+import { BusinessCardSettingsView } from './businessCard/BusinessCardSettingsView';
 import { ConnectionStatusTag, ConnectionStatusDetailModal } from './DatabaseOfflineAlert';
 import { AICreditsModal } from './AICreditsModal';
 
@@ -89,9 +90,12 @@ const SettingsTab: React.FC<Props> = ({
     }
   };
 
-  const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup' | 'catalog' | 'notifications' | 'subscription' | 'suppliers' | 'adb-cleaner' | 'nfse' | 'nfce'>(() => {
+  const [view, setView] = useState<'main' | 'print' | 'theme' | 'users' | 'backup' | 'catalog' | 'notifications' | 'subscription' | 'suppliers' | 'adb-cleaner' | 'nfse' | 'nfce' | 'business_card'>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
+      if (params.get('view') === 'cartao' || params.get('view') === 'business_card' || window.location.hash.includes('cartao')) {
+        return 'business_card';
+      }
       if (params.get('view') === 'nfse' || window.location.hash.includes('nfse')) {
         return 'nfse';
       }
@@ -1975,6 +1979,17 @@ const SettingsTab: React.FC<Props> = ({
     );
   }
 
+  if (view === 'business_card') {
+    return (
+      <BusinessCardSettingsView
+        settings={settings}
+        onUpdateSettings={setSettings}
+        onBack={() => setView('main')}
+        tenantId={tenantId || ''}
+      />
+    );
+  }
+
   if (view === 'adb-cleaner') {
     return <AdbVirusCleaner onBack={() => setView('main')} />;
   }
@@ -2005,6 +2020,21 @@ const SettingsTab: React.FC<Props> = ({
                     <Smartphone size={16} /> Instalar Aplicativo
                   </button>
                 )}
+                {/* Cartão de Visita da Loja - Destaque nos 3 Pontinhos */}
+                <button 
+                  onClick={() => { setView('business_card'); setShowMenu(false); }} 
+                  className={`w-full flex items-center justify-between px-5 py-3.5 text-[10px] font-black hover:bg-amber-50/70 transition-colors uppercase tracking-widest text-left border-l-4 ${(view as any) === 'business_card' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-transparent text-slate-800'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                      <CreditCard size={15} />
+                    </div>
+                    <span>Cartão de Visita da Loja</span>
+                  </div>
+                  <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 border border-amber-300">
+                    Google • Pix
+                  </span>
+                </button>
                 {isAdmin && (
                   <>
                     <button onClick={() => { setIsAICreditsModalOpen(true); setShowMenu(false); }} className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest text-left border-l-4 border-transparent">
@@ -2147,6 +2177,28 @@ const SettingsTab: React.FC<Props> = ({
             </div>
           </div>
         )}
+
+        {/* CARTÃO DE VISITA DIGITAL DA LOJA (Google 5★, Pix, Instagram) */}
+        <button
+          type="button"
+          onClick={() => setView('business_card')}
+          className="w-full p-4.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 hover:from-slate-800 hover:to-indigo-900 text-white rounded-[2rem] text-left transition-all active:scale-98 flex items-center gap-3.5 shadow-md shadow-indigo-950/20 cursor-pointer group border border-amber-500/30"
+        >
+          <div className="w-11 h-11 bg-amber-500/20 backdrop-blur-xs text-amber-400 rounded-2xl flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform shrink-0 border border-amber-500/30">
+            <CreditCard size={20} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest">Página Externa do Cliente</p>
+              <span className="text-[8px] font-black bg-amber-500/20 text-amber-300 px-2 py-0.2 rounded-full border border-amber-400/30 uppercase">
+                Google 5★ • Pix • Instagram
+              </span>
+            </div>
+            <p className="text-xs font-black text-white uppercase tracking-tight truncate">Cartão de Visita Digital Inteligente</p>
+            <p className="text-[10px] text-slate-300 truncate">Página chamativa para clientes avaliarem no Google, acessarem Instagram e copiarem Pix</p>
+          </div>
+          <ChevronRight size={16} className="text-white/80 shrink-0" />
+        </button>
 
         {/* DADOS DA LOJA */}
         <div id="tour-store-profile" className="bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm space-y-6">

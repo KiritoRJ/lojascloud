@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { Customer, ServiceOrder } from '../types';
+import { Customer, ServiceOrder, PosTerminalInfo, AppSettings } from '../types';
 import { OfflineAuth } from './offlineAuth';
 
 const SUPABASE_URL = (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) || (import.meta as any).env?.VITE_SUPABASE_URL || 'https://lawcmqsjhwuhogsukhbf.supabase.co';
@@ -317,8 +317,8 @@ export class OnlineDB {
     }
   }
 
-  // Verifica limite de usuários e registra sessão
-  static async checkAndRegisterSession(tenantId: string, maxUsers: number, deviceId: string, userName: string) {
+  // Verifica limite de usuários e registra sessão preservando created_at da ordem de login
+  static async checkAndRegisterSession(tenantId: string, maxUsers: number, deviceId: string, userName: string, deviceInfo?: string) {
     try {
       // 1. Limpa sessões inativas (mais de 5 minutos sem heartbeat)
       const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -335,7 +335,7 @@ export class OnlineDB {
       // 3. Verifica se este dispositivo já tem uma sessão
       const { data: existing } = await supabase
         .from('active_sessions')
-        .select('id')
+        .select('id, user_name, created_at')
         .eq('tenant_id', tenantId)
         .eq('device_id', deviceId)
         .maybeSingle();
@@ -345,17 +345,46 @@ export class OnlineDB {
         return { success: false, message: `Limite de telas atingido. O plano atual permite apenas ${maxUsers} acesso(s) simultâneo(s).` };
       }
 
-      // 4. Registra ou atualiza a sessão
-      const { error: upsertError } = await supabase
-        .from('active_sessions')
-        .upsert({
-          tenant_id: tenantId,
-          device_id: deviceId,
-          user_name: userName,
-          last_seen: new Date().toISOString()
-        }, { onConflict: 'tenant_id, device_id' });
+      // Prepara session label
+      let sessionLabel = userName;
+      if (deviceInfo || userName) {
+        let existingCfg: number | undefined = undefined;
+        if (existing?.user_name && existing.user_name.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(existing.user_name);
+            existingCfg = parsed.cfg;
+          } catch (e) {}
+        }
+        sessionLabel = JSON.stringify({
+          op: userName || 'Operador',
+          role: 'colaborador',
+          dev: deviceInfo || 'PC',
+          cfg: existingCfg
+        });
+      }
 
-      if (upsertError) throw upsertError;
+      // 4. Registra ou atualiza a sessão (preserva estritamente created_at)
+      if (existing) {
+        const { error: updateError } = await supabase
+          .from('active_sessions')
+          .update({
+            user_name: sessionLabel,
+            last_seen: new Date().toISOString()
+          })
+          .eq('id', existing.id);
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from('active_sessions')
+          .insert({
+            tenant_id: tenantId,
+            device_id: deviceId,
+            user_name: sessionLabel,
+            last_seen: new Date().toISOString(),
+            created_at: new Date().toISOString()
+          });
+        if (insertError) throw insertError;
+      }
 
       return { success: true };
     } catch (e: any) {
@@ -365,16 +394,16 @@ export class OnlineDB {
   }
 
   // Atualiza o "sinal de vida" da sessão
-  static async heartbeatSession(tenantId: string, deviceId: string, maxUsers: number) {
+  static async heartbeatSession(tenantId: string, deviceId: string, maxUsers: number, userName?: string, deviceInfo?: string) {
     try {
-      // Limpa sessões inativas primeiro
+      // Limpa sessões inativas primeiro (mais de 5 minutos)
       const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId).lt('last_seen', fiveMinsAgo);
+      await supabase.from('active_sessions').delete().eq('tenant_id', tenantId).lt('last_seen', fiveMinsAgo).neq('device_id', deviceId);
 
       // Verifica se a nossa sessão ainda existe
       const { data: existing } = await supabase
         .from('active_sessions')
-        .select('id')
+        .select('id, user_name')
         .eq('tenant_id', tenantId)
         .eq('device_id', deviceId)
         .maybeSingle();
@@ -389,21 +418,264 @@ export class OnlineDB {
          if (count !== null && count >= maxUsers) {
            return { success: false, kicked: true }; // Força o logout
          }
+
+         let sessionLabel = userName || 'Operador';
+         if (deviceInfo || userName) {
+           sessionLabel = JSON.stringify({
+             op: userName || 'Operador',
+             role: 'colaborador',
+             dev: deviceInfo || 'PC'
+           });
+         }
+
+         await supabase.from('active_sessions').insert({
+           tenant_id: tenantId,
+           device_id: deviceId,
+           user_name: sessionLabel,
+           last_seen: new Date().toISOString(),
+           created_at: new Date().toISOString()
+         });
+         return { success: true };
       }
 
-      // Atualiza o last_seen
+      // Atualiza o last_seen preservando created_at original
       await supabase
         .from('active_sessions')
-        .upsert({
-          tenant_id: tenantId,
-          device_id: deviceId,
+        .update({
           last_seen: new Date().toISOString()
-        }, { onConflict: 'tenant_id, device_id' });
+        })
+        .eq('id', existing.id);
 
       return { success: true };
     } catch (e) {
        // Ignora erros de rede durante o heartbeat para não deslogar à toa
        return { success: true };
+    }
+  }
+
+  // Sincronização Inteligente de Terminais de PDV (Caixa 1, Caixa 2, Caixa 3...) por ordem de login
+  static async syncPosTerminal(params: {
+    tenantId: string;
+    deviceId: string;
+    operatorName?: string;
+    operatorRole?: string;
+    deviceInfo?: string;
+    configuredNumber?: number;
+  }): Promise<{
+    success: boolean;
+    currentTerminalNumber: number;
+    currentTerminalName: string;
+    totalActiveTerminals: number;
+    activeTerminals: PosTerminalInfo[];
+  }> {
+    const { tenantId, deviceId, operatorName, operatorRole, deviceInfo, configuredNumber } = params;
+    if (!tenantId || !deviceId) {
+      const num = (configuredNumber && configuredNumber > 0) ? configuredNumber : 1;
+      return {
+        success: false,
+        currentTerminalNumber: num,
+        currentTerminalName: `PDV ${String(num).padStart(2, '0')}`,
+        totalActiveTerminals: 1,
+        activeTerminals: [{
+          terminalNumber: num,
+          terminalName: `PDV ${String(num).padStart(2, '0')}`,
+          operatorName: operatorName || 'Operador',
+          operatorRole: operatorRole || 'colaborador',
+          isCurrent: true,
+          deviceInfo: deviceInfo || 'PC',
+          lastSeen: Date.now(),
+          isOnline: true
+        }]
+      };
+    }
+
+    try {
+      // 1. Limpa sessões inativas (mais de 4 minutos sem atividade)
+      const cutoff = new Date(Date.now() - 4 * 60 * 1000).toISOString();
+      try {
+        await supabase
+          .from('active_sessions')
+          .delete()
+          .eq('tenant_id', tenantId)
+          .lt('last_seen', cutoff)
+          .neq('device_id', deviceId);
+      } catch (cleanErr) {}
+
+      // 2. Prepara rótulo do dispositivo e operador
+      const sessionLabel = JSON.stringify({
+        op: operatorName || 'Operador',
+        role: operatorRole || 'colaborador',
+        dev: deviceInfo || 'PC',
+        cfg: (configuredNumber && configuredNumber > 0) ? configuredNumber : undefined
+      });
+
+      // 3. Garante que o dispositivo atual está registrado em active_sessions preservando created_at original
+      const { data: existing } = await supabase
+        .from('active_sessions')
+        .select('id, created_at')
+        .eq('tenant_id', tenantId)
+        .eq('device_id', deviceId)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase
+          .from('active_sessions')
+          .update({
+            last_seen: new Date().toISOString(),
+            user_name: sessionLabel
+          })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('active_sessions')
+          .insert({
+            tenant_id: tenantId,
+            device_id: deviceId,
+            user_name: sessionLabel,
+            last_seen: new Date().toISOString(),
+            created_at: new Date().toISOString()
+          });
+      }
+
+      // 4. Busca todos os terminais/sessões ativos da loja ordenados por created_at ASC
+      const { data: allSessions, error: listError } = await supabase
+        .from('active_sessions')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: true });
+
+      if (listError) throw listError;
+
+      const nowTime = Date.now();
+      const validSessions = (allSessions || []).filter(s => {
+        if (s.device_id === deviceId) return true;
+        const lastSeenMs = new Date(s.last_seen).getTime();
+        return (nowTime - lastSeenMs) <= 3 * 60 * 1000;
+      });
+
+      if (!validSessions.some(s => s.device_id === deviceId)) {
+        validSessions.push({
+          id: 'temp',
+          tenant_id: tenantId,
+          device_id: deviceId,
+          user_name: sessionLabel,
+          last_seen: new Date().toISOString(),
+          created_at: new Date().toISOString()
+        });
+      }
+
+      // Ordena estritamente por ordem de conexão/login (created_at ASC)
+      validSessions.sort((a, b) => {
+        const diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        if (diff !== 0) return diff;
+        return a.device_id.localeCompare(b.device_id);
+      });
+
+      // 5. Decodifica metadados e calcula PDV 01, PDV 02...
+      const parsedList = validSessions.map(s => {
+        let op = 'Operador';
+        let role = 'colaborador';
+        let dev = 'PC';
+        let cfg: number | undefined = undefined;
+
+        if (s.user_name) {
+          if (s.user_name.trim().startsWith('{')) {
+            try {
+              const p = JSON.parse(s.user_name);
+              op = p.op || op;
+              role = p.role || role;
+              dev = p.dev || dev;
+              cfg = p.cfg && p.cfg > 0 ? Number(p.cfg) : undefined;
+            } catch (e) {
+              op = s.user_name;
+            }
+          } else {
+            op = s.user_name;
+          }
+        }
+
+        if (s.device_id === deviceId && configuredNumber !== undefined) {
+          cfg = configuredNumber > 0 ? configuredNumber : undefined;
+        }
+
+        return {
+          deviceId: s.device_id,
+          createdAt: s.created_at,
+          operatorName: op,
+          operatorRole: role,
+          deviceInfo: dev,
+          configuredNumber: cfg,
+          terminalNumber: 1,
+          terminalName: 'PDV 01',
+          lastSeen: new Date(s.last_seen).getTime()
+        };
+      });
+
+      // 5.1. Reserva números configurados manualmente pelo usuário
+      const manualAssignedNumbers = new Set<number>();
+      parsedList.forEach(t => {
+        if (t.configuredNumber && t.configuredNumber > 0) {
+          manualAssignedNumbers.add(t.configuredNumber);
+          t.terminalNumber = t.configuredNumber;
+          t.terminalName = `PDV ${String(t.configuredNumber).padStart(2, '0')}`;
+        }
+      });
+
+      // 5.2. Atribui números sequenciais inteligentes para terminais automáticos (1º logado = 1, 2º logado = 2...)
+      let nextNum = 1;
+      parsedList.forEach(t => {
+        if (!t.configuredNumber || t.configuredNumber <= 0) {
+          while (manualAssignedNumbers.has(nextNum)) {
+            nextNum++;
+          }
+          t.terminalNumber = nextNum;
+          t.terminalName = `PDV ${String(nextNum).padStart(2, '0')}`;
+          manualAssignedNumbers.add(nextNum);
+          nextNum++;
+        }
+      });
+
+      const currentTerm = parsedList.find(t => t.deviceId === deviceId) || parsedList[0];
+
+      const terminalList: PosTerminalInfo[] = parsedList
+        .sort((a, b) => a.terminalNumber - b.terminalNumber)
+        .map(t => ({
+          terminalNumber: t.terminalNumber,
+          terminalName: t.terminalName,
+          operatorName: t.operatorName,
+          operatorRole: t.operatorRole,
+          isCurrent: t.deviceId === deviceId,
+          deviceInfo: t.deviceInfo,
+          lastSeen: t.lastSeen,
+          isOnline: (Date.now() - t.lastSeen) < 120000
+        }));
+
+      return {
+        success: true,
+        currentTerminalNumber: currentTerm.terminalNumber,
+        currentTerminalName: currentTerm.terminalName,
+        totalActiveTerminals: terminalList.length,
+        activeTerminals: terminalList
+      };
+    } catch (e: any) {
+      console.warn("Erro ao sincronizar terminais no Supabase:", e);
+      const num = (configuredNumber && configuredNumber > 0) ? configuredNumber : 1;
+      return {
+        success: false,
+        currentTerminalNumber: num,
+        currentTerminalName: `PDV ${String(num).padStart(2, '0')}`,
+        totalActiveTerminals: 1,
+        activeTerminals: [{
+          terminalNumber: num,
+          terminalName: `PDV ${String(num).padStart(2, '0')}`,
+          operatorName: operatorName || 'Operador',
+          operatorRole: operatorRole || 'colaborador',
+          isCurrent: true,
+          deviceInfo: deviceInfo || 'PC',
+          lastSeen: Date.now(),
+          isOnline: true
+        }]
+      };
     }
   }
 
@@ -1124,6 +1396,45 @@ export class OnlineDB {
       return { products, settings };
     } catch (e: any) {
       logSupabaseNotice("Conexão ao buscar catálogo público", e);
+      return null;
+    }
+  }
+
+  // Busca dados públicos do Cartão de Visita Digital da Loja
+  static async getPublicBusinessCard(tenantIdOrSlug: string): Promise<{
+    tenantId: string;
+    settings: AppSettings | null;
+    productsCount: number;
+    tenantInfo?: any;
+  } | null> {
+    try {
+      let activeTenantId = tenantIdOrSlug;
+      if (!activeTenantId) return null;
+
+      // Se parecer um slug ou apelido, tenta resolver pelo catalogSlug
+      if (!activeTenantId.startsWith('LOJA_') && !activeTenantId.startsWith('T_')) {
+        const resolved = await OnlineDB.getTenantIdBySlug(activeTenantId);
+        if (resolved) activeTenantId = resolved;
+      }
+
+      const [settingsData, tenantData, productsCountData] = await Promise.all([
+        supabase.from('cloud_data').select('data_json').eq('tenant_id', activeTenantId).eq('store_key', 'settings').maybeSingle(),
+        supabase.from('tenants').select('*').eq('id', activeTenantId).maybeSingle(),
+        supabase.from('products').select('id', { count: 'exact', head: true }).eq('tenant_id', activeTenantId).gt('quantity', 0)
+      ]);
+
+      const settings = (settingsData.data?.data_json as AppSettings) || null;
+      const tenantInfo = tenantData.data || null;
+      const productsCount = productsCountData.count || 0;
+
+      return {
+        tenantId: activeTenantId,
+        settings,
+        productsCount,
+        tenantInfo
+      };
+    } catch (e: any) {
+      logSupabaseNotice("Conexão ao buscar cartão de visita público", e);
       return null;
     }
   }

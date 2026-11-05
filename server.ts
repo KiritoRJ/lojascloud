@@ -744,6 +744,7 @@ app.post('/api/auth/register-tenant', async (req, res) => {
     adminPasswordPlain, 
     logoUrl, 
     phoneNumber,
+    businessSegment,
     customMonthlyPrice,
     customQuarterlyPrice,
     customYearlyPrice,
@@ -751,7 +752,44 @@ app.post('/api/auth/register-tenant', async (req, res) => {
   } = req.body;
   
   try {
-    const hashedPassword = await hashPassword(adminPasswordPlain.trim());
+    const cleanUsername = adminUsername ? String(adminUsername).toLowerCase().trim() : '';
+    const cleanStoreName = storeName ? String(storeName).trim() : 'Minha Loja';
+    const cleanPassword = adminPasswordPlain ? String(adminPasswordPlain).trim() : '';
+
+    if (!cleanUsername) {
+      return res.status(400).json({ success: false, message: "O nome de usuário é obrigatório." });
+    }
+    if (!cleanPassword) {
+      return res.status(400).json({ success: false, message: "A senha de acesso é obrigatória." });
+    }
+
+    // 1. Verifica se já existe um usuário com esse username
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id, username')
+      .eq('username', cleanUsername)
+      .maybeSingle();
+
+    if (existingUser) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `O usuário "${cleanUsername}" já está em uso. Por favor, escolha outro usuário para login.` 
+      });
+    }
+
+    // 2. Garante ID único para a loja
+    let tenantId = id ? String(id).trim() : ('T_' + Math.random().toString(36).substr(2, 6).toUpperCase());
+    const { data: existingTenant } = await supabase
+      .from('tenants')
+      .select('id')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    if (existingTenant) {
+      tenantId = 'T_' + Math.random().toString(36).substr(2, 6).toUpperCase() + '_' + Date.now().toString(36).slice(-3).toUpperCase();
+    }
+
+    const hashedPassword = await hashPassword(cleanPassword);
     
     const trialDays = Number(requestedTrialDays) || 7;
     const expiresAt = new Date();
@@ -765,60 +803,183 @@ app.post('/api/auth/register-tenant', async (req, res) => {
     const parsedQuarterly = customQuarterlyPrice ? Number(customQuarterlyPrice) : (parsedMonthly ? Number((parsedMonthly * 3 * 0.9).toFixed(2)) : null);
     const parsedYearly = customYearlyPrice ? Number(customYearlyPrice) : (parsedMonthly ? Number((parsedMonthly * 12 * 0.8).toFixed(2)) : null);
 
+    const segment = (businessSegment as string) || 'assistencia_tecnica';
+    let initialFeatures: any = {
+      osTab: true,
+      customersTab: true,
+      stockTab: true,
+      salesTab: true,
+      fiscalTab: true,
+      financeTab: true,
+      toolsTab: true,
+      profiles: true,
+      xmlExportImport: true,
+      hideFinancialReports: false,
+      businessSegment: 'assistencia_tecnica'
+    };
+
+    if (segment === 'mercado') {
+      initialFeatures = {
+        osTab: false,
+        customersTab: false,
+        stockTab: true,
+        salesTab: true,
+        fiscalTab: true,
+        financeTab: true,
+        toolsTab: false,
+        profiles: true,
+        xmlExportImport: true,
+        hideFinancialReports: false,
+        businessSegment: 'mercado'
+      };
+    } else if (segment === 'farmacia') {
+      initialFeatures = {
+        osTab: false,
+        customersTab: true,
+        stockTab: true,
+        salesTab: true,
+        fiscalTab: true,
+        financeTab: true,
+        toolsTab: false,
+        profiles: true,
+        xmlExportImport: true,
+        hideFinancialReports: false,
+        businessSegment: 'farmacia'
+      };
+    } else if (segment === 'restaurante') {
+      initialFeatures = {
+        osTab: false,
+        customersTab: true,
+        stockTab: true,
+        salesTab: true,
+        fiscalTab: true,
+        financeTab: true,
+        toolsTab: false,
+        profiles: true,
+        xmlExportImport: true,
+        hideFinancialReports: false,
+        businessSegment: 'restaurante'
+      };
+    } else if (segment === 'academia') {
+      initialFeatures = {
+        osTab: false,
+        customersTab: true,
+        stockTab: true,
+        salesTab: true,
+        fiscalTab: true,
+        financeTab: true,
+        toolsTab: false,
+        profiles: true,
+        xmlExportImport: true,
+        hideFinancialReports: false,
+        businessSegment: 'academia'
+      };
+    } else if (segment === 'vendas_online') {
+      initialFeatures = {
+        osTab: false,
+        customersTab: true,
+        stockTab: true,
+        salesTab: true,
+        fiscalTab: true,
+        financeTab: true,
+        toolsTab: false,
+        profiles: true,
+        xmlExportImport: true,
+        hideFinancialReports: false,
+        businessSegment: 'vendas_online'
+      };
+    }
+
     const { error: tError } = await supabase
       .from('tenants')
       .insert([{
-        id: id,
-        store_name: storeName,
-        logo_url: logoUrl,
+        id: tenantId,
+        store_name: cleanStoreName,
+        logo_url: logoUrl || null,
         created_at: new Date().toISOString(),
         subscription_status: 'trial',
         subscription_expires_at: expiresAt.toISOString(),
-        phone_number: phoneNumber,
+        phone_number: phoneNumber || '',
         custom_monthly_price: parsedMonthly,
         custom_quarterly_price: parsedQuarterly,
         custom_yearly_price: parsedYearly,
-        enabled_features: {
-          osTab: true,
-          customersTab: true,
-          stockTab: true,
-          salesTab: true,
-          financeTab: true,
-          profiles: true,
-          xmlExportImport: true,
-          hideFinancialReports: false
-        },
+        enabled_features: initialFeatures,
         max_users: trialLimits.maxUsers
       }]);
     if (tError) throw tError;
 
-    const { error: limitsError } = await supabase
-      .from('tenant_limits')
-      .insert([{
-        tenant_id: id,
-        max_os: trialLimits.maxOS,
-        max_products: trialLimits.maxProducts
-      }]);
-    if (limitsError) throw limitsError;
+    // Inicializa configurações visuais e tema do segmento no cloud_data
+    const segmentThemes: Record<string, { primary: string; sidebar: string; bg: string }> = {
+      assistencia_tecnica: { primary: '#2563eb', sidebar: '#0f172a', bg: '#f8fafc' },
+      mercado: { primary: '#059669', sidebar: '#064e3b', bg: '#f0fdf4' },
+      farmacia: { primary: '#0284c7', sidebar: '#0c4a6e', bg: '#f0f9ff' },
+      restaurante: { primary: '#ea580c', sidebar: '#431407', bg: '#fff7ed' },
+      academia: { primary: '#7c3aed', sidebar: '#2e1065', bg: '#faf5ff' },
+      vendas_online: { primary: '#4f46e5', sidebar: '#1e1b4b', bg: '#eef2ff' }
+    };
+    const chosenTheme = segmentThemes[segment] || segmentThemes.assistencia_tecnica;
+
+    try {
+      await supabase.from('cloud_data').upsert({
+        tenant_id: tenantId,
+        store_key: 'settings',
+        data_json: {
+          storeName: cleanStoreName,
+          storePhone: phoneNumber || '',
+          businessSegment: segment,
+          themePrimary: chosenTheme.primary,
+          themeSidebar: chosenTheme.sidebar,
+          themeBg: chosenTheme.bg,
+          themeBottomTab: chosenTheme.sidebar,
+          isConfigured: true,
+          users: [],
+          itemsPerPage: 32
+        },
+        updated_at: new Date().toISOString()
+      });
+    } catch (cfgErr) {
+      console.warn('Notice: cloud_data initial settings setup', cfgErr);
+    }
+
+    try {
+      await supabase
+        .from('tenant_limits')
+        .upsert([{
+          tenant_id: tenantId,
+          max_os: trialLimits.maxOS,
+          max_products: trialLimits.maxProducts
+        }]);
+    } catch (limErr) {
+      console.warn('Notice: tenant_limits initial setup', limErr);
+    }
 
     const { error: uError } = await supabase
       .from('users')
       .insert([{
         id: 'USR_ADM_' + Math.random().toString(36).substr(2, 5).toUpperCase(),
-        username: adminUsername.toLowerCase().trim(),
+        username: cleanUsername,
         password: hashedPassword,
-        name: storeName,
+        name: cleanStoreName,
         role: 'admin',
-        tenant_id: id,
-        store_name: storeName,
-        photo: logoUrl
+        tenant_id: tenantId,
+        store_name: cleanStoreName,
+        photo: logoUrl || null
       }]);
     if (uError) throw uError;
 
-    res.json({ success: true });
+    res.json({ success: true, tenantId });
   } catch (e: any) {
-    console.error('Register tenant error:', e);
-    res.status(500).json({ success: false, message: e.message });
+    const errorMsg = e?.message || e?.details || (typeof e === 'string' ? e : 'Erro ao cadastrar loja.');
+    console.error('Register tenant error:', errorMsg);
+    
+    if (errorMsg.includes('duplicate key') && errorMsg.includes('users_username_key')) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Este nome de usuário já está em uso. Por favor, escolha outro usuário.' 
+      });
+    }
+    
+    res.status(500).json({ success: false, message: errorMsg });
   }
 });
 

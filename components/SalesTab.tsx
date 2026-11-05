@@ -1190,6 +1190,27 @@ const SalesTab: React.FC<Props> = ({
               onSwitchUserRequest={handleRequestSwitchUser}
             />
 
+            {/* Banner Clean de Dispensação Médica para Farmácias */}
+            {settings?.businessSegment === 'farmacia' && (
+              <div className="flex items-center justify-between px-3.5 py-1.5 bg-gradient-to-r from-teal-500/10 via-emerald-500/10 to-teal-500/5 border border-teal-500/20 rounded-xl shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <img 
+                    src="https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=120&q=80" 
+                    alt="Farmácia" 
+                    className="w-6 h-6 rounded-lg object-cover border border-teal-300 shadow-2xs" 
+                  />
+                  <span className="text-[10px] font-black uppercase text-teal-900 tracking-wider">
+                    Balcão Farmacêutico · Dispensação de Medicamentos & Prescrições
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[8px] font-mono font-bold uppercase text-teal-700">
+                  <span className="px-2 py-0.5 rounded-md bg-teal-100/80 border border-teal-300">
+                    Bipagem EAN Ativa
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* GRID PRINCIPAL DO PDV DE MERCADO (DESKTOP) */}
             <div className="grid grid-cols-12 gap-2.5 flex-1 min-h-0 overflow-hidden">
               {/* Coluna Esquerda: A Bobina / Cupom Fiscal Eletrônico (5 Colunas) */}

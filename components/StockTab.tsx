@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle, LayoutGrid, Grid, List, Maximize2, Rows, Sparkles, ChevronDown, ChevronUp, CheckCircle2, Tag, FileText, Sliders, Image as ImageIcon } from 'lucide-react';
+import { Plus, Search, Trash2, Camera, X, PackageOpen, TrendingUp, PiggyBank, Edit3, Loader2, AlertTriangle, ScanBarcode, AlertCircle, LayoutGrid, Grid, List, Maximize2, Rows, Sparkles, ChevronDown, ChevronUp, CheckCircle2, Tag, FileText, Sliders, Image as ImageIcon, Pill } from 'lucide-react';
 import { Product, AppSettings, FiscalMatchResult } from '../types';
 import { formatCurrency, parseCurrencyString, playBeepSound } from '../utils';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
@@ -557,9 +557,18 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
       {/* CABEÇALHO */}
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Estoque Pro</h2>
+          <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase flex items-center gap-2">
+            {settings.businessSegment === 'farmacia' && (
+              <span className="p-1.5 rounded-xl bg-teal-500/10 text-teal-700 border border-teal-300">
+                <Pill size={18} />
+              </span>
+            )}
+            <span>{settings.businessSegment === 'farmacia' ? 'Medicamentos & Lotes' : 'Estoque Pro'}</span>
+          </h2>
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-            Gestão e Cadastro Inteligente {defaultProfile ? `• Fiscal Padrão: ${defaultProfile.name.split('(')[0].trim()}` : ''}
+            {settings.businessSegment === 'farmacia'
+              ? 'Controle Sanitário, Lotes, Validades e Dispensação Rápida'
+              : `Gestão e Cadastro Inteligente ${defaultProfile ? `• Fiscal Padrão: ${defaultProfile.name.split('(')[0].trim()}` : ''}`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -608,6 +617,44 @@ const StockTab: React.FC<Props> = ({ products, setProducts, onDeleteProduct, set
           </button>
         </div>
       </div>
+
+      {/* Banner Especial de Farmácia & Medicina */}
+      {settings.businessSegment === 'farmacia' && (
+        <div className="bg-gradient-to-r from-teal-900 via-teal-950 to-slate-900 text-white rounded-3xl p-4 sm:p-5 border border-teal-500/30 shadow-sm relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in">
+          <div 
+            className="absolute inset-0 opacity-15 bg-cover bg-center pointer-events-none"
+            style={{ backgroundImage: `url('https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1200&q=80')` }}
+          />
+          <div className="relative z-10 flex items-center gap-3.5 min-w-0">
+            <div className="w-12 h-12 rounded-2xl bg-teal-500/20 border border-teal-400/40 flex items-center justify-center text-teal-300 shrink-0 shadow-inner">
+              <Pill size={24} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-400/40">
+                  Farmácia & Medicina
+                </span>
+                <span className="text-[9px] text-teal-200/80 font-mono">
+                  Rastreabilidade Sanitária EAN / Lote
+                </span>
+              </div>
+              <h3 className="text-sm sm:text-base font-black uppercase tracking-tight text-white mt-0.5">
+                Medicamentos de Referência, Genéricos e Dermocosméticos
+              </h3>
+              <p className="text-[11px] text-teal-100/70">
+                Organize por dosagem, princípio ativo, laboratório e data de validade com bipe rápido.
+              </p>
+            </div>
+          </div>
+          <div className="relative z-10 flex items-center gap-2 shrink-0">
+            <img 
+              src="https://images.unsplash.com/photo-1628771065518-0d82f1938462?auto=format&fit=crop&w=240&q=80" 
+              alt="Medicamentos Organizados" 
+              className="w-20 h-14 rounded-xl object-cover border border-teal-400/40 shadow-md hidden sm:block" 
+            />
+          </div>
+        </div>
+      )}
 
       {stockSyncBadge && (
         <div className="bg-emerald-600 text-white p-3 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-between shadow-lg shadow-emerald-600/20 animate-in fade-in slide-in-from-top-1">

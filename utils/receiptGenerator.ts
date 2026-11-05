@@ -1,5 +1,5 @@
 import { ServiceOrder, AppSettings, DeviceDiagnosticResults } from '../types';
-import { formatCurrency, formatDate } from '../utils';
+import { formatCurrency, formatDate, normalizeWhatsAppNumber, getWhatsAppDirectUrl, getTrackingUrl } from '../utils';
 import { COMMON_DEFECTS } from '../components/ServiceOrderTab';
 
 function getOrderDiagnostics(os?: ServiceOrder | null): DeviceDiagnosticResults | null {
@@ -435,40 +435,25 @@ export async function generateReceiptCanvasImage(
 export async function shareReceiptDirectly(
   order: ServiceOrder,
   settings: AppSettings
-): Promise<{ method: 'native-share' | 'android-bridge' | 'download-whatsapp' | 'copied-whatsapp' }> {
-  const { dataUrl, file, blob } = await generateReceiptCanvasImage(order, settings);
-  const cleanPhone = (order.phoneNumber || '').replace(/\D/g, '');
-  const phoneWithCountry = cleanPhone.length <= 11 && !cleanPhone.startsWith('55') ? `55${cleanPhone}` : cleanPhone;
-  const fileName = `OS_${order.id}.jpg`;
+): Promise<{ method: 'copied-whatsapp' | 'download-whatsapp' | 'android-bridge' }> {
+  const { dataUrl } = await generateReceiptCanvasImage(order, settings);
+  const normalizedPhone = normalizeWhatsAppNumber(order.phoneNumber);
+  const fileName = `OS_${order.id || 'comprovante'}.jpg`;
+  const trackingToken = order.trackingToken || order.id;
+  const trackingUrl = getTrackingUrl(trackingToken, settings);
+  const storeName = settings?.storeName || 'Assistência Técnica';
+  const osCode = order.id ? `#${order.id.split('-')[0]}` : '';
 
-  // 1. AndroidBridge (se for aplicativo instalado)
+  // 1. AndroidBridge (se for aplicativo nativo instalado)
   if ((window as any).AndroidBridge?.shareFile) {
     (window as any).AndroidBridge.shareFile(dataUrl.split(',')[1], fileName, 'image/jpeg');
     return { method: 'android-bridge' };
   }
 
-  // 2. Web Share API nativa com arquivo (Mobile Chrome, Safari iOS, Android)
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        files: [file],
-        title: `Comprovante O.S. #${order.id}`,
-        text: `Comprovante da Ordem de Serviço #${order.id} - ${settings?.storeName || 'Assistência Técnica'}`
-      });
-      return { method: 'native-share' };
-    } catch (e: any) {
-      if (e.name === 'AbortError') {
-        return { method: 'native-share' };
-      }
-      console.warn('Erro ao compartilhar arquivo via Web Share:', e);
-    }
-  }
-
-  // 3. Tenta copiar imagem para a Área de Transferência (para colar com Ctrl+V no WhatsApp Web)
+  // 2. Tenta copiar imagem para a Área de Transferência (para colar com Ctrl+V diretamente no chat do WhatsApp)
   let copiedToClipboard = false;
   try {
     if (navigator.clipboard && (window as any).ClipboardItem) {
-      // Converte para PNG para compatibilidade com clipboard
       const pngBlob = await new Promise<Blob | null>((resolve) => {
         const img = new Image();
         img.onload = () => {
@@ -493,17 +478,55 @@ export async function shareReceiptDirectly(
     console.warn('Clipboard write image failed:', clipErr);
   }
 
-  // Baixa o arquivo para o dispositivo
-  const a = document.createElement('a');
-  a.href = dataUrl;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  // 3. Baixa o arquivo para o dispositivo automaticamente
+  try {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (dlErr) {
+    console.warn('Download receipt failed:', dlErr);
+  }
 
-  // Abre a conversa do WhatsApp
-  const targetUrl = phoneWithCountry ? `https://wa.me/${phoneWithCountry}` : `https://wa.me/`;
-  window.open(targetUrl, '_blank');
+  // 4. Mensagem do WhatsApp organizada, bonita e com formatação profissional
+  const customerName = (order.customerName || 'Cliente').trim();
+  const device = [order.deviceBrand, order.deviceModel].filter(Boolean).join(' ').trim() || 'Aparelho';
+  const defect = (order.defect || '').trim();
+  const totalStr = order.total && order.total > 0 ? formatCurrency(order.total) : '';
+
+  const detailsList: string[] = [
+    `🔹 *O.S.:* ${osCode}`,
+    `🔹 *Aparelho:* ${device}`,
+  ];
+  if (defect) {
+    detailsList.push(`🔹 *Defeito Relatado:* ${defect}`);
+  }
+  if (totalStr) {
+    detailsList.push(`🔹 *Valor Total:* ${totalStr}`);
+  }
+  detailsList.push(`🔹 *Status Atual:* ${order.status || 'Recebido'}`);
+
+  const messageText = 
+    `*${storeName.toUpperCase()}* 🛠️\n` +
+    `🧾 *COMPROVANTE DE ORDEM DE SERVIÇO ${osCode}*\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `Olá, *${customerName}*! Tudo bem? 👋\n\n` +
+    `Confirmamos o recebimento do seu equipamento em nossa assistência. Seguem os dados principais do atendimento:\n\n` +
+    `📋 *RESUMO DO SERVIÇO:*\n` +
+    detailsList.join('\n') + `\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📸 *FOTO DO COMPROVANTE:*\n` +
+    `O comprovante oficial com dados da ordem e termos foi gerado e baixado no aparelho. Ele também foi copiado para a Área de Transferência (você pode colar com *Ctrl + V* ou anexar a imagem salva nesta conversa).\n\n` +
+    `🌐 *ACOMPANHAMENTO EM TEMPO REAL:*\n` +
+    `Você pode acompanhar fotos, laudos técnicos e o andamento do reparo a qualquer momento pelo link exclusivo:\n` +
+    `👉 ${trackingUrl}\n\n` +
+    `Agradecemos a confiança! Qualquer dúvida, estamos à disposição por aqui. 🤝`;
+
+  // 5. Abre a conversa DIRETAMENTE no WhatsApp do cliente
+  const directUrl = getWhatsAppDirectUrl(normalizedPhone, messageText);
+  window.open(directUrl, '_blank');
 
   return { method: copiedToClipboard ? 'copied-whatsapp' : 'download-whatsapp' };
 }

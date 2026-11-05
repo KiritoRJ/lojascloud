@@ -35,7 +35,8 @@ import {
   Package,
   Receipt
 } from 'lucide-react';
-import { Reseller, Tenant } from '../types';
+import { Reseller, Tenant, BusinessSegment } from '../types';
+import { SegmentSelector } from './SegmentSelector';
 import { ResellerService } from '../utils/resellerService';
 import { OnlineDB } from '../utils/api';
 import { Tooltip } from './reseller/Tooltip';
@@ -74,7 +75,17 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
   const [errorToast, setErrorToast] = useState<string | null>(null);
 
   // Formulário de Criação de Loja (Permite personalizar todos os planos; teste é fixo 0,00)
-  const [newStoreForm, setNewStoreForm] = useState({
+  const [newStoreForm, setNewStoreForm] = useState<{
+    storeName: string;
+    adminUsername: string;
+    adminPassword: string;
+    phoneNumber: string;
+    monthlyPrice: number;
+    quarterlyPrice: number;
+    yearlyPrice: number;
+    trialDays: number;
+    businessSegment: BusinessSegment;
+  }>({
     storeName: '',
     adminUsername: '',
     adminPassword: '',
@@ -82,7 +93,8 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
     monthlyPrice: 79.90,
     quarterlyPrice: 215.70,
     yearlyPrice: 767.00,
-    trialDays: 7
+    trialDays: 7,
+    businessSegment: 'assistencia_tecnica'
   });
 
   // Formulário de Configuração de Recebimento do Revendedor
@@ -227,6 +239,7 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
         adminPasswordPlain: newStoreForm.adminPassword.trim(),
         logoUrl: null,
         phoneNumber: newStoreForm.phoneNumber.trim(),
+        businessSegment: newStoreForm.businessSegment,
         customMonthlyPrice: monthlyPrice,
         customQuarterlyPrice: quarterlyPrice,
         customYearlyPrice: yearlyPrice,
@@ -274,7 +287,8 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
         monthlyPrice: 79.90,
         quarterlyPrice: 215.70,
         yearlyPrice: 767.00,
-        trialDays: 7
+        trialDays: 7,
+        businessSegment: 'assistencia_tecnica'
       });
       await loadData();
     } catch (err: any) {
@@ -954,7 +968,17 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateStore} className="space-y-4">
+            <form onSubmit={handleCreateStore} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+              {/* Seleção do Ramo de Atuação */}
+              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+                <SegmentSelector
+                  selectedSegment={newStoreForm.businessSegment}
+                  onSelectSegment={(seg) => setNewStoreForm({ ...newStoreForm, businessSegment: seg })}
+                  variant="grid"
+                  showDisabledNotice={false}
+                />
+              </div>
+
               <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                   Nome da Empresa / Loja
@@ -964,7 +988,14 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({
                   required
                   value={newStoreForm.storeName}
                   onChange={(e) => setNewStoreForm({ ...newStoreForm, storeName: e.target.value })}
-                  placeholder="Ex: Celular & Cia Assistência Técnica"
+                  placeholder={
+                    newStoreForm.businessSegment === 'mercado' ? 'Ex: Supermercado do Povo' :
+                    newStoreForm.businessSegment === 'farmacia' ? 'Ex: Farmácia Popular' :
+                    newStoreForm.businessSegment === 'restaurante' ? 'Ex: Restaurante & Bar Sabor' :
+                    newStoreForm.businessSegment === 'academia' ? 'Ex: Alpha Fitness Academia' :
+                    newStoreForm.businessSegment === 'vendas_online' ? 'Ex: Loja Virtual E-commerce' :
+                    'Ex: Celular & Cia Assistência Técnica'
+                  }
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-blue-500"
                 />
               </div>

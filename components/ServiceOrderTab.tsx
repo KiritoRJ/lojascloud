@@ -9,7 +9,7 @@ import {
   Wrench, CheckCircle2, Sparkles, QrCode, TrendingUp, MessageSquare, Send, Zap, FileText
 } from 'lucide-react';
 import { ServiceOrder, AppSettings, User, Customer, DeviceDiagnosticResults } from '../types';
-import { formatCurrency, parseCurrencyString, formatDate, formatDateTime, generateRandomNumericCode, getTrackingUrl, getHardwareTestUrl } from '../utils';
+import { formatCurrency, parseCurrencyString, formatDate, formatDateTime, generateRandomNumericCode, getTrackingUrl, getHardwareTestUrl, getWhatsAppDirectUrl, normalizeWhatsAppNumber } from '../utils';
 import { OnlineDB } from '../utils/api';
 import { areServiceOrdersEqual } from '../utils/orderUtils';
 import { SavedOrderShareModal } from './SavedOrderShareModal';
@@ -267,38 +267,48 @@ const ServiceOrderTab: React.FC<Props> = ({
     return isoDate;
   };
 
-  // Formatação inteligente de telefone com DDI Brasil (+55)
-  const formatPhoneWithDDI = (rawVal?: string): string => {
-    if (!rawVal) return '+55 ';
-    let digits = rawVal.replace(/\D/g, '');
-    if (digits.startsWith('55')) {
-      digits = digits.substring(2);
+  // Formatação flexível de telefone: campo sempre em branco quando vazio, sem +55 obrigatório
+  const formatPhoneClean = (rawVal?: string): string => {
+    if (!rawVal) return '';
+    const trimmed = rawVal.trim();
+    if (!trimmed) return '';
+
+    // Se usuário iniciou com prefixo internacional +, respeita
+    if (trimmed.startsWith('+')) {
+      return trimmed;
     }
-    if (digits.length === 0) {
-      return '+55 ';
+
+    const digits = trimmed.replace(/\D/g, '');
+    if (!digits) return '';
+
+    // Se já digitou com 55 e tem pelo menos 10 dígitos (ex: 5511999998888)
+    if (digits.startsWith('55') && digits.length >= 10) {
+      const ddd = digits.substring(2, 4);
+      const rest = digits.substring(4);
+      if (rest.length <= 4) return `+55 (${ddd}) ${rest}`;
+      if (rest.length <= 8) return `+55 (${ddd}) ${rest.substring(0, 4)}-${rest.substring(4)}`;
+      return `+55 (${ddd}) ${rest.substring(0, 5)}-${rest.substring(5, 9)}`;
     }
-    let formatted = '+55';
-    if (digits.length > 0) {
-      formatted += ` (${digits.substring(0, 2)}`;
+
+    // Padrão nacional DDD + Número (ex: 11988887777 ou 1133334444)
+    if (digits.length <= 2) {
+      return `(${digits}`;
+    } else if (digits.length <= 6) {
+      return `(${digits.substring(0, 2)}) ${digits.substring(2)}`;
+    } else if (digits.length <= 10) {
+      return `(${digits.substring(0, 2)}) ${digits.substring(2, 6)}-${digits.substring(6)}`;
+    } else if (digits.length === 11) {
+      return `(${digits.substring(0, 2)}) ${digits.substring(2, 7)}-${digits.substring(7, 11)}`;
     }
-    if (digits.length >= 3) {
-      if (digits.length > 10) {
-        // Celular 9 dígitos: +55 (XX) XXXXX-XXXX
-        formatted += `) ${digits.substring(2, 7)}-${digits.substring(7, 11)}`;
-      } else if (digits.length > 6) {
-        // Fixo 8 dígitos ou em digitação: +55 (XX) XXXX-XXXX
-        formatted += `) ${digits.substring(2, 6)}-${digits.substring(6, 10)}`;
-      } else {
-        formatted += `) ${digits.substring(2)}`;
-      }
-    }
-    return formatted;
+
+    return trimmed;
   };
+  const formatPhoneWithDDI = formatPhoneClean;
 
   // --- ESTADO DO FORMULÁRIO (DADOS DA O.S.) ---
   const [formData, setFormData] = useState<Partial<ServiceOrder>>({
     customerName: '', 
-    phoneNumber: '+55 ', 
+    phoneNumber: '', 
     address: '', 
     deviceBrand: '', 
     deviceModel: '',
@@ -503,7 +513,7 @@ const ServiceOrderTab: React.FC<Props> = ({
     setFormData(prev => ({
       ...prev,
       customerName: customer.name,
-      phoneNumber: formatPhoneWithDDI(customer.phoneNumber) || prev.phoneNumber || '+55 ',
+      phoneNumber: formatPhoneWithDDI(customer.phoneNumber) || prev.phoneNumber || '',
       address: customer.address || prev.address,
       customerId: customer.id
     }));
@@ -914,7 +924,7 @@ const ServiceOrderTab: React.FC<Props> = ({
     setEditingOrder(null);
     setFormData({ 
       customerName: '', 
-      phoneNumber: '+55 ', 
+      phoneNumber: '', 
       address: '', 
       deviceBrand: '', 
       deviceModel: '', 
@@ -1040,18 +1050,27 @@ const ServiceOrderTab: React.FC<Props> = ({
   };
 
   const sendWhatsApp = () => {
-     let token = formData.trackingToken;
-     if (!token) {
-       token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-       setFormData(prev => ({ ...prev, trackingToken: token }));
-     }
-     const link = getTrackingUrl(token, settings);
-     const storeName = settings?.storeName || 'TICCELL';
-     const cleanPhone = (formData.phoneNumber || '').replace(/\D/g, '');
-     const phoneWithCountry = cleanPhone.length <= 11 && !cleanPhone.startsWith('55') ? `55${cleanPhone}` : cleanPhone;
-     const osCode = formData.id ? `#${formData.id.split('-')[0]}` : '';
-     const message = `Olá, ${formData.customerName || 'Cliente'}! 👋%0A%0ASua Ordem de Serviço ${osCode} (${formData.deviceBrand || ''} ${formData.deviceModel || ''}) está disponível para acompanhamento.%0A%0AVocê pode acompanhar o andamento em tempo real pelo link:%0A${link}%0A%0AAtenciosamente,%0A${storeName}`;
-     window.open(`https://wa.me/${phoneWithCountry}?text=${message}`, '_blank');
+    let token = formData.trackingToken;
+    if (!token) {
+      token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      setFormData(prev => ({ ...prev, trackingToken: token }));
+    }
+    const link = getTrackingUrl(token, settings);
+    const storeName = settings?.storeName || 'Assistência Técnica';
+    const osCode = formData.id ? `#${formData.id.split('-')[0]}` : '';
+    const customerName = (formData.customerName || 'Cliente').trim();
+    const device = [formData.deviceBrand, formData.deviceModel].filter(Boolean).join(' ').trim() || 'Aparelho';
+
+    const message = 
+      `*${storeName}* 🛠️\n` +
+      `*Acompanhamento de O.S. ${osCode}*\n\n` +
+      `Olá, *${customerName}*! 👋\n\n` +
+      `📱 *Aparelho:* ${device}\n` +
+      `🔗 *Acompanhe em tempo real pelo link:*\n${link}\n\n` +
+      `Qualquer dúvida, estamos à disposição! 🤝`;
+
+    const targetUrl = getWhatsAppDirectUrl(formData.phoneNumber, message);
+    window.open(targetUrl, '_blank');
   };
 
   useEffect(() => {
@@ -1730,7 +1749,7 @@ const ServiceOrderTab: React.FC<Props> = ({
               <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 cursor-pointer" onClick={() => { 
                 const orderToEdit: ServiceOrder = {
                   ...order,
-                  phoneNumber: order.phoneNumber ? formatPhoneWithDDI(order.phoneNumber) : '+55 ',
+                  phoneNumber: order.phoneNumber ? formatPhoneWithDDI(order.phoneNumber) : '',
                   entryDate: order.entryDate || (order.date ? (order.date.includes('/') ? order.date : new Date(order.date).toLocaleDateString('pt-BR')) : getTodayDateBR()),
                   exitDate: order.exitDate || getTodayDateBR(),
                   trackingToken: order.trackingToken || (Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)),
@@ -2036,25 +2055,21 @@ const ServiceOrderTab: React.FC<Props> = ({
                     <div className="space-y-1 relative">
                       <div className="flex items-center justify-between">
                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone / WhatsApp</label>
-                        <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-1 py-0.2 rounded">+55 BR</span>
                       </div>
                       <div className="relative flex items-center">
                         <input 
                           name="phoneNumber" 
-                          value={formData.phoneNumber || '+55 '} 
+                          value={formData.phoneNumber || ''} 
                           onChange={(e) => {
                             handleInputChange(e);
                             setActiveCustomerSearchField('phone');
                             setShowCustomerSuggestions(true);
                           }} 
                           onFocus={() => {
-                            if (!formData.phoneNumber) {
-                              setFormData(prev => ({ ...prev, phoneNumber: '+55 ' }));
-                            }
                             setActiveCustomerSearchField('phone');
                             setShowCustomerSuggestions(true);
                           }}
-                          placeholder="+55 (00) 00000-0000" 
+                          placeholder="(00) 00000-0000" 
                           className="w-full p-3 bg-white rounded-xl outline-none font-bold text-xs border border-slate-100 focus:border-blue-500 transition-all font-mono" 
                         />
                       </div>

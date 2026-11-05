@@ -52,6 +52,11 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
       effectivePrompt.prompt();
       const { outcome } = await effectivePrompt.userChoice;
       if (outcome === 'accepted') {
+        try {
+          localStorage.setItem('pwa_app_installed', 'true');
+          localStorage.setItem('app_installed', 'true');
+          window.dispatchEvent(new Event('pwa-installed-change'));
+        } catch (err) {}
         onInstallSuccess?.();
         onClose();
       }
@@ -300,7 +305,25 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
         )}
 
         {/* Botão Concluir */}
-        <div className="mt-6">
+        <div className="mt-6 space-y-2">
+          {!isStandalone && (
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.setItem('pwa_app_installed', 'true');
+                  localStorage.setItem('app_installed', 'true');
+                  window.dispatchEvent(new Event('pwa-installed-change'));
+                } catch (e) {}
+                onInstallSuccess?.();
+                onClose();
+              }}
+              className="w-full py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 size={15} className="text-emerald-600" />
+              <span>Já instalei o app no meu sistema</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}

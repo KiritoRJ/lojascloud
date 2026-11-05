@@ -7,6 +7,8 @@ import 'react-datepicker/dist/react-datepicker.css';
 
 registerLocale('pt-BR', ptBR);
 import { OnlineDB } from '../utils/api';
+import { BusinessSegment } from '../types';
+import { SegmentSelector } from './SegmentSelector';
 import { SuperAdminFiscalModal } from './SuperAdminFiscalModal';
 import { SuperAdminResellerModal } from './SuperAdminResellerModal';
 import { SuperAdminFinancialDashboard } from './SuperAdminFinancialDashboard';
@@ -27,7 +29,21 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ storeName: '', username: '', password: '', logoUrl: null as string | null, phoneNumber: '' });
+  const [formData, setFormData] = useState<{
+    storeName: string;
+    username: string;
+    password: string;
+    logoUrl: string | null;
+    phoneNumber: string;
+    businessSegment: BusinessSegment;
+  }>({ 
+    storeName: '', 
+    username: '', 
+    password: '', 
+    logoUrl: null, 
+    phoneNumber: '',
+    businessSegment: 'assistencia_tecnica'
+  });
   const [tenantToDelete, setTenantToDelete] = useState<{ id: string, name: string } | null>(null);
   const [tenantToConfirmRenew, setTenantToConfirmRenew] = useState<{
     id: string;
@@ -230,11 +246,19 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
         adminPasswordPlain: formData.password,
         logoUrl: formData.logoUrl,
         phoneNumber: formData.phoneNumber,
+        businessSegment: formData.businessSegment,
         trialDays: 7
       });
 
       if (result.success) {
-        setFormData({ storeName: '', username: '', password: '', logoUrl: null, phoneNumber: '' });
+        setFormData({ 
+          storeName: '', 
+          username: '', 
+          password: '', 
+          logoUrl: null, 
+          phoneNumber: '', 
+          businessSegment: 'assistencia_tecnica' 
+        });
         setIsRegisterModalOpen(false);
         await loadTenants();
       } else {
@@ -1259,6 +1283,17 @@ const SuperAdminDashboard: React.FC<Props> = ({ onLogout, onLoginAs }) => {
             </div>
 
             <h2 className="text-xl sm:text-2xl font-black tracking-tighter text-center uppercase text-white">Cadastrar Loja</h2>
+            
+            {/* SELETOR INTELIGENTE DO RAMO / TIPO DE LOJA */}
+            <div className="bg-white p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl shadow-lg border border-white/20 text-slate-900">
+              <SegmentSelector 
+                selectedSegment={formData.businessSegment}
+                onSelectSegment={(seg) => setFormData({ ...formData, businessSegment: seg })}
+                variant="grid"
+                showDisabledNotice={true}
+              />
+            </div>
+
             <div className="space-y-4 sm:space-y-5">
               <div className="space-y-1 sm:space-y-2">
                 <label className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-blue-200 ml-4">Nome da Loja</label>

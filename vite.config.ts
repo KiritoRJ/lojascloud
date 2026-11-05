@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        hmr: false,
         proxy: {},
       },
       plugins: [
@@ -26,7 +27,7 @@ export default defineConfig(({ mode }) => {
             clientsClaim: true,
             skipWaiting: true,
             navigateFallback: 'index.html',
-            maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB
+            maximumFileSizeToCacheInBytes: 30 * 1024 * 1024, // 30MB
           },
           manifest: {
             name: 'Lojas Cloud',

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Smartphone, Package, ShoppingCart, BarChart3, Settings, LogOut, Menu, X, Loader2, ShieldCheck, KeyRound, ChevronRight, Store, TrendingUp, Users, CheckCircle2, ArrowRight, ArrowLeft, Shield, Wrench, WifiOff, Sparkles, Download, HelpCircle, FileText } from 'lucide-react';
-import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer } from './types';
+import { ServiceOrder, Product, Sale, Transaction, AppSettings, User, Customer, BusinessSegment } from './types';
 import ServiceOrderTab from './components/ServiceOrderTab';
 import CustomersTab from './components/CustomersTab';
 import StockTab from './components/StockTab';
@@ -20,7 +20,10 @@ import { StoreBusinessCardPage } from './components/businessCard/StoreBusinessCa
 import { DeviceHardwareTestPage } from './components/DeviceHardwareTestPage';
 import { InstallAppModal } from './components/InstallAppModal';
 import { SpotlightTour } from './components/SpotlightTour';
-import { usePWAInstall } from './utils/usePWAInstall';
+import { SegmentSelector } from './components/SegmentSelector';
+import { PharmacyWatermarkBackground } from './components/PharmacyWatermarkBackground';
+import { getSegmentConfig } from './utils/storeSegments';
+import { usePWAInstall, isAppRunningStandalone } from './utils/usePWAInstall';
 import { OnlineDB, supabase } from './utils/api';
 import { OfflineSync } from './utils/offlineSync';
 import { OfflineAuth } from './utils/offlineAuth';
@@ -193,7 +196,8 @@ const App: React.FC = () => {
   const [logoutError, setLogoutError] = useState(false);
   const [isCloudConnected, setIsCloudConnected] = useState(true);
   const [isInitializing, setIsInitializing] = useState(false);
-  const { isInstalled, deferredPrompt, install: handleInstallApp } = usePWAInstall();
+  const { isInstalled, deferredPrompt, install: handleInstallApp, markAsInstalled } = usePWAInstall();
+  const isActuallyInstalled = isInstalled || isAppRunningStandalone();
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -230,36 +234,68 @@ const App: React.FC = () => {
   }, [session?.user, session?.type, settings?.users]);
   useAppNotifications(transactions, products, orders, sales, settings, currentUser);
 
-  const navItems = useMemo(() => [
-    { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
-    { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin', 'colaborador'], feature: 'customersTab' },
-    { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
-    { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
-    { id: 'fiscal', label: 'Fiscal', icon: FileText, roles: ['admin', 'colaborador'], feature: 'fiscalTab' },
-    { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
-    { id: 'team', label: 'Equipe', icon: ShieldCheck, roles: ['admin'], feature: 'financeTab' },
-    { id: 'ferramentas', label: 'Ferramentas', icon: Wrench, roles: ['admin', 'colaborador'], feature: 'toolsTab' },
-    { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
-  ], []);
+  const currentSegment = ((session?.enabledFeatures as any)?.businessSegment || settings?.businessSegment || 'assistencia_tecnica') as BusinessSegment;
+  const segmentConfig = useMemo(() => getSegmentConfig(currentSegment), [currentSegment]);
+
+  const navItems = useMemo(() => {
+    // Para assistência técnica: mantém 100% exatamente como já está (não muda nada)
+    if (currentSegment === 'assistencia_tecnica') {
+      return [
+        { id: 'os', label: 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
+        { id: 'clientes', label: 'Clientes', icon: Users, roles: ['admin', 'colaborador'], feature: 'customersTab' },
+        { id: 'estoque', label: 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
+        { id: 'vendas', label: 'Vendas', icon: ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
+        { id: 'fiscal', label: 'Fiscal', icon: FileText, roles: ['admin', 'colaborador'], feature: 'fiscalTab' },
+        { id: 'financeiro', label: 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
+        { id: 'team', label: 'Equipe', icon: ShieldCheck, roles: ['admin'], feature: 'financeTab' },
+        { id: 'ferramentas', label: 'Ferramentas', icon: Wrench, roles: ['admin', 'colaborador'], feature: 'toolsTab' },
+        { id: 'config', label: 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
+      ];
+    }
+
+    // Para outros segmentos (mercado, farmácia, restaurante, academia, vendas online):
+    // Adapta os rótulos e ícone para combinar com a cara da empresa!
+    const labels = segmentConfig.navLabels;
+    return [
+      { id: 'os', label: labels.os || 'Ordens', icon: Smartphone, roles: ['admin', 'colaborador'], feature: 'osTab' },
+      { id: 'clientes', label: labels.clientes || 'Clientes', icon: Users, roles: ['admin', 'colaborador'], feature: 'customersTab' },
+      { id: 'estoque', label: labels.estoque || 'Estoque', icon: Package, roles: ['admin'], feature: 'stockTab' },
+      { id: 'vendas', label: labels.vendas || 'PDV & Caixa', icon: segmentConfig.icon || ShoppingCart, roles: ['admin', 'colaborador'], feature: 'salesTab' },
+      { id: 'fiscal', label: labels.fiscal || 'Fiscal', icon: FileText, roles: ['admin', 'colaborador'], feature: 'fiscalTab' },
+      { id: 'financeiro', label: labels.financeiro || 'Finanças', icon: BarChart3, roles: ['admin'], feature: 'financeTab' },
+      { id: 'team', label: labels.team || 'Equipe', icon: ShieldCheck, roles: ['admin'], feature: 'financeTab' },
+      { id: 'ferramentas', label: labels.ferramentas || 'Ferramentas', icon: Wrench, roles: ['admin', 'colaborador'], feature: 'toolsTab' },
+      { id: 'config', label: labels.config || 'Ajustes', icon: Settings, roles: ['admin', 'colaborador'] },
+    ];
+  }, [currentSegment, segmentConfig]);
+
+  const userRole = currentUser?.role;
+  const featuresJson = JSON.stringify(session?.enabledFeatures || {});
 
   const visibleNavItems = useMemo(() => {
-    if (!currentUser) return [];
+    if (!userRole) return [];
+    const enabledFeatures = session?.enabledFeatures;
     return navItems.filter(item => {
-      const roleAllowed = item.roles.includes(currentUser.role);
-      const isFiscalEnabled = !!(session?.enabledFeatures?.fiscalMode || (session?.enabledFeatures as any)?.fiscalModeEnabled);
+      const roleAllowed = item.roles.includes(userRole);
+      const isFiscalEnabled = !!(enabledFeatures?.fiscalMode || (enabledFeatures as any)?.fiscalModeEnabled);
       const featureAllowed = item.id === 'fiscal'
-        ? (isFiscalEnabled && (session?.enabledFeatures as any)?.fiscalTab !== false)
-        : (!item.feature || (session?.enabledFeatures as any)?.[item.feature] !== false);
+        ? (isFiscalEnabled && (enabledFeatures as any)?.fiscalTab !== false)
+        : (!item.feature || (enabledFeatures as any)?.[item.feature] !== false);
       return roleAllowed && featureAllowed;
     });
-  }, [currentUser, session?.enabledFeatures, navItems]);
+  }, [userRole, featuresJson, navItems]);
+
+  const visibleNavIds = useMemo(() => visibleNavItems.map(i => i.id).join(','), [visibleNavItems]);
 
   // Se a aba ativa atual não estiver permitida para esta loja/perfil, redireciona para a primeira aba visível
   useEffect(() => {
-    if (session?.isLoggedIn && visibleNavItems.length > 0 && !visibleNavItems.some(item => item.id === activeTab)) {
-      setActiveTab(visibleNavItems[0].id as Tab);
+    if (session?.isLoggedIn && visibleNavItems.length > 0) {
+      const isCurrentAllowed = visibleNavItems.some(item => item.id === activeTab);
+      if (!isCurrentAllowed) {
+        setActiveTab(visibleNavItems[0].id as Tab);
+      }
     }
-  }, [session?.isLoggedIn, visibleNavItems, activeTab]);
+  }, [session?.isLoggedIn, visibleNavIds, activeTab]);
 
   const pathname = window.location.pathname;
   const searchParams = new URLSearchParams(window.location.search);
@@ -360,7 +396,17 @@ const App: React.FC = () => {
   }, [session?.tenantId]);
 
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ storeName: '', username: '', password: '' });
+  const [registerForm, setRegisterForm] = useState<{
+    storeName: string;
+    username: string;
+    password: string;
+    businessSegment: BusinessSegment;
+  }>({ 
+    storeName: '', 
+    username: '', 
+    password: '',
+    businessSegment: 'assistencia_tecnica'
+  });
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
@@ -389,7 +435,8 @@ const App: React.FC = () => {
         adminUsername: registerForm.username,
         adminPasswordPlain: registerForm.password,
         logoUrl: null,
-        phoneNumber: ''
+        phoneNumber: '',
+        businessSegment: registerForm.businessSegment
       });
 
       if (res.success) {
@@ -486,12 +533,13 @@ const App: React.FC = () => {
             ConnectionStatusManager.reportSuccess();
             const finalSettings = { ...DEFAULT_SETTINGS, ...cloudData.settings };
             
-            // Se o tenantData trouxer um printer_size atualizado, usamos ele
+            // Se o tenantData trouxer um printer_size atualizado, usamos ele sem re-renders em loop
             if (tenantData?.printer_size) {
               finalSettings.printerSize = tenantData.printer_size;
-              setSession(prev => prev ? { ...prev, printerSize: tenantData.printer_size } : null);
-            } else if (session?.printerSize) {
-              finalSettings.printerSize = session.printerSize;
+              setSession(prev => {
+                if (!prev || prev.printerSize === tenantData.printer_size) return prev;
+                return { ...prev, printerSize: tenantData.printer_size };
+              });
             }
             
             finalSettings.users = cloudData.users || [];
@@ -519,7 +567,7 @@ const App: React.FC = () => {
       // Garante que a interface nunca fique eternamente travada em "Validando Sistema..."
       setSettings(prev => prev || { ...DEFAULT_SETTINGS });
     }
-  }, [session?.printerSize]);
+  }, []);
 
   useEffect(() => {
     if (session?.isLoggedIn && session.tenantId) {
@@ -805,10 +853,12 @@ const App: React.FC = () => {
     const deviceId = localStorage.getItem('device_id') || '';
     const maxUsers = session.maxUsers || 1;
     const { deviceInfo } = getDeviceTypeAndName();
+    const tenantId = session.tenantId;
+    const userName = currentUser?.name;
 
     // Dispara sinal de vida imediatamente ao montar a tela para não esperar 2 minutos
     if (navigator.onLine && deviceId) {
-      OnlineDB.heartbeatSession(session.tenantId!, deviceId, maxUsers, currentUser?.name, deviceInfo).then((res) => {
+      OnlineDB.heartbeatSession(tenantId, deviceId, maxUsers, userName, deviceInfo).then((res) => {
         if (res && res.kicked) {
           handleLogout();
           alert("Sua sessão foi encerrada porque o limite de acessos simultâneos da loja foi atingido por outro dispositivo.");
@@ -818,7 +868,7 @@ const App: React.FC = () => {
 
     const interval = setInterval(async () => {
       if (!navigator.onLine) return;
-      const res = await OnlineDB.heartbeatSession(session.tenantId!, deviceId, maxUsers, currentUser?.name, deviceInfo);
+      const res = await OnlineDB.heartbeatSession(tenantId, deviceId, maxUsers, userName, deviceInfo);
       if (res && res.kicked) {
         handleLogout();
         alert("Sua sessão foi encerrada porque o limite de acessos simultâneos da loja foi atingido por outro dispositivo.");
@@ -826,7 +876,7 @@ const App: React.FC = () => {
     }, 2 * 60 * 1000); // Heartbeat a cada 2 minutos
 
     return () => clearInterval(interval);
-  }, [session, currentUser]);
+  }, [session?.isLoggedIn, session?.type, session?.tenantId, session?.maxUsers, currentUser?.name]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1572,9 +1622,17 @@ const App: React.FC = () => {
 
             {/* Formulários */}
             {isRegisterMode ? (
-              <form onSubmit={handleRegister} className="space-y-3 lg:space-y-5">
+              <form onSubmit={handleRegister} className="space-y-3 lg:space-y-4">
+                {/* Seleção Inteligente do Nicho / Tipo de Loja */}
+                <SegmentSelector
+                  selectedSegment={registerForm.businessSegment}
+                  onSelectSegment={(seg) => setRegisterForm({ ...registerForm, businessSegment: seg })}
+                  variant="grid"
+                  showDisabledNotice={true}
+                />
+
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome da Loja</label>
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome da Loja / Empresa</label>
                   <div className="relative group">
                     <Store className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" size={16} />
                     <input 
@@ -1582,7 +1640,14 @@ const App: React.FC = () => {
                       value={registerForm.storeName} 
                       onChange={e => setRegisterForm({...registerForm, storeName: e.target.value})} 
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-xs placeholder:text-slate-300" 
-                      placeholder="Ex: Tech Cell" 
+                      placeholder={
+                        registerForm.businessSegment === 'mercado' ? 'Ex: Supermercado do Povo' :
+                        registerForm.businessSegment === 'farmacia' ? 'Ex: Farmácia Central' :
+                        registerForm.businessSegment === 'restaurante' ? 'Ex: Restaurante & Petiscaria Sabor' :
+                        registerForm.businessSegment === 'academia' ? 'Ex: Iron Fitness Academia' :
+                        registerForm.businessSegment === 'vendas_online' ? 'Ex: Tendência Express E-commerce' :
+                        'Ex: Tech Cell Assistência Técnica'
+                      } 
                     />
                   </div>
                 </div>
@@ -1844,40 +1909,95 @@ const App: React.FC = () => {
       onTouchEnd={handleTouchEnd}
     >
       <aside className={`${isFullscreen ? 'hidden' : 'hidden md:flex'} flex-col ${isSidebarCollapsed ? 'w-0 p-0 border-none opacity-0 pointer-events-none overflow-hidden' : 'w-72 p-6 opacity-100 overflow-y-auto'} bg-slate-900 text-white h-[100dvh] sticky top-0 transition-all duration-300 ease-in-out hide-scrollbar [&::-webkit-scrollbar]:hidden`}>
-        <div className="flex items-center justify-between mb-12 min-w-[240px]">
-          <div className="flex items-center gap-4 overflow-hidden animate-in fade-in">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shrink-0">
-              {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover rounded-xl" /> : <Smartphone size={20} />}
+        <div className="flex items-center justify-between mb-8 min-w-[240px]">
+          <div className="flex items-center gap-3 overflow-hidden animate-in fade-in">
+            <div 
+              className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shrink-0 text-white"
+              style={{ backgroundColor: currentSegment === 'assistencia_tecnica' ? '#2563eb' : segmentConfig.themePrimary }}
+            >
+              {settings.logoUrl ? (
+                <img src={settings.logoUrl} className="w-full h-full object-cover rounded-xl" />
+              ) : currentSegment === 'farmacia' ? (
+                <img 
+                  src="https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=160&q=80" 
+                  alt="Farmácia" 
+                  className="w-full h-full object-cover rounded-xl" 
+                />
+              ) : currentSegment === 'assistencia_tecnica' ? (
+                <Smartphone size={20} />
+              ) : (
+                <segmentConfig.icon size={20} />
+              )}
             </div>
-            <h1 className="text-sm font-black tracking-tighter uppercase leading-tight truncate">{settings.storeName}</h1>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-sm font-black tracking-tighter uppercase leading-tight truncate">{settings.storeName}</h1>
+              {currentSegment !== 'assistencia_tecnica' && (
+                <p className="text-[8px] font-bold uppercase tracking-widest text-slate-400 truncate mt-0.5">
+                  {segmentConfig.shortName}
+                </p>
+              )}
+            </div>
           </div>
           <button onClick={() => setIsSidebarCollapsed(true)} className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all">
             <X size={20} />
           </button>
         </div>
         <nav id="tour-sidebar-nav" className="flex-1 space-y-2 min-w-[240px]">
-          {visibleNavItems.map((item, idx) => (
-            <button key={`nav-desktop-${item.id}-${idx}`} onClick={() => setActiveTab(item.id as Tab)} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-xl' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
-              <item.icon size={20} className="shrink-0" />
-              <span className="animate-in fade-in whitespace-nowrap">{item.label}</span>
-            </button>
-          ))}
+          {visibleNavItems.map((item, idx) => {
+            const isActive = activeTab === item.id;
+            return (
+              <button 
+                key={`nav-desktop-${item.id}-${idx}`} 
+                onClick={() => setActiveTab(item.id as Tab)} 
+                style={isActive && currentSegment !== 'assistencia_tecnica' ? { backgroundColor: segmentConfig.themePrimary } : undefined}
+                className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${
+                  isActive 
+                    ? currentSegment === 'assistencia_tecnica' ? 'bg-blue-600 text-white shadow-xl' : 'text-white shadow-xl'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <item.icon size={20} className="shrink-0" />
+                <span className="animate-in fade-in whitespace-nowrap">{item.label}</span>
+              </button>
+            );
+          })}
 
-          <div className="pt-3 space-y-2">
-            <button 
-              type="button" 
-              onClick={() => setIsInstallModalOpen(true)}
-              className="w-full flex items-center gap-3.5 px-4 py-3 bg-gradient-to-r from-blue-600/30 to-indigo-600/20 hover:from-blue-600 hover:to-indigo-600 text-blue-300 hover:text-white border border-blue-500/30 hover:border-transparent rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all active:scale-95 group shadow-sm"
-            >
-              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 group-hover:bg-white group-hover:text-blue-600 transition-all">
-                <Download size={16} />
+          {!isActuallyInstalled && (
+            <div className="pt-3 space-y-2">
+              <button 
+                type="button" 
+                onClick={() => setIsInstallModalOpen(true)}
+                className="w-full flex items-center gap-3.5 px-4 py-3 bg-gradient-to-r from-blue-600/30 to-indigo-600/20 hover:from-blue-600 hover:to-indigo-600 text-blue-300 hover:text-white border border-blue-500/30 hover:border-transparent rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all active:scale-95 group shadow-sm"
+              >
+                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 group-hover:bg-white group-hover:text-blue-600 transition-all">
+                  <Download size={16} />
+                </div>
+                <div className="text-left min-w-0 flex-1">
+                  <span className="block truncate">Instalar no PC/Celular</span>
+                  <span className="text-[8px] text-blue-400 group-hover:text-blue-100 font-bold block uppercase tracking-normal">Acesso 1 Clique</span>
+                </div>
+              </button>
+            </div>
+          )}
+          {currentSegment === 'farmacia' && (
+            <div className="pt-2">
+              <div className="p-3 bg-gradient-to-br from-teal-950/90 to-emerald-950/80 border border-teal-500/30 rounded-2xl relative overflow-hidden group">
+                <div 
+                  className="absolute inset-0 bg-cover bg-center opacity-15 pointer-events-none"
+                  style={{ backgroundImage: `url('https://images.unsplash.com/photo-1586015555751-63bb77f4322a?auto=format&fit=crop&w=400&q=80')` }}
+                />
+                <div className="relative z-10 flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-teal-600/30 border border-teal-400/40 flex items-center justify-center text-teal-300 shrink-0">
+                    <Package size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[9px] font-black text-teal-300 uppercase tracking-widest truncate">Dispensação Segura</p>
+                    <p className="text-[8px] text-teal-100/80 font-medium truncate">Padrão Farmacêutico • RDC Anvisa</p>
+                  </div>
+                </div>
               </div>
-              <div className="text-left min-w-0 flex-1">
-                <span className="block truncate">Instalar no PC/Celular</span>
-                <span className="text-[8px] text-blue-400 group-hover:text-blue-100 font-bold block uppercase tracking-normal">Acesso 1 Clique</span>
-              </div>
-            </button>
-          </div>
+            </div>
+          )}
         </nav>
         <div className="mt-auto pt-4 border-t border-white/5 min-w-[240px]">
           {session?.subscriptionStatus === 'trial' && (
@@ -1931,6 +2051,11 @@ const App: React.FC = () => {
       </aside>
 
       <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden relative">
+        {/* Marca d'água médica e atmosfera clean exclusiva para farmácias */}
+        {currentSegment === 'farmacia' && (
+          <PharmacyWatermarkBackground />
+        )}
+
         {/* Barra superior permanente de modo Super Administrador */}
         {session?.impersonatedBySuper && !isFullscreen && (
           <div className="w-full bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 text-white px-3 sm:px-5 py-2.5 shadow-lg flex items-center justify-between shrink-0 z-30 border-b border-purple-500/40 animate-in slide-in-from-top">
@@ -1970,11 +2095,18 @@ const App: React.FC = () => {
                 id="tour-mobile-header-menu"
                 type="button"
                 onClick={() => setIsSidebarOpen(true)}
+                style={{ backgroundColor: currentSegment === 'farmacia' ? '#0d9488' : undefined }}
                 className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all overflow-hidden border-2 border-white ring-2 ring-blue-500/30 cursor-pointer shrink-0"
                 title="Toque na foto para abrir o menu lateral"
               >
                 {settings.logoUrl ? (
                   <img src={settings.logoUrl} className="w-full h-full object-cover rounded-lg" alt={settings.storeName} />
+                ) : currentSegment === 'farmacia' ? (
+                  <img 
+                    src="https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=160&q=80" 
+                    alt="Farmácia" 
+                    className="w-full h-full object-cover rounded-lg" 
+                  />
                 ) : (
                   <Smartphone size={18} />
                 )}
@@ -1986,7 +2118,10 @@ const App: React.FC = () => {
                 <span className="font-black text-xs uppercase tracking-tight text-slate-900 truncate max-w-[140px] leading-tight">
                   {settings.storeName}
                 </span>
-                <span className="text-[9px] font-bold text-blue-600 tracking-wider flex items-center gap-0.5 leading-tight mt-0.5">
+                <span 
+                  style={{ color: currentSegment === 'farmacia' ? '#0d9488' : undefined }}
+                  className="text-[9px] font-bold text-blue-600 tracking-wider flex items-center gap-0.5 leading-tight mt-0.5"
+                >
                   Abrir Menu ▾
                 </span>
               </div>
@@ -2003,7 +2138,7 @@ const App: React.FC = () => {
                   <span>Super ADM</span>
                 </button>
               )}
-              {!isInstalled && (
+              {!isActuallyInstalled && (
                 <button
                   id="tour-mobile-install-btn"
                   type="button"
@@ -2044,10 +2179,38 @@ const App: React.FC = () => {
                   <Menu size={18} />
                 </button>
               )}
+
+              {currentSegment === 'farmacia' ? (
+                <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl border bg-teal-50/80 border-teal-200/90 shadow-2xs">
+                  <img 
+                    src="https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=80&q=80" 
+                    alt="Farmácia & Medicina" 
+                    className="w-5 h-5 rounded-md object-cover border border-teal-300/80 shadow-2xs" 
+                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase text-teal-950 tracking-wider">
+                      {settings.storeName || 'Farmácia & Drogaria'}
+                    </span>
+                    <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-teal-600 text-white border-teal-500 shadow-2xs">
+                      Medicina & Saúde
+                    </span>
+                  </div>
+                </div>
+              ) : currentSegment !== 'assistencia_tecnica' ? (
+                <div className="flex items-center gap-2 px-3 py-1 rounded-xl border bg-slate-50 border-slate-200 shadow-xs">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: segmentConfig.themePrimary }} />
+                  <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider">
+                    {segmentConfig.shortName}
+                  </span>
+                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${segmentConfig.badgeColor}`}>
+                    {segmentConfig.badgeText}
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-2.5">
-              {!isInstalled && (
+              {!isActuallyInstalled && (
                 <button
                   id="tour-header-install"
                   type="button"
@@ -2113,7 +2276,7 @@ const App: React.FC = () => {
 
         <div 
           id="app-main-scroll-container" 
-          className={`flex-1 max-w-none mx-auto w-full animate-in fade-in duration-700 hide-scrollbar [&::-webkit-scrollbar]:hidden ${
+          className={`flex-1 max-w-none mx-auto w-full relative z-10 animate-in fade-in duration-700 hide-scrollbar [&::-webkit-scrollbar]:hidden ${
             isFullscreen
               ? 'p-0 overflow-hidden w-full h-full flex flex-col min-h-0'
               : activeTab === 'vendas'
@@ -2224,7 +2387,7 @@ const App: React.FC = () => {
               onSwitchProfile={handleSwitchProfile} 
               tenantId={session.tenantId} 
               deferredPrompt={deferredPrompt} 
-              isInstalled={isInstalled}
+              isInstalled={isActuallyInstalled}
               onInstallApp={handleInstallApp} 
               onOpenInstallModal={() => setIsInstallModalOpen(true)}
               subscriptionStatus={session.subscriptionStatus} 
@@ -2253,12 +2416,22 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3 p-3 bg-white rounded-2xl mb-4 border border-slate-200/80 shadow-xs shrink-0">
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-600/20 shrink-0 overflow-hidden">
-                {settings.logoUrl ? <img src={settings.logoUrl} className="w-full h-full object-cover rounded-xl" alt="Logo" /> : <Smartphone size={20} />}
+              <div 
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md shrink-0 overflow-hidden"
+                style={{ backgroundColor: currentSegment === 'assistencia_tecnica' ? '#2563eb' : segmentConfig.themePrimary }}
+              >
+                {settings.logoUrl ? (
+                  <img src={settings.logoUrl} className="w-full h-full object-cover rounded-xl" alt="Logo" />
+                ) : currentSegment === 'assistencia_tecnica' ? (
+                  <Smartphone size={20} />
+                ) : (
+                  <segmentConfig.icon size={20} />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-tight truncate">{settings.storeName}</h3>
                 <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest truncate">
+                  {currentSegment !== 'assistencia_tecnica' ? `${segmentConfig.shortName} • ` : ''}
                   {currentUser.role === 'admin' ? 'Administrador' : 'Colaborador'}
                 </p>
               </div>
@@ -2269,22 +2442,26 @@ const App: React.FC = () => {
             </div>
 
             <nav id="tour-mobile-nav" className="flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1">
-               {visibleNavItems.map((item, idx) => (
-                <button 
-                  key={`nav-mobile-sidebar-${item.id}-${idx}`} 
-                  onClick={() => { setActiveTab(item.id as Tab); setIsSidebarOpen(false); }} 
-                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${
-                    activeTab === item.id 
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30' 
-                      : 'text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200/60'
-                  }`}
-                >
-                  <item.icon size={17} className={activeTab === item.id ? 'animate-pulse' : 'text-slate-400'} />
-                  <span>{item.label}</span>
-                </button>
-              ))}
+               {visibleNavItems.map((item, idx) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button 
+                    key={`nav-mobile-sidebar-${item.id}-${idx}`} 
+                    onClick={() => { setActiveTab(item.id as Tab); setIsSidebarOpen(false); }} 
+                    style={isActive && currentSegment !== 'assistencia_tecnica' ? { backgroundColor: segmentConfig.themePrimary } : undefined}
+                    className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${
+                      isActive 
+                        ? currentSegment === 'assistencia_tecnica' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30' : 'text-white shadow-md' 
+                        : 'text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200/60'
+                    }`}
+                  >
+                    <item.icon size={17} className={isActive ? 'animate-pulse' : 'text-slate-400'} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
 
-              {!isInstalled && (
+              {!isActuallyInstalled && (
                 <div className="pt-2">
                   <button 
                     type="button" 
@@ -2348,6 +2525,7 @@ const App: React.FC = () => {
         onClose={() => setIsInstallModalOpen(false)}
         deferredPrompt={deferredPrompt}
         onInstallSuccess={() => {
+          markAsInstalled();
           setIsInstallModalOpen(false);
         }}
       />
@@ -2360,7 +2538,7 @@ const App: React.FC = () => {
         activeTab={activeTab}
         setActiveTab={(tab) => setActiveTab(tab as Tab)}
         onOpenInstallModal={() => setIsInstallModalOpen(true)}
-        isInstalled={isInstalled}
+        isInstalled={isActuallyInstalled}
         onOpenSidebar={() => {
           setIsSidebarOpen(true);
           setIsSidebarCollapsed(false);

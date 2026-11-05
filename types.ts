@@ -467,6 +467,32 @@ export interface AppSettings {
   nfceNfeConfig?: NfceNfeConfig;
   nfseConfig?: NfseConfig;
   businessCard?: BusinessCardSettings;
+  businessSegment?: BusinessSegment;
+}
+
+export type BusinessSegment = 
+  | 'assistencia_tecnica'
+  | 'mercado'
+  | 'farmacia'
+  | 'restaurante'
+  | 'academia'
+  | 'vendas_online';
+
+export interface EnabledFeatures {
+  osTab?: boolean;
+  customersTab?: boolean;
+  stockTab?: boolean;
+  salesTab?: boolean;
+  fiscalTab?: boolean;
+  financeTab?: boolean;
+  toolsTab?: boolean;
+  profiles?: boolean;
+  xmlExportImport?: boolean;
+  hideFinancialReports?: boolean;
+  businessSegment?: BusinessSegment;
+  fiscalMode?: boolean;
+  fiscalModeEnabled?: boolean;
+  aiFeature?: boolean;
 }
 
 export interface BusinessCardSettings {

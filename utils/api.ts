@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { Customer, ServiceOrder, PosTerminalInfo, AppSettings } from '../types';
+import { Customer, ServiceOrder, PosTerminalInfo, AppSettings, BusinessSegment } from '../types';
 import { OfflineAuth } from './offlineAuth';
 
 const SUPABASE_URL = (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) || (import.meta as any).env?.VITE_SUPABASE_URL || 'https://lawcmqsjhwuhogsukhbf.supabase.co';
@@ -818,6 +818,7 @@ export class OnlineDB {
     adminPasswordPlain: string; 
     logoUrl: string | null; 
     phoneNumber: string; 
+    businessSegment?: BusinessSegment;
     customMonthlyPrice?: number;
     customQuarterlyPrice?: number;
     customYearlyPrice?: number;
@@ -842,6 +843,7 @@ export class OnlineDB {
     adminPasswordPlain: string; 
     logoUrl?: string | null; 
     phoneNumber: string;
+    businessSegment?: BusinessSegment;
     customMonthlyPrice?: number;
     customQuarterlyPrice?: number;
     customYearlyPrice?: number;

@@ -2178,28 +2178,6 @@ const SettingsTab: React.FC<Props> = ({
           </div>
         )}
 
-        {/* CARTÃO DE VISITA DIGITAL DA LOJA (Google 5★, Pix, Instagram) */}
-        <button
-          type="button"
-          onClick={() => setView('business_card')}
-          className="w-full p-4.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 hover:from-slate-800 hover:to-indigo-900 text-white rounded-[2rem] text-left transition-all active:scale-98 flex items-center gap-3.5 shadow-md shadow-indigo-950/20 cursor-pointer group border border-amber-500/30"
-        >
-          <div className="w-11 h-11 bg-amber-500/20 backdrop-blur-xs text-amber-400 rounded-2xl flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform shrink-0 border border-amber-500/30">
-            <CreditCard size={20} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest">Página Externa do Cliente</p>
-              <span className="text-[8px] font-black bg-amber-500/20 text-amber-300 px-2 py-0.2 rounded-full border border-amber-400/30 uppercase">
-                Google 5★ • Pix • Instagram
-              </span>
-            </div>
-            <p className="text-xs font-black text-white uppercase tracking-tight truncate">Cartão de Visita Digital Inteligente</p>
-            <p className="text-[10px] text-slate-300 truncate">Página chamativa para clientes avaliarem no Google, acessarem Instagram e copiarem Pix</p>
-          </div>
-          <ChevronRight size={16} className="text-white/80 shrink-0" />
-        </button>
-
         {/* DADOS DA LOJA */}
         <div id="tour-store-profile" className="bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm space-y-6">
            <div className="flex items-center justify-between border-b border-slate-100 pb-3">

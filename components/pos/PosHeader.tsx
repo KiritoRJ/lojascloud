@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ShoppingCart, History, User as UserIcon, Camera, ImageIcon, Trash2, Loader2, Maximize2, Minimize2, Lightbulb, Crown } from 'lucide-react';
+import { ShoppingCart, History, User as UserIcon, Camera, ImageIcon, Trash2, Loader2, Maximize2, Minimize2, Lightbulb, Crown, Pill } from 'lucide-react';
 import { AppSettings, User } from '../../types';
 
 interface PosHeaderProps {
@@ -127,13 +127,17 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
             type="button"
             onClick={onOpenTerminalsModal}
             className={`w-9 h-9 rounded-xl flex items-center justify-center font-black cursor-pointer active:scale-95 transition-all ${
-              isDark 
+              settings.businessSegment === 'farmacia'
+                ? isDark
+                  ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30 shadow-inner hover:bg-teal-500/30'
+                  : 'bg-teal-50 text-teal-700 border border-teal-200 shadow-xs hover:bg-teal-100'
+                : isDark 
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-inner hover:bg-emerald-500/30' 
                 : 'bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-xs hover:bg-emerald-100'
             }`}
             title="Ver e gerenciar computadores/terminais conectados"
           >
-            <ShoppingCart size={18} />
+            {settings.businessSegment === 'farmacia' ? <Pill size={18} /> : <ShoppingCart size={18} />}
           </button>
           <div 
             onClick={onOpenTerminalsModal} 
@@ -209,10 +213,20 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
                 </div>
               )}
             </>
+          ) : settings.businessSegment === 'farmacia' ? (
+            <div className={`flex items-center gap-2 text-[9px] font-bold uppercase tracking-wider ${isDark ? 'text-teal-300' : 'text-teal-800'}`}>
+              <img 
+                src="https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=80&q=80" 
+                alt="Farmácia" 
+                className="w-5 h-5 rounded-md object-cover border border-teal-300/80 shadow-2xs" 
+              />
+              <span>{settings.storeName || 'Farmácia & Drogaria'}</span>
+              <span className="text-[7.5px] px-1.5 py-0.2 rounded bg-teal-500/20 text-teal-600 font-black">Dispensação</span>
+            </div>
           ) : (
             <div className={`flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               <ImageIcon size={13} />
-              <span>{settings.storeName || 'Mercado PDV'}</span>
+              <span>{settings.storeName || 'PDV Vendas'}</span>
             </div>
           )}
           <input 

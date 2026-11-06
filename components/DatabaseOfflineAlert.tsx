@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Cloud,
   CloudOff,
@@ -329,8 +330,8 @@ export const ConnectionStatusDetailModal: React.FC<{
   const isOnline = state.status === 'online';
   const isDbOffline = state.status === 'db_offline';
 
-  return (
-    <div className="fixed inset-0 bg-slate-950/80 z-[400] flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
+  return createPortal(
+    <div className="fixed inset-0 bg-slate-950/80 z-[99999] flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
       <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-100 text-slate-900 animate-in zoom-in-95">
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
@@ -423,6 +424,7 @@ export const ConnectionStatusDetailModal: React.FC<{
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

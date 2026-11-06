@@ -2042,7 +2042,7 @@ const ServiceOrderTab: React.FC<Props> = ({
 
       {/* MODAL DE EDIÇÃO / CRIAÇÃO */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 z-50 flex flex-col justify-end md:justify-center p-2 backdrop-blur-sm">
+        <div className="fixed inset-0 bg-slate-950/80 z-[9999] flex flex-col justify-end md:justify-center p-2 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md mx-auto rounded-[2.5rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 flex flex-col max-h-[90vh]">
             <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-white shrink-0">
               <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight">{editingOrder ? 'Editar O.S.' : 'Nova O.S.'}</h3>

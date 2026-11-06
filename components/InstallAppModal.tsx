@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Smartphone, Monitor, Apple, CheckCircle2, Download, Share, PlusSquare, ArrowRight, X, Sparkles, HelpCircle, ShieldCheck } from 'lucide-react';
 
 interface InstallAppModalProps {
@@ -67,8 +68,10 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-slate-950/80 z-[300] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md animate-in fade-in overflow-y-auto">
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div className="fixed inset-0 bg-slate-950/80 z-[99999] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md animate-in fade-in overflow-y-auto">
       <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-6 sm:p-8 shadow-2xl animate-in zoom-in-95 border border-slate-100 relative my-auto">
         
         {/* Botão Fechar */}
@@ -334,6 +337,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

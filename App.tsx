@@ -1962,23 +1962,7 @@ const App: React.FC = () => {
             );
           })}
 
-          {!isActuallyInstalled && (
-            <div className="pt-3 space-y-2">
-              <button 
-                type="button" 
-                onClick={() => setIsInstallModalOpen(true)}
-                className="w-full flex items-center gap-3.5 px-4 py-3 bg-gradient-to-r from-blue-600/30 to-indigo-600/20 hover:from-blue-600 hover:to-indigo-600 text-blue-300 hover:text-white border border-blue-500/30 hover:border-transparent rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all active:scale-95 group shadow-sm"
-              >
-                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 group-hover:bg-white group-hover:text-blue-600 transition-all">
-                  <Download size={16} />
-                </div>
-                <div className="text-left min-w-0 flex-1">
-                  <span className="block truncate">Instalar no PC/Celular</span>
-                  <span className="text-[8px] text-blue-400 group-hover:text-blue-100 font-bold block uppercase tracking-normal">Acesso 1 Clique</span>
-                </div>
-              </button>
-            </div>
-          )}
+
           {currentSegment === 'farmacia' && (
             <div className="pt-2">
               <div className="p-3 bg-gradient-to-br from-teal-950/90 to-emerald-950/80 border border-teal-500/30 rounded-2xl relative overflow-hidden group">
@@ -2161,7 +2145,6 @@ const App: React.FC = () => {
                   <span>Assinar</span>
                 </button>
               )}
-              <ConnectionStatusTag />
             </div>
           </div>
         )}
@@ -2235,7 +2218,6 @@ const App: React.FC = () => {
                   <span className="text-[9px] bg-amber-600 text-white px-1.5 py-0.5 rounded font-black">Assinar</span>
                 </button>
               )}
-              <ConnectionStatusTag />
             </div>
           </div>
         )}

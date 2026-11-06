@@ -552,15 +552,56 @@ const ServiceOrderTab: React.FC<Props> = ({
       handleDateInputChange(name, value);
       return;
     }
-    // Formatação de moeda em tempo real
+    // Formatação de valores financeiros: Custo da Peça subtraído do Total Cobrado, Mão de Obra gerada automaticamente como a diferença
     if (name === 'partsCost' || name === 'serviceCost' || name === 'total') {
       const numericValue = parseCurrencyString(value);
       setFormData(prev => {
-        const updated = { ...prev, [name]: numericValue };
-        if (name === 'total') return { ...updated, total: numericValue };
-        const total = (updated.partsCost || 0) + (updated.serviceCost || 0);
-        return { ...updated, total };
+        if (name === 'total') {
+          // Quando o usuário define ou altera o Valor Total Cobrado:
+          // A mão de obra é a diferença gerada automaticamente (Total - Custo da Peça)
+          const parts = Number(prev.partsCost || 0);
+          const newServiceCost = Math.max(0, numericValue - parts);
+          return {
+            ...prev,
+            total: numericValue,
+            serviceCost: newServiceCost
+          };
+        }
+
+        if (name === 'partsCost') {
+          // Quando o usuário define ou altera o Custo da Peça:
+          // O custo da peça é subtraído do valor total cobrado, recalculando a mão de obra automaticamente
+          const currentTotal = Number(prev.total || 0);
+          if (currentTotal > 0) {
+            const newServiceCost = Math.max(0, currentTotal - numericValue);
+            return {
+              ...prev,
+              partsCost: numericValue,
+              serviceCost: newServiceCost
+            };
+          } else {
+            // Se o total cobrado ainda estiver vazio ou zerado, total = peças + mão de obra atual
+            return {
+              ...prev,
+              partsCost: numericValue,
+              total: numericValue + Number(prev.serviceCost || 0)
+            };
+          }
+        }
+
+        if (name === 'serviceCost') {
+          // Se o usuário digitar na mão de obra manualmente, ajusta o total cobrado
+          const parts = Number(prev.partsCost || 0);
+          return {
+            ...prev,
+            serviceCost: numericValue,
+            total: parts + numericValue
+          };
+        }
+
+        return prev;
       });
+      return;
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
@@ -2548,57 +2589,63 @@ const ServiceOrderTab: React.FC<Props> = ({
                   </div>
                 </div>
 
-                {/* ASSINATURA DIGITAL */}
-                <div className="bg-slate-50 p-4 rounded-3xl space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assinatura Digital (Opcional)</h4>
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => setIsFullScreenSignatureOpen(true)} className="text-[8px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1"><Maximize2 size={10} /> Tela Cheia</button>
-                      <button onClick={clearSignature} className="text-[8px] font-black text-red-500 uppercase tracking-widest">Limpar</button>
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden relative h-32">
-                    {formData.signature && !isSigning ? (
-                      <img src={formData.signature} className="w-full h-full object-contain pointer-events-none" />
-                    ) : null}
-                    <canvas 
-                      ref={signatureRef}
-                      width={400}
-                      height={128}
-                      onPointerDown={startDrawing}
-                      onPointerMove={draw}
-                      onPointerUp={stopDrawing}
-                      onPointerOut={stopDrawing}
-                      className="absolute inset-0 w-full h-full cursor-crosshair touch-none"
-                    />
-                  </div>
-                </div>
-
                 {/* FINANCEIRO */}
                 <div className="bg-slate-900 p-5 rounded-[2rem] space-y-4 shadow-xl">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Custo Peças</label>
-                      <div className="p-3 bg-white/5 rounded-xl flex items-center gap-2 border border-white/10">
-                        <span className="text-[9px] font-black text-white/50">R$</span>
-                        <input name="partsCost" value={formatCurrency(formData.partsCost || 0).replace('R$', '').trim()} onChange={handleInputChange} className="w-full bg-transparent font-bold text-xs text-white outline-none" placeholder="0,00" />
+                  {/* VALOR TOTAL COBRADO (Destaque Principal) */}
+                  <div className="p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-white">
+                      <Calculator size={18} className="text-blue-400" />
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider block text-blue-200">Valor Total Cobrado</span>
+                        <span className="text-[8px] text-slate-400 font-medium">Preço total acordado com o cliente</span>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Mão de Obra</label>
-                      <div className="p-3 bg-white/5 rounded-xl flex items-center gap-2 border border-white/10">
-                        <span className="text-[9px] font-black text-white/50">R$</span>
-                        <input name="serviceCost" value={formatCurrency(formData.serviceCost || 0).replace('R$', '').trim()} onChange={handleInputChange} className="w-full bg-transparent font-bold text-xs text-white outline-none" placeholder="0,00" />
-                      </div>
+                    <div className="flex items-center gap-1.5 bg-black/40 px-3 py-1.5 rounded-xl border border-white/10 focus-within:border-blue-400 transition-colors">
+                      <span className="text-[10px] font-black text-blue-400">R$</span>
+                      <input 
+                        name="total" 
+                        value={formatCurrency(formData.total || 0).replace('R$', '').trim()} 
+                        onChange={handleInputChange} 
+                        className="bg-transparent font-black text-white outline-none text-xl text-right w-28 sm:w-32" 
+                        placeholder="0,00" 
+                      />
                     </div>
                   </div>
-                  
-                  <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                    <div className="flex items-center gap-2 text-white">
-                      <Calculator size={16} className="text-blue-400" />
-                      <span className="text-[10px] font-black uppercase tracking-widest">Total Geral</span>
+
+                  {/* CUSTO DA PEÇA E MÃO DE OBRA (DIFERENÇA AUTOMÁTICA) */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between ml-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Custo Peças</label>
+                        <span className="text-[8px] font-bold text-slate-400">(Subtraído)</span>
+                      </div>
+                      <div className="p-3 bg-white/5 rounded-xl flex items-center gap-2 border border-white/10 focus-within:border-blue-400 transition-colors">
+                        <span className="text-[9px] font-black text-white/50">R$</span>
+                        <input 
+                          name="partsCost" 
+                          value={formatCurrency(formData.partsCost || 0).replace('R$', '').trim()} 
+                          onChange={handleInputChange} 
+                          className="w-full bg-transparent font-bold text-xs text-white outline-none" 
+                          placeholder="0,00" 
+                        />
+                      </div>
                     </div>
-                    <input name="total" value={formatCurrency(formData.total || 0).replace('R$', '').trim()} onChange={handleInputChange} className="bg-transparent font-black text-white outline-none text-xl text-right w-32" placeholder="0,00" />
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between ml-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mão de Obra</label>
+                        <span className="text-[8px] font-bold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.2 rounded">Automático</span>
+                      </div>
+                      <div className="p-3 bg-white/5 rounded-xl flex items-center gap-2 border border-white/10 focus-within:border-emerald-400 transition-colors">
+                        <span className="text-[9px] font-black text-emerald-400">R$</span>
+                        <input 
+                          name="serviceCost" 
+                          value={formatCurrency(formData.serviceCost || 0).replace('R$', '').trim()} 
+                          onChange={handleInputChange} 
+                          className="w-full bg-transparent font-bold text-xs text-emerald-300 outline-none" 
+                          placeholder="0,00" 
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   {/* TRAVA DE MARGEM DE LUCRO / ALERTA DE PREJUÍZO NA O.S. */}
@@ -2723,42 +2770,6 @@ const ServiceOrderTab: React.FC<Props> = ({
                 Descartar e Sair
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL DE ASSINATURA TELA CHEIA */}
-      {isFullScreenSignatureOpen && (
-        <div className="fixed inset-0 bg-slate-950/90 z-[200] flex flex-col animate-in fade-in">
-          <div className="p-6 flex items-center justify-between bg-white shrink-0">
-            <div>
-              <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight">Assinatura Digital</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Assine no espaço abaixo</p>
-            </div>
-            <button onClick={() => setIsFullScreenSignatureOpen(false)} className="p-2 text-slate-400 bg-slate-50 rounded-full"><X size={20} /></button>
-          </div>
-          
-          <div className="flex-1 bg-slate-100 p-4 flex flex-col">
-            <div className="flex-1 bg-white rounded-3xl shadow-inner relative overflow-hidden border-2 border-slate-200">
-              <canvas 
-                ref={fullScreenSignatureRef}
-                width={window.innerWidth - 32}
-                height={window.innerHeight - 200}
-                onPointerDown={startDrawing}
-                onPointerMove={draw}
-                onPointerUp={(e) => stopDrawing(e, true)}
-                onPointerOut={(e) => stopDrawing(e, true)}
-                className="absolute inset-0 w-full h-full cursor-crosshair touch-none"
-              />
-              <div className="absolute bottom-4 left-0 right-0 flex justify-center pointer-events-none">
-                <span className="text-slate-300 font-black text-2xl uppercase tracking-widest opacity-50">Assine Aqui</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="p-6 bg-white flex gap-3 shrink-0">
-            <button onClick={clearFullScreenSignature} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-[10px] shadow-sm active:scale-95">Limpar</button>
-            <button onClick={saveFullScreenSignature} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-xl active:scale-95">Salvar Assinatura</button>
           </div>
         </div>
       )}

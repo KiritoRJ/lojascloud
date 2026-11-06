@@ -2122,18 +2122,7 @@ const App: React.FC = () => {
                   <span>Super ADM</span>
                 </button>
               )}
-              {!isActuallyInstalled && (
-                <button
-                  id="tour-mobile-install-btn"
-                  type="button"
-                  onClick={() => setIsInstallModalOpen(true)}
-                  className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[8px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
-                  title="Instalar App no celular"
-                >
-                  <Download size={10} />
-                  <span>Instalar</span>
-                </button>
-              )}
+              {/* Botão de instalar app mobile ocultado conforme solicitação do usuário */}
               {session?.subscriptionStatus === 'trial' && (
                 <button
                   type="button"
@@ -2193,18 +2182,7 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2.5">
-              {!isActuallyInstalled && (
-                <button
-                  id="tour-header-install"
-                  type="button"
-                  onClick={() => setIsInstallModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-md shadow-blue-500/20 cursor-pointer"
-                  title="Instalar o aplicativo no PC ou Celular"
-                >
-                  <Download size={13} />
-                  <span>Instalar App</span>
-                </button>
-              )}
+              {/* Botão de instalar app ocultado conforme solicitação do usuário */}
 
               {session?.subscriptionStatus === 'trial' && (
                 <button

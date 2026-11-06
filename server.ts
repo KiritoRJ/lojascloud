@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import dotenv from 'dotenv';
 import cors from 'cors';
@@ -13,7 +12,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
+// Modo desktop (Electron): o .env fica fora do pacote, em LC_ENV_PATH
+dotenv.config(process.env.LC_ENV_PATH ? { path: process.env.LC_ENV_PATH } : undefined);
 
 const app = express();
 const getPort = () => {
@@ -171,6 +171,38 @@ const getGenAI = (apiKey: string) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors());
+
+// ---- Modo desktop: backend sempre igual ao do site (Vercel) ----
+// Depois de uma "Forçar Atualização", as rotas /api usam o backend publicado no site quando há
+// internet. Sem internet, site fora do ar ou rota inexistente lá (404), cai nas rotas locais abaixo.
+let remoteDownUntil = 0;
+app.use('/api', async (req, res, next) => {
+  const base = process.env.LC_PROXY_URL;
+  if (!base || !process.env.LC_EMBEDDED || Date.now() < remoteDownUntil) return next();
+  if (req.path.startsWith('/webhook')) return next();
+  try {
+    const headers: Record<string, string> = {};
+    for (const h of ['content-type', 'authorization', 'accept']) {
+      if (req.headers[h]) headers[h] = String(req.headers[h]);
+    }
+    const hasBody = !['GET', 'HEAD'].includes(req.method);
+    let body: string | undefined;
+    if (hasBody) {
+      if (typeof req.body === 'string') body = req.body;
+      else { body = JSON.stringify(req.body ?? {}); headers['content-type'] = 'application/json'; }
+    }
+    const r = await fetch(base + req.originalUrl, { method: req.method, headers, body, signal: AbortSignal.timeout(8000) });
+    if (r.status === 404 || r.status === 405) return next();
+    if (r.status >= 502) { remoteDownUntil = Date.now() + 60000; return next(); }
+    res.status(r.status);
+    const ct = r.headers.get('content-type');
+    if (ct) res.setHeader('Content-Type', ct);
+    res.send(Buffer.from(await r.arrayBuffer()));
+  } catch (_) {
+    remoteDownUntil = Date.now() + 60000; // sem internet: usa só as rotas locais por 1 minuto
+    next();
+  }
+});
 
 // Status da IA no sistema
 app.get('/api/ai/system-status', async (req, res) => {
@@ -510,7 +542,7 @@ Retorne estritamente um objeto JSON com as chaves:
 
 // Explicit route for legacy iPad 1 Safari 5.1 / iOS 5.1.1
 app.get('/ipad', (req, res) => {
-  res.sendFile(path.join(__dirname, 'legacy-ipad1.html'));
+  res.sendFile(path.join(process.env.LC_ASSETS_PATH || __dirname, 'legacy-ipad1.html'));
 });
 
 // ==============================================================
@@ -1280,18 +1312,13 @@ app.get('/api/os-tracking/:token', async (req, res) => {
       return res.status(403).json({ error: 'O acompanhamento online para esta O.S. está temporariamente desativado.' });
     }
 
-    // Extract diagnostic tests and digital approval if stored in checklist
+    // Extract diagnostic tests if stored in checklist
     let diagData: any = null;
-    let digitalApprovalData: any = null;
     if (Array.isArray(order.checklist)) {
       for (const item of order.checklist) {
         if (typeof item === 'string' && item.startsWith('__DIAG_JSON__:')) {
           try {
             diagData = JSON.parse(item.substring(14));
-          } catch (e) {}
-        } else if (typeof item === 'string' && item.startsWith('__APPROVAL_JSON__:')) {
-          try {
-            digitalApprovalData = JSON.parse(item.substring(18));
           } catch (e) {}
         }
       }
@@ -1336,103 +1363,11 @@ app.get('/api/os-tracking/:token', async (req, res) => {
       photos: order.photos || [],
       finishedPhotos: order.finished_photos || [],
       diagnosticTests: diagData,
-      digitalApproval: digitalApprovalData,
       store: storeInfo
     });
   } catch (err: any) {
     console.error('Error fetching OS tracking:', err);
     res.status(500).json({ error: 'Erro ao buscar dados do acompanhamento' });
-  }
-});
-
-// Endpoint para aprovação / confirmação digital de serviço pelo cliente
-app.options('/api/os-tracking/approve/:token', (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  return res.status(200).end();
-});
-
-app.post('/api/os-tracking/approve/:token', async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  const { token } = req.params;
-  const cleanToken = (token || '').trim();
-  const body = req.body || {};
-
-  try {
-    // 1. Localiza a OS
-    let { data: order, error } = await supabase
-      .from('service_orders')
-      .select('id, tenant_id, customer_name, status, checklist')
-      .eq('tracking_token', cleanToken)
-      .maybeSingle();
-
-    if (!order) {
-      const { data: fbOrder } = await supabase
-        .from('service_orders')
-        .select('id, tenant_id, customer_name, status, checklist')
-        .eq('id', cleanToken)
-        .maybeSingle();
-      if (fbOrder) order = fbOrder;
-    }
-
-    if (!order) {
-      return res.status(404).json({ error: 'Ordem de serviço não encontrada.' });
-    }
-
-    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '';
-    const ip = (typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : Array.isArray(rawIp) ? rawIp[0] : '')
-      .replace('::ffff:', '') || '127.0.0.1';
-
-    const now = new Date();
-    const approvedAt = now.toISOString();
-    const formattedDate = now.toLocaleDateString('pt-BR') + ' às ' + now.toLocaleTimeString('pt-BR');
-    const signatureHash = 'AUT-' + (order.id || '').split('-')[0] + '-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-
-    const approvalData = {
-      approved: true,
-      approvedAt,
-      formattedDate,
-      ip,
-      deviceModel: body.deviceModel || 'Celular do Cliente',
-      deviceInfo: body.deviceInfo || 'Navegador Web Mobile',
-      userAgent: body.userAgent || (req.headers['user-agent'] as string) || '',
-      screenResolution: body.screenResolution || '',
-      imei: body.imei || '',
-      clientName: body.clientName || order.customer_name || 'Cliente',
-      signatureHash
-    };
-
-    let checklistArr: string[] = Array.isArray(order.checklist) ? [...order.checklist] : [];
-    checklistArr = checklistArr.filter(item => typeof item === 'string' && !item.startsWith('__APPROVAL_JSON__:'));
-    checklistArr.push(`__APPROVAL_JSON__:${JSON.stringify(approvalData)}`);
-    checklistArr.push(`✔ [APROVAÇÃO DIGITAL] Confirmado pelo cliente em ${formattedDate} (${approvalData.deviceModel}) - IP: ${approvalData.ip} - Hash: ${signatureHash}`);
-
-    const newStatus = (order.status === 'Concluído' || order.status === 'Entregue' || order.status === 'Em Manutenção')
-      ? order.status
-      : 'Aprovado';
-
-    const { error: updateError } = await supabase
-      .from('service_orders')
-      .update({
-        checklist: checklistArr,
-        status: newStatus
-      })
-      .eq('id', order.id);
-
-    if (updateError) {
-      console.error('Erro ao atualizar aprovação no Supabase:', updateError);
-      throw updateError;
-    }
-
-    return res.status(200).json({
-      success: true,
-      digitalApproval: approvalData,
-      status: newStatus
-    });
-  } catch (err: any) {
-    console.error('Erro ao salvar aprovação digital:', err);
-    return res.status(500).json({ error: 'Erro ao registrar aprovação do cliente.' });
   }
 });
 
@@ -1781,6 +1716,7 @@ async function startServer() {
       `);
     });
 
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
@@ -1792,7 +1728,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     // Production: Serve static files from dist
-    const distPath = path.join(__dirname, 'dist');
+    const distPath = process.env.LC_DIST_PATH || path.join(__dirname, 'dist');
     console.log('Production mode: Serving static files from', distPath);
 
     // Serve service worker and manifest explicitly to ensure correct MIME types and no caching issues
@@ -1847,7 +1783,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, process.env.LC_EMBEDDED ? '127.0.0.1' : '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

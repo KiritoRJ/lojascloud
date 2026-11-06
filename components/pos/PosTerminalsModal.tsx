@@ -100,44 +100,9 @@ export const PosTerminalsModal: React.FC<PosTerminalsModalProps> = ({
               </span>
             </div>
 
-            <p className={`text-xs font-medium mb-3 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-              O sistema sincroniza automaticamente celulares e PCs em caixas separados (PDV 01, PDV 02...). Você também pode fixar este aparelho manualmente:
+            <p className={`text-xs font-medium ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+              Este dispositivo está conectado com identificação automática e permanente pelo sistema. Cada computador ou celular possui seu caixa fixo atribuído de forma inteligente.
             </p>
-
-            {/* Opções de Atribuição de Caixa */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <button
-                type="button"
-                onClick={() => onSelectTerminalNumber(0)}
-                className={`p-2.5 rounded-xl border text-center font-black text-[10px] uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1 active:scale-95 ${
-                  configuredTerminalNumber === 0 
-                    ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/30' 
-                    : isDark ? 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                }`}
-              >
-                <span>Automático</span>
-                <span className="text-[8px] opacity-80">(Auto)</span>
-              </button>
-
-              {[1, 2, 3, 4, 5].slice(0, Math.max(3, totalActiveTerminals + 1)).map(num => {
-                const isSelected = configuredTerminalNumber === num;
-                return (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => onSelectTerminalNumber(num)}
-                    className={`p-2.5 rounded-xl border text-center font-black text-[10px] uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1 active:scale-95 ${
-                      isSelected 
-                        ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/30' 
-                        : isDark ? 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    <span>Caixa {String(num).padStart(2, '0')}</span>
-                    <span className="text-[8px] opacity-80 font-mono">PDV {String(num).padStart(2, '0')}</span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           {/* Lista de Todos os Terminais Ativos no Estabelecimento */}

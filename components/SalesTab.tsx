@@ -1287,15 +1287,7 @@ const SalesTab: React.FC<Props> = ({
                 <h2 className="text-sm font-black text-slate-800 uppercase tracking-tighter flex items-center gap-1.5">
                   <ShoppingCart size={16} className="text-emerald-600" /> VENDAS
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => setIsTerminalsModalOpen(true)}
-                  className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 transition-all"
-                  title="Identificação do Terminal no Mercado"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  {terminalName}
-                </button>
+                {/* Botão de escolha de PDV ocultado conforme solicitação do usuário */}
               </div>
               <button onClick={() => setShowHistory(true)} className="p-1.5 text-slate-400 bg-white border border-slate-100 rounded-lg active:scale-90 transition-all shadow-sm">
                 <History size={14} />

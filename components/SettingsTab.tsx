@@ -2436,7 +2436,17 @@ const SettingsTab: React.FC<Props> = ({
               Se as novas funções não aparecerem,<br/>clique no botão abaixo para atualizar.
            </p>
            <button 
-             onClick={() => {
+             onClick={async () => {
+               // App Windows (desktop): baixa a versão atual do site (Vercel) e reinicia
+               const desktop = (window as any).lojasCloudDesktop;
+               if (desktop?.forceUpdate) {
+                 if (!navigator.onLine) { alert('Sem internet. Conecte-se para atualizar.'); return; }
+                 if (!confirm('Baixar a versão mais recente do sistema e reiniciar o app? Seus dados não serão apagados.')) return;
+                 const res = await desktop.forceUpdate();
+                 if (res?.ok) alert('Atualizado! O app vai reiniciar agora.');
+                 else alert('Não foi possível atualizar: ' + (res?.error || 'erro desconhecido'));
+                 return;
+               }
                if ('serviceWorker' in navigator) {
                  navigator.serviceWorker.getRegistrations().then(registrations => {
                    for(let registration of registrations) {

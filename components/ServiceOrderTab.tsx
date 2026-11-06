@@ -1469,7 +1469,85 @@ const ServiceOrderTab: React.FC<Props> = ({
       const cleanWarranty = settings.pdfWarrantyText.replace(/\[\/?(B|C|J|COLOR.*?|U)\]/g, '');
       currentY = wrapText(cleanWarranty, 25 * scale, currentY, width - 50 * scale, 12 * scale, false, '#666');
 
-      currentY += 50 * scale;
+      currentY += 25 * scale;
+
+      // 6.3 CARIMBO / SELO DE APROVAÇÃO DIGITAL DO CLIENTE
+      if (order.digitalApproval?.approved) {
+        const approval = order.digitalApproval;
+        const stampWidth = 330 * scale;
+        const stampHeight = 125 * scale;
+        const centerX = width / 2;
+        const stampX = centerX - stampWidth / 2;
+        const stampY = currentY;
+
+        ctx.save();
+        ctx.translate(centerX, stampY + stampHeight / 2);
+        ctx.rotate(-0.025);
+        ctx.translate(-centerX, -(stampY + stampHeight / 2));
+
+        ctx.fillStyle = '#F0FDF4';
+        ctx.beginPath();
+        if ((ctx as any).roundRect) {
+          (ctx as any).roundRect(stampX, stampY, stampWidth, stampHeight, 10 * scale);
+        } else {
+          ctx.rect(stampX, stampY, stampWidth, stampHeight);
+        }
+        ctx.fill();
+
+        ctx.lineWidth = 2.5 * scale;
+        ctx.strokeStyle = '#059669';
+        ctx.stroke();
+
+        ctx.lineWidth = 1 * scale;
+        ctx.strokeStyle = '#10B981';
+        ctx.setLineDash([4 * scale, 2 * scale]);
+        ctx.strokeRect(stampX + 4 * scale, stampY + 4 * scale, stampWidth - 8 * scale, stampHeight - 8 * scale);
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#047857';
+        ctx.textAlign = 'center';
+        ctx.font = `900 ${8.5 * scale}px "Inter", sans-serif`;
+        ctx.fillText('★ APROVAÇÃO DIGITAL DO CLIENTE ★', centerX, stampY + 18 * scale);
+
+        ctx.font = `900 ${11 * scale}px "Inter", sans-serif`;
+        ctx.fillText('SERVIÇO CONFIRMADO ONLINE', centerX, stampY + 34 * scale);
+
+        ctx.strokeStyle = '#A7F3D0';
+        ctx.lineWidth = 1 * scale;
+        ctx.beginPath();
+        ctx.moveTo(stampX + 16 * scale, stampY + 41 * scale);
+        ctx.lineTo(stampX + stampWidth - 16 * scale, stampY + 41 * scale);
+        ctx.stroke();
+
+        ctx.font = `700 ${7.5 * scale}px "Inter", sans-serif`;
+        ctx.fillStyle = '#065F46';
+        ctx.textAlign = 'left';
+
+        const leftX = stampX + 16 * scale;
+        let lineY = stampY + 54 * scale;
+        const gap = 13 * scale;
+
+        ctx.fillText(`• DATA/HORA: ${approval.formattedDate || new Date().toLocaleString('pt-BR')}`, leftX, lineY);
+        lineY += gap;
+
+        const deviceText = (approval.deviceModel || approval.deviceInfo || 'Celular do Cliente').substring(0, 48);
+        ctx.fillText(`• DISPOSITIVO: ${deviceText}`, leftX, lineY);
+        lineY += gap;
+
+        const ipText = approval.ip ? `IP: ${approval.ip}` : 'IP REGISTRADO';
+        const imeiText = approval.imei ? ` | IMEI: ${approval.imei}` : '';
+        ctx.fillText(`• CONEXÃO: ${ipText}${imeiText}`, leftX, lineY);
+        lineY += gap;
+
+        ctx.font = `900 ${7.5 * scale}px "Inter", sans-serif`;
+        ctx.fillStyle = '#047857';
+        const hashText = approval.signatureHash || 'VALIDADO';
+        ctx.fillText(`• AUTENTICIDADE: ${hashText} (ASSINATURA ELETRÔNICA VÁLIDA)`, leftX, lineY);
+
+        ctx.restore();
+
+        currentY = stampY + stampHeight + 25 * scale;
+      }
 
       // 6.5 Assinatura
       if (order.signature) {
@@ -1834,6 +1912,17 @@ const ServiceOrderTab: React.FC<Props> = ({
                      <span className={`font-black text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full shrink-0
                        ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}
                      `}>#{order.id}</span>
+                     {order.digitalApproval?.approved && (
+                       <span 
+                         className={`font-black px-2 py-0.5 rounded-full bg-emerald-600 text-white flex items-center gap-1 shadow-xs shrink-0 cursor-help
+                           ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}
+                         `} 
+                         title={`Assinatura Digital em ${order.digitalApproval.formattedDate} via ${order.digitalApproval.deviceModel || 'Celular'} (IP: ${order.digitalApproval.ip || 'auditado'}) • Hash: ${order.digitalApproval.signatureHash}`}
+                       >
+                         <ShieldCheck size={osLayout === 'small' ? 8 : 10} className="shrink-0 text-emerald-200" />
+                         <span>APROVADO PELO CLIENTE</span>
+                       </span>
+                     )}
                      <span className={`font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0
                        ${osLayout === 'small' ? 'text-[6px] sm:text-[7px]' : osLayout === 'medium' ? 'text-[7px] sm:text-[8px]' : 'text-[8px] sm:text-[9px]'}
                      `}>
@@ -1898,14 +1987,6 @@ const ServiceOrderTab: React.FC<Props> = ({
                   ${osLayout === 'small' ? 'p-1 sm:p-1.5' : osLayout === 'medium' ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-3.5'}
                 `} title="Divulgar / Enviar Orçamento e Proposta no WhatsApp (1-Clique)">
                   <MessageSquare size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />
-                </button>
-                <button onClick={(e) => { 
-                  e.stopPropagation(); 
-                  setSavedOrderShareModal({ order, isNew: false });
-                }} className={`bg-indigo-600 text-white rounded-lg sm:rounded-xl shadow-md active:scale-90 flex items-center justify-center hover:bg-indigo-500 transition-colors
-                  ${osLayout === 'small' ? 'p-1 sm:p-1.5' : osLayout === 'medium' ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-3.5'}
-                `} title="Testes de Hardware (QR Code)">
-                  <QrCode size={14} className={osLayout === 'large' ? 'sm:w-[20px] sm:h-[20px]' : 'sm:w-[18px] sm:h-[18px]'} />
                 </button>
                 {isFiscalModeActive && (
                   <button onClick={(e) => { 
@@ -2021,6 +2102,81 @@ const ServiceOrderTab: React.FC<Props> = ({
                   )}
                 </div>
               )}
+
+              {/* SELO DE APROVAÇÃO DIGITAL DO CLIENTE */}
+              {editingOrder?.digitalApproval?.approved ? (
+                <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-300 p-4 rounded-3xl space-y-2.5 animate-in fade-in shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/20">
+                        <ShieldCheck size={20} />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-black text-emerald-950 uppercase tracking-tight block">
+                          Selo de Aprovação Digital do Cliente
+                        </span>
+                        <span className="text-[9px] text-emerald-700 font-bold block">
+                          Assinatura Eletrônica Registrada Online
+                        </span>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-xs">
+                      Aprovada
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] pt-1 border-t border-emerald-200/60">
+                    <div className="bg-white/90 p-2.5 rounded-2xl border border-emerald-100">
+                      <span className="text-slate-400 font-bold block text-[8px] uppercase tracking-wider">Data e Horário:</span>
+                      <span className="text-slate-800 font-black">{editingOrder.digitalApproval.formattedDate}</span>
+                    </div>
+                    <div className="bg-white/90 p-2.5 rounded-2xl border border-emerald-100">
+                      <span className="text-slate-400 font-bold block text-[8px] uppercase tracking-wider">Celular / Dispositivo:</span>
+                      <span className="text-slate-800 font-black truncate block">{editingOrder.digitalApproval.deviceModel || editingOrder.digitalApproval.deviceInfo || 'Smartphone'}</span>
+                    </div>
+                    <div className="bg-white/90 p-2.5 rounded-2xl border border-emerald-100">
+                      <span className="text-slate-400 font-bold block text-[8px] uppercase tracking-wider">Endereço IP:</span>
+                      <span className="text-slate-800 font-black">{editingOrder.digitalApproval.ip || 'Auditado'}</span>
+                    </div>
+                    <div className="bg-white/90 p-2.5 rounded-2xl border border-emerald-100">
+                      <span className="text-slate-400 font-bold block text-[8px] uppercase tracking-wider">Código de Autenticidade:</span>
+                      <span className="text-emerald-800 font-black font-mono tracking-wider">{editingOrder.digitalApproval.signatureHash}</span>
+                    </div>
+                  </div>
+
+                  {editingOrder.digitalApproval.imei && (
+                    <div className="text-[9px] text-emerald-900 font-bold bg-white/80 p-2 rounded-xl border border-emerald-100 flex items-center justify-between">
+                      <span className="text-slate-400 uppercase text-[8px]">IMEI Informado pelo Cliente:</span>
+                      <span className="font-mono font-black text-slate-900">{editingOrder.digitalApproval.imei}</span>
+                    </div>
+                  )}
+                </div>
+              ) : editingOrder ? (
+                <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-2xl flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-slate-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight block">
+                        Aprovação Digital do Cliente
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-medium block">
+                        O cliente pode aprovar e assinar via link de acompanhamento.
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const link = `${window.location.origin}/acompanhamento/${editingOrder.trackingToken || editingOrder.id}`;
+                      navigator.clipboard.writeText(link);
+                      alert('Link de acompanhamento copiado! Envie para o WhatsApp do cliente para ele aprovar.');
+                    }}
+                    className="text-[9px] font-black uppercase text-blue-600 bg-white border border-blue-200 hover:bg-blue-50 px-2.5 py-1.5 rounded-xl shrink-0 transition-all active:scale-95"
+                  >
+                    Copiar Link
+                  </button>
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-1 gap-3">
                 {/* DADOS DO CLIENTE */}

@@ -139,6 +139,20 @@ export interface DeviceDiagnosticResults {
   tests: Record<string, DeviceHardwareTestItem>;
 }
 
+export interface DigitalApproval {
+  approved: boolean;
+  approvedAt: string; // ISO string
+  formattedDate: string; // "06/11/2026 às 15:35:12"
+  ip?: string;
+  deviceModel?: string; // "Apple iPhone (iOS 17.5)" ou modelo detectado
+  deviceInfo?: string; // Detalhes completos do navegador/dispositivo
+  userAgent?: string;
+  screenResolution?: string;
+  imei?: string; // IMEI informado ou validado
+  clientName?: string;
+  signatureHash: string; // Código de autenticidade digital (ex: AUT-95052-8F4B92)
+}
+
 // Interface que define a estrutura de uma Ordem de Serviço
 export interface ServiceOrder {
   id: string;
@@ -172,6 +186,7 @@ export interface ServiceOrder {
   publicNotes?: string;
   isTrackingEnabled?: boolean;
   diagnosticTests?: DeviceDiagnosticResults;
+  digitalApproval?: DigitalApproval;
   fiscalNoteNumber?: string;
   fiscalNoteEmitted?: boolean;
   fiscalNoteVerificationCode?: string;

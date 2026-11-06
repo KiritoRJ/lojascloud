@@ -8,7 +8,7 @@ export default async function handler(req: any, res: any) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
   if (req.method === 'OPTIONS') {
@@ -17,9 +17,15 @@ export default async function handler(req: any, res: any) {
 
   // Support both query param (?token=xxx) or extracted from url
   let token = req.query?.token;
+  let isApproveAction = false;
   if (!token && req.url) {
-    const parts = req.url.split('?')[0].split('/');
-    token = parts[parts.length - 1];
+    const parts = req.url.split('?')[0].split('/').filter(Boolean);
+    if (parts.includes('approve')) {
+      isApproveAction = true;
+      token = parts[parts.length - 1];
+    } else {
+      token = parts[parts.length - 1];
+    }
   }
 
   const cleanToken = (typeof token === 'string' ? token : Array.isArray(token) ? token[0] : '').trim();
@@ -32,7 +38,7 @@ export default async function handler(req: any, res: any) {
     // 1. Try finding by tracking_token first
     let { data: order, error } = await supabase
       .from('service_orders')
-      .select('id, tenant_id, customer_name, phone_number, device_brand, device_model, defect, repair_details, status, public_notes, created_at, entry_date, exit_date, total, photos, finished_photos, is_tracking_enabled')
+      .select('id, tenant_id, customer_name, phone_number, device_brand, device_model, defect, repair_details, status, public_notes, created_at, entry_date, exit_date, total, photos, finished_photos, is_tracking_enabled, checklist')
       .eq('tracking_token', cleanToken)
       .maybeSingle();
 
@@ -40,7 +46,7 @@ export default async function handler(req: any, res: any) {
     if (!order) {
       const { data: fallbackOrder, error: fallbackError } = await supabase
         .from('service_orders')
-        .select('id, tenant_id, customer_name, phone_number, device_brand, device_model, defect, repair_details, status, public_notes, created_at, entry_date, exit_date, total, photos, finished_photos, is_tracking_enabled')
+        .select('id, tenant_id, customer_name, phone_number, device_brand, device_model, defect, repair_details, status, public_notes, created_at, entry_date, exit_date, total, photos, finished_photos, is_tracking_enabled, checklist')
         .eq('id', cleanToken)
         .maybeSingle();
 
@@ -60,8 +66,78 @@ export default async function handler(req: any, res: any) {
       return res.status(404).json({ error: 'Ordem de serviço não encontrada.' });
     }
 
+    // Se for ação de aprovação (POST)
+    if (req.method === 'POST' || isApproveAction) {
+      const body = req.body || {};
+      const rawIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '';
+      const ip = (typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : Array.isArray(rawIp) ? rawIp[0] : '').replace('::ffff:', '') || '127.0.0.1';
+
+      const now = new Date();
+      const approvedAt = now.toISOString();
+      const formattedDate = now.toLocaleDateString('pt-BR') + ' às ' + now.toLocaleTimeString('pt-BR');
+      const signatureHash = 'AUT-' + (order.id || '').split('-')[0] + '-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+      const approvalData = {
+        approved: true,
+        approvedAt,
+        formattedDate,
+        ip,
+        deviceModel: body.deviceModel || 'Celular do Cliente',
+        deviceInfo: body.deviceInfo || 'Navegador Web Mobile',
+        userAgent: body.userAgent || (req.headers['user-agent'] as string) || '',
+        screenResolution: body.screenResolution || '',
+        imei: body.imei || '',
+        clientName: body.clientName || order.customer_name || 'Cliente',
+        signatureHash
+      };
+
+      let checklistArr: string[] = Array.isArray(order.checklist) ? [...order.checklist] : [];
+      checklistArr = checklistArr.filter(item => typeof item === 'string' && !item.startsWith('__APPROVAL_JSON__:'));
+      checklistArr.push(`__APPROVAL_JSON__:${JSON.stringify(approvalData)}`);
+      checklistArr.push(`✔ [APROVAÇÃO DIGITAL] Confirmado pelo cliente em ${formattedDate} (${approvalData.deviceModel}) - IP: ${approvalData.ip} - Hash: ${signatureHash}`);
+
+      const newStatus = (order.status === 'Concluído' || order.status === 'Entregue' || order.status === 'Em Manutenção')
+        ? order.status
+        : 'Aprovado';
+
+      const { error: updateError } = await supabase
+        .from('service_orders')
+        .update({
+          checklist: checklistArr,
+          status: newStatus
+        })
+        .eq('id', order.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      return res.status(200).json({
+        success: true,
+        digitalApproval: approvalData,
+        status: newStatus
+      });
+    }
+
     if (order.is_tracking_enabled === false) {
       return res.status(403).json({ error: 'O acompanhamento online para esta O.S. está temporariamente desativado.' });
+    }
+
+    // Extrai testes de hardware e aprovação digital
+    let diagData: any = null;
+    let digitalApprovalData: any = null;
+    if (Array.isArray(order.checklist)) {
+      for (const item of order.checklist) {
+        if (typeof item === 'string' && item.startsWith('__DIAG_JSON__:')) {
+          try {
+            diagData = JSON.parse(item.substring(14));
+          } catch (e) {}
+        } else if (typeof item === 'string' && item.startsWith('__APPROVAL_JSON__:')) {
+          try {
+            digitalApprovalData = JSON.parse(item.substring(18));
+          } catch (e) {}
+        }
+      }
     }
 
     // Fetch store / tenant information
@@ -102,6 +178,8 @@ export default async function handler(req: any, res: any) {
       total: order.total,
       photos: order.photos || [],
       finishedPhotos: order.finished_photos || [],
+      diagnosticTests: diagData,
+      digitalApproval: digitalApprovalData,
       store: storeInfo
     });
   } catch (err: any) {

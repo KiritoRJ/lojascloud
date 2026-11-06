@@ -370,7 +370,92 @@ export async function generateReceiptCanvasImage(
   const cleanWarranty = rawWarranty.replace(/\[\/?(B|C|J|COLOR.*?|U)\]/g, '');
   currentY = wrapText(cleanWarranty, 25 * scale, currentY, width - 50 * scale, 12 * scale, false, '#666');
 
-  currentY += 45 * scale;
+  currentY += 30 * scale;
+
+  // 6.3 CARIMBO / SELO DE APROVAÇÃO DIGITAL DO CLIENTE
+  if (order.digitalApproval?.approved) {
+    const approval = order.digitalApproval;
+    const stampWidth = 330 * scale;
+    const stampHeight = 125 * scale;
+    const centerX = width / 2;
+    const stampX = centerX - stampWidth / 2;
+    const stampY = currentY;
+
+    ctx.save();
+    // Leve rotação de -1.5 graus para efeito realista de carimbo autêntico
+    ctx.translate(centerX, stampY + stampHeight / 2);
+    ctx.rotate(-0.025);
+    ctx.translate(-centerX, -(stampY + stampHeight / 2));
+
+    // Fundo do carimbo
+    ctx.fillStyle = '#F0FDF4';
+    ctx.beginPath();
+    if ((ctx as any).roundRect) {
+      (ctx as any).roundRect(stampX, stampY, stampWidth, stampHeight, 10 * scale);
+    } else {
+      ctx.rect(stampX, stampY, stampWidth, stampHeight);
+    }
+    ctx.fill();
+
+    // Borda externa sólida verde
+    ctx.lineWidth = 2.5 * scale;
+    ctx.strokeStyle = '#059669';
+    ctx.stroke();
+
+    // Borda interna pontilhada
+    ctx.lineWidth = 1 * scale;
+    ctx.strokeStyle = '#10B981';
+    ctx.setLineDash([4 * scale, 2 * scale]);
+    ctx.strokeRect(stampX + 4 * scale, stampY + 4 * scale, stampWidth - 8 * scale, stampHeight - 8 * scale);
+    ctx.setLineDash([]);
+
+    // Título do carimbo
+    ctx.fillStyle = '#047857';
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${8.5 * scale}px "Inter", sans-serif`;
+    ctx.fillText('★ APROVAÇÃO DIGITAL DO CLIENTE ★', centerX, stampY + 18 * scale);
+
+    ctx.font = `900 ${11 * scale}px "Inter", sans-serif`;
+    ctx.fillText('SERVIÇO CONFIRMADO ONLINE', centerX, stampY + 34 * scale);
+
+    // Linha divisória
+    ctx.strokeStyle = '#A7F3D0';
+    ctx.lineWidth = 1 * scale;
+    ctx.beginPath();
+    ctx.moveTo(stampX + 16 * scale, stampY + 41 * scale);
+    ctx.lineTo(stampX + stampWidth - 16 * scale, stampY + 41 * scale);
+    ctx.stroke();
+
+    // Dados auditados da aprovação
+    ctx.font = `700 ${7.5 * scale}px "Inter", sans-serif`;
+    ctx.fillStyle = '#065F46';
+    ctx.textAlign = 'left';
+
+    const leftX = stampX + 16 * scale;
+    let lineY = stampY + 54 * scale;
+    const gap = 13 * scale;
+
+    ctx.fillText(`• DATA/HORA: ${approval.formattedDate || new Date().toLocaleString('pt-BR')}`, leftX, lineY);
+    lineY += gap;
+
+    const deviceText = (approval.deviceModel || approval.deviceInfo || 'Celular do Cliente').substring(0, 48);
+    ctx.fillText(`• DISPOSITIVO: ${deviceText}`, leftX, lineY);
+    lineY += gap;
+
+    const ipText = approval.ip ? `IP: ${approval.ip}` : 'IP REGISTRADO';
+    const imeiText = approval.imei ? ` | IMEI: ${approval.imei}` : '';
+    ctx.fillText(`• CONEXÃO: ${ipText}${imeiText}`, leftX, lineY);
+    lineY += gap;
+
+    ctx.font = `900 ${7.5 * scale}px "Inter", sans-serif`;
+    ctx.fillStyle = '#047857';
+    const hashText = approval.signatureHash || 'VALIDADO';
+    ctx.fillText(`• AUTENTICIDADE: ${hashText} (ASSINATURA ELETRÔNICA VÁLIDA)`, leftX, lineY);
+
+    ctx.restore();
+
+    currentY = stampY + stampHeight + 25 * scale;
+  }
 
   // 6.5 Assinatura
   if (order.signature) {

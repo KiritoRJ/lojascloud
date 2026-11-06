@@ -1146,12 +1146,17 @@ export class OnlineDB {
   static mapOrderFromRow(d: any) {
     if (!d) return null;
     let diagnosticTests: any = undefined;
+    let digitalApproval: any = undefined;
     let cleanChecklist: string[] = [];
     if (Array.isArray(d.checklist)) {
       for (const item of d.checklist) {
         if (typeof item === 'string' && item.startsWith('__DIAG_JSON__:')) {
           try {
             diagnosticTests = JSON.parse(item.substring(14));
+          } catch (e) {}
+        } else if (typeof item === 'string' && item.startsWith('__APPROVAL_JSON__:')) {
+          try {
+            digitalApproval = JSON.parse(item.substring(18));
           } catch (e) {}
         } else {
           cleanChecklist.push(item);
@@ -1181,6 +1186,7 @@ export class OnlineDB {
       signature: d.signature || '',
       checklist: cleanChecklist,
       diagnosticTests: diagnosticTests,
+      digitalApproval: digitalApproval,
       partSupplierId: d.part_supplier_id || '',
       partSupplierWarranty: d.part_supplier_warranty || '',
       customerId: d.customer_id || '',
@@ -1612,6 +1618,10 @@ export class OnlineDB {
         if (os.diagnosticTests) {
           checklistArr = checklistArr.filter((item: string) => typeof item === 'string' && !item.startsWith('__DIAG_JSON__:'));
           checklistArr.push(`__DIAG_JSON__:${JSON.stringify(os.diagnosticTests)}`);
+        }
+        if (os.digitalApproval) {
+          checklistArr = checklistArr.filter((item: string) => typeof item === 'string' && !item.startsWith('__APPROVAL_JSON__:'));
+          checklistArr.push(`__APPROVAL_JSON__:${JSON.stringify(os.digitalApproval)}`);
         }
 
         return {

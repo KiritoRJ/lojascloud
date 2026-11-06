@@ -19,11 +19,16 @@ import {
   CheckCircle, 
   X, 
   Gamepad2, 
-  QrCode 
+  QrCode,
+  FileCheck,
+  PenTool,
+  Fingerprint,
+  Globe,
+  CheckCheck
 } from 'lucide-react';
 import { supabase } from '../utils/api';
 import { SnakeGameModal } from './SnakeGameModal';
-import { DeviceDiagnosticResults } from '../types';
+import { DeviceDiagnosticResults, DigitalApproval } from '../types';
 
 interface Props {
   token: string;
@@ -46,6 +51,7 @@ interface TrackingData {
   photos?: string[];
   finishedPhotos?: string[];
   diagnosticTests?: DeviceDiagnosticResults;
+  digitalApproval?: DigitalApproval;
   store?: {
     name: string;
     phone?: string;
@@ -97,15 +103,54 @@ const PublicTrackingPage: React.FC<Props> = ({ token }) => {
   const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
   const [highlightPulse, setHighlightPulse] = useState(false);
   const [isSnakeGameOpen, setIsSnakeGameOpen] = useState(false);
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
+  const [approvalSuccessToast, setApprovalSuccessToast] = useState(false);
+  const [approvalImei, setApprovalImei] = useState('');
+  const [approvalClientName, setApprovalClientName] = useState('');
 
   const orderRef = useRef<TrackingData | null>(null);
   orderRef.current = order;
+
+  const getClientDeviceInfo = () => {
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+    let model = 'Celular / Smartphone';
+    if (/iPhone/i.test(ua)) {
+      model = 'Apple iPhone';
+    } else if (/iPad/i.test(ua)) {
+      model = 'Apple iPad';
+    } else if (/Android/i.test(ua)) {
+      let candidate = '';
+      if (ua.includes('Build/')) {
+        const parts = ua.split('Build/')[0].split(';');
+        candidate = (parts[parts.length - 1] || '').trim();
+      }
+      model = candidate && candidate.length < 35 && !/K/i.test(candidate) ? `Android (${candidate})` : 'Smartphone Android';
+    } else if (/Macintosh|Mac OS/i.test(ua)) {
+      model = 'Apple Mac';
+    } else if (/Windows/i.test(ua)) {
+      model = 'Computador Windows';
+    } else if (/Linux/i.test(ua)) {
+      model = 'Dispositivo Linux';
+    }
+
+    let browser = 'Navegador Web';
+    if (/Chrome|CriOS/i.test(ua) && !/Edge|Edg/i.test(ua)) browser = 'Chrome';
+    else if (/Safari/i.test(ua) && !/Chrome|CriOS/i.test(ua)) browser = 'Safari';
+    else if (/Firefox/i.test(ua)) browser = 'Firefox';
+    else if (/Edge|Edg/i.test(ua)) browser = 'Edge';
+
+    const screenRes = typeof window !== 'undefined' ? `${window.screen.width}x${window.screen.height}` : '';
+    const deviceInfo = `${model} • ${browser} (${screenRes})`;
+
+    return { deviceModel: model, deviceInfo, userAgent: ua, screenResolution: screenRes };
+  };
 
   const fetchDirectFromSupabase = async (cleanToken: string): Promise<TrackingData> => {
     // 1. Try finding by tracking_token first
     let { data: orderData, error: orderErr } = await supabase
       .from('service_orders')
-      .select('id, tenant_id, customer_name, phone_number, device_brand, device_model, defect, repair_details, status, public_notes, created_at, entry_date, exit_date, total, photos, finished_photos, is_tracking_enabled')
+      .select('id, tenant_id, customer_name, phone_number, device_brand, device_model, defect, repair_details, status, public_notes, created_at, entry_date, exit_date, total, photos, finished_photos, is_tracking_enabled, checklist')
       .eq('tracking_token', cleanToken)
       .maybeSingle();
 
@@ -113,7 +158,7 @@ const PublicTrackingPage: React.FC<Props> = ({ token }) => {
     if (!orderData) {
       const { data: fallbackOrder, error: fallbackError } = await supabase
         .from('service_orders')
-        .select('id, tenant_id, customer_name, phone_number, device_brand, device_model, defect, repair_details, status, public_notes, created_at, entry_date, exit_date, total, photos, finished_photos, is_tracking_enabled')
+        .select('id, tenant_id, customer_name, phone_number, device_brand, device_model, defect, repair_details, status, public_notes, created_at, entry_date, exit_date, total, photos, finished_photos, is_tracking_enabled, checklist')
         .eq('id', cleanToken)
         .maybeSingle();
 
@@ -131,6 +176,18 @@ const PublicTrackingPage: React.FC<Props> = ({ token }) => {
 
     if (orderData.is_tracking_enabled === false) {
       throw new Error('O acompanhamento online para esta Ordem de Serviço foi desativado pela loja.');
+    }
+
+    let diagData: any = undefined;
+    let digitalApprovalData: any = undefined;
+    if (Array.isArray(orderData.checklist)) {
+      for (const item of orderData.checklist) {
+        if (typeof item === 'string' && item.startsWith('__DIAG_JSON__:')) {
+          try { diagData = JSON.parse(item.substring(14)); } catch {}
+        } else if (typeof item === 'string' && item.startsWith('__APPROVAL_JSON__:')) {
+          try { digitalApprovalData = JSON.parse(item.substring(18)); } catch {}
+        }
+      }
     }
 
     let storeInfo: { name: string; phone?: string; logo?: string } = {
@@ -174,6 +231,8 @@ const PublicTrackingPage: React.FC<Props> = ({ token }) => {
       total: orderData.total,
       photos: orderData.photos || [],
       finishedPhotos: orderData.finished_photos || [],
+      diagnosticTests: diagData,
+      digitalApproval: digitalApprovalData,
       store: storeInfo
     };
   };
@@ -318,6 +377,123 @@ const PublicTrackingPage: React.FC<Props> = ({ token }) => {
   const handleRefresh = () => {
     setIsRefreshing(true);
     fetchTracking(false);
+  };
+
+  const handleOpenApprovalModal = () => {
+    setApprovalClientName(order?.customerName || '');
+    setApprovalImei('');
+    setIsApprovalModalOpen(true);
+  };
+
+  const handleConfirmServiceApproval = async () => {
+    if (!order) return;
+    setIsSubmittingApproval(true);
+    const cleanToken = (token || '').trim();
+    const devInfo = getClientDeviceInfo();
+
+    try {
+      let approvalResult: DigitalApproval | null = null;
+      let newStatus = 'Aprovado';
+
+      // 1. Tenta enviar para a rota de backend /api/os-tracking/approve/:token
+      try {
+        const res = await fetch(`/api/os-tracking/approve/${encodeURIComponent(cleanToken)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientName: approvalClientName.trim() || order.customerName,
+            imei: approvalImei.trim(),
+            deviceModel: devInfo.deviceModel,
+            deviceInfo: devInfo.deviceInfo,
+            userAgent: devInfo.userAgent,
+            screenResolution: devInfo.screenResolution
+          })
+        });
+
+        if (res.ok) {
+          const resJson = await res.json();
+          if (resJson.digitalApproval) {
+            approvalResult = resJson.digitalApproval;
+            newStatus = resJson.status || 'Aprovado';
+          }
+        }
+      } catch (e) {
+        console.warn('Backend approval route failed, attempting direct Supabase fallback:', e);
+      }
+
+      // 2. Se a rota de backend não respondeu (ex: offline ou erro temporário), salva direto no Supabase
+      if (!approvalResult) {
+        let clientIp = '127.0.0.1';
+        try {
+          const ipRes = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(2000) });
+          if (ipRes.ok) {
+            const ipJson = await ipRes.json();
+            if (ipJson.ip) clientIp = ipJson.ip;
+          }
+        } catch {}
+
+        const now = new Date();
+        const approvedAt = now.toISOString();
+        const formattedDate = now.toLocaleDateString('pt-BR') + ' às ' + now.toLocaleTimeString('pt-BR');
+        const signatureHash = 'AUT-' + (order.id || '').split('-')[0] + '-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        approvalResult = {
+          approved: true,
+          approvedAt,
+          formattedDate,
+          ip: clientIp,
+          deviceModel: devInfo.deviceModel,
+          deviceInfo: devInfo.deviceInfo,
+          userAgent: devInfo.userAgent,
+          screenResolution: devInfo.screenResolution,
+          imei: approvalImei.trim(),
+          clientName: approvalClientName.trim() || order.customerName,
+          signatureHash
+        };
+
+        const { data: dbOrder } = await supabase
+          .from('service_orders')
+          .select('id, checklist, status')
+          .or(`tracking_token.eq.${cleanToken},id.eq.${cleanToken}`)
+          .maybeSingle();
+
+        if (dbOrder) {
+          let checklistArr: string[] = Array.isArray(dbOrder.checklist) ? [...dbOrder.checklist] : [];
+          checklistArr = checklistArr.filter(item => typeof item === 'string' && !item.startsWith('__APPROVAL_JSON__:'));
+          checklistArr.push(`__APPROVAL_JSON__:${JSON.stringify(approvalResult)}`);
+          checklistArr.push(`✔ [APROVAÇÃO DIGITAL] Confirmado pelo cliente em ${formattedDate} (${approvalResult.deviceModel}) - IP: ${clientIp} - Hash: ${signatureHash}`);
+
+          newStatus = (dbOrder.status === 'Concluído' || dbOrder.status === 'Entregue' || dbOrder.status === 'Em Manutenção')
+            ? dbOrder.status
+            : 'Aprovado';
+
+          await supabase
+            .from('service_orders')
+            .update({
+              checklist: checklistArr,
+              status: newStatus
+            })
+            .eq('id', dbOrder.id);
+        }
+      }
+
+      if (approvalResult) {
+        setOrder(prev => prev ? {
+          ...prev,
+          status: newStatus,
+          digitalApproval: approvalResult!
+        } : null);
+
+        setIsApprovalModalOpen(false);
+        setApprovalSuccessToast(true);
+        setTimeout(() => setApprovalSuccessToast(false), 5000);
+      }
+    } catch (err: any) {
+      console.error('Erro ao confirmar serviço:', err);
+      alert('Não foi possível registrar a confirmação. Por favor tente novamente ou avise a loja.');
+    } finally {
+      setIsSubmittingApproval(false);
+    }
   };
 
   if (loading) {
@@ -497,6 +673,151 @@ const PublicTrackingPage: React.FC<Props> = ({ token }) => {
             </div>
           </div>
         </div>
+
+        {/* FEEDBACK TOAST DE APROVAÇÃO DIGITAL CONCLUÍDA */}
+        {approvalSuccessToast && (
+          <div className="bg-emerald-600 text-white p-4 rounded-3xl shadow-2xl border-2 border-emerald-300 animate-in zoom-in-95 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                <CheckCheck size={22} className="text-white animate-bounce" />
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-emerald-100">Serviço Aprovado com Sucesso!</p>
+                <p className="text-xs text-white">Sua assinatura digital foi registrada e a assistência já foi notificada.</p>
+              </div>
+            </div>
+            <button onClick={() => setApprovalSuccessToast(false)} className="p-1 text-white/80 hover:text-white">
+              <X size={18} />
+            </button>
+          </div>
+        )}
+
+        {/* SEÇÃO DE APROVAÇÃO / ASSINATURA DIGITAL */}
+        {order.digitalApproval?.approved ? (
+          <div className="bg-gradient-to-br from-emerald-950/80 via-slate-900 to-emerald-950/50 rounded-3xl p-5 sm:p-7 border-2 border-emerald-500/50 shadow-2xl relative overflow-hidden animate-in fade-in">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16"></div>
+
+            {/* Cabeçalho do Selo */}
+            <div className="flex items-start justify-between gap-3 pb-4 border-b border-emerald-500/20">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border-2 border-emerald-400/40 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20 shrink-0">
+                  <ShieldCheck size={26} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Assinatura Eletrônica</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span className="text-[9px] font-bold text-emerald-300">Validade Jurídica MP 2.200-2</span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-tight">
+                    Serviço Aprovado pelo Cliente
+                  </h3>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider bg-emerald-500 text-white shadow-md shadow-emerald-500/30 shrink-0 flex items-center gap-1">
+                <CheckCircle2 size={12} /> Confirmado
+              </span>
+            </div>
+
+            {/* Detalhes Auditados da Aprovação */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-4">
+              <div className="bg-slate-950/70 p-3 rounded-2xl border border-emerald-500/20 flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Calendar size={16} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Data e Horário</span>
+                  <p className="text-xs font-black text-white truncate">{order.digitalApproval.formattedDate}</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/70 p-3 rounded-2xl border border-emerald-500/20 flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Smartphone size={16} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Celular / Dispositivo</span>
+                  <p className="text-xs font-black text-white truncate">{order.digitalApproval.deviceModel || order.digitalApproval.deviceInfo || 'Dispositivo do Cliente'}</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/70 p-3 rounded-2xl border border-emerald-500/20 flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Globe size={16} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Endereço IP de Origem</span>
+                  <p className="text-xs font-black text-white truncate">{order.digitalApproval.ip || 'Auditado com segurança'}</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/70 p-3 rounded-2xl border border-emerald-500/20 flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Fingerprint size={16} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Código de Autenticidade</span>
+                  <p className="text-xs font-black text-emerald-300 font-mono tracking-wider truncate">{order.digitalApproval.signatureHash}</p>
+                </div>
+              </div>
+            </div>
+
+            {order.digitalApproval.imei && (
+              <div className="mt-3 p-2.5 bg-emerald-950/40 rounded-xl border border-emerald-500/30 flex items-center gap-2 text-xs text-emerald-200">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">IMEI Registrado:</span>
+                <span className="font-mono font-bold text-white">{order.digitalApproval.imei}</span>
+              </div>
+            )}
+
+            <div className="mt-4 pt-3 border-t border-emerald-500/20 flex items-center gap-2 text-[10px] text-slate-400">
+              <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
+              <span>O comprovante desta O.S. contém este carimbo oficial de autenticação eletrônica.</span>
+            </div>
+          </div>
+        ) : (
+          /* CARD DE APROVAÇÃO PENDENTE (COM BOTÃO DE ASSINATURA DIGITAL) */
+          <div className="bg-gradient-to-br from-slate-900 via-blue-950/30 to-slate-900 rounded-3xl p-5 sm:p-7 border-2 border-emerald-500/40 shadow-2xl relative overflow-hidden animate-in fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 shadow-lg shadow-emerald-500/10">
+                  <PenTool size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Aprovação do Cliente</span>
+                    <span className="w-1 h-1 rounded-full bg-slate-600"></span>
+                    <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">Aguardando Aceite</span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-tight">
+                    Confirmar Serviço & Orçamento
+                  </h3>
+                </div>
+              </div>
+
+              {typeof order.total === 'number' && order.total > 0 && (
+                <div className="text-left sm:text-right bg-slate-950/60 p-3 rounded-2xl border border-slate-800 sm:border-0 sm:p-0 sm:bg-transparent">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Valor Total</span>
+                  <span className="text-xl sm:text-2xl font-black text-emerald-400 tracking-tight">
+                    {order.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-5">
+              Revise as informações acima do seu aparelho (<strong>{order.deviceBrand} {order.deviceModel}</strong>) e o orçamento informado. Ao confirmar, seu aceite digital será gravado com os dados do seu dispositivo e gerará um selo oficial de aprovação na O.S.
+            </p>
+
+            <button
+              type="button"
+              onClick={handleOpenApprovalModal}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-white py-4 px-6 rounded-2xl font-black text-xs sm:text-sm uppercase tracking-widest shadow-xl shadow-emerald-500/30 flex items-center justify-center gap-2.5 transition-all group cursor-pointer"
+            >
+              <FileCheck size={20} className="group-hover:scale-110 transition-transform" />
+              <span>Confirmar Serviço (Assinatura Digital)</span>
+            </button>
+          </div>
+        )}
 
         {/* MENSAGEM / OBSERVAÇÃO DA LOJA (SE HOUVER) */}
         {order.publicNotes && (
@@ -729,14 +1050,27 @@ const PublicTrackingPage: React.FC<Props> = ({ token }) => {
             <span className="hidden sm:inline">Jogar</span>
           </button>
 
+          {!order.digitalApproval?.approved && (
+            <button
+              type="button"
+              onClick={handleOpenApprovalModal}
+              className="flex-1 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-white py-3.5 px-4 rounded-2xl font-black text-xs uppercase tracking-wider shadow-xl shadow-emerald-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer truncate"
+              title="Aprovar e assinar digitalmente"
+            >
+              <FileCheck size={16} className="shrink-0" />
+              <span className="truncate">Confirmar Serviço</span>
+            </button>
+          )}
+
           {waUrl ? (
             <a 
               href={waUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-white py-3.5 px-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all"
+              className={`${order.digitalApproval?.approved ? 'flex-1' : 'shrink-0 sm:flex-1'} bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-white py-3.5 px-4 rounded-2xl font-black text-xs uppercase tracking-wider border border-slate-700 flex items-center justify-center gap-2 transition-all`}
             >
-              <MessageCircle size={18} /> Falar com a Assistência
+              <MessageCircle size={18} className="text-emerald-400" /> 
+              <span className={order.digitalApproval?.approved ? '' : 'hidden sm:inline'}>WhatsApp</span>
             </a>
           ) : (
             <div className="flex-1 text-center text-xs text-slate-400 py-2">
@@ -745,6 +1079,160 @@ const PublicTrackingPage: React.FC<Props> = ({ token }) => {
           )}
         </div>
       </footer>
+
+      {/* MODAL DE CONFIRMAÇÃO E ASSINATURA DIGITAL */}
+      {isApprovalModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-end sm:items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-slate-900 border-2 border-emerald-500/40 w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] animate-in slide-in-from-bottom-6">
+            
+            {/* Header do modal */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <PenTool size={20} />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black uppercase text-white tracking-tight">
+                    Assinatura & Confirmação Digital
+                  </h3>
+                  <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
+                    Ordem de Serviço #{formattedOsNumber}
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsApprovalModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-800/80 hover:bg-slate-800 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Corpo do modal */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-slate-200">
+              
+              {/* Resumo do Aparelho e Valor */}
+              <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Aparelho</span>
+                  <span className="text-xs font-black text-white">{order.deviceBrand} {order.deviceModel}</span>
+                </div>
+                <div className="flex items-center justify-between border-t border-slate-800/80 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Defeito Informado</span>
+                  <span className="text-xs font-medium text-slate-300 text-right truncate max-w-[200px]">{order.defect || '-'}</span>
+                </div>
+                {typeof order.total === 'number' && order.total > 0 && (
+                  <div className="flex items-center justify-between border-t border-slate-800/80 pt-2">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Valor do Orçamento</span>
+                    <span className="text-base font-black text-emerald-400">
+                      {order.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Termo de Declaração */}
+              <div className="bg-emerald-950/20 border border-emerald-500/30 p-3.5 rounded-2xl text-[11px] text-emerald-200/90 leading-relaxed space-y-1.5">
+                <p className="font-bold text-emerald-300 flex items-center gap-1.5">
+                  <ShieldCheck size={14} className="shrink-0" /> Declaração de Aceite Eletrônico:
+                </p>
+                <p>
+                  Declaro que conferi o orçamento apresentado e <strong>aprovo formalmente a realização dos serviços</strong> descritos nesta O.S. e a aplicação das peças necessárias, sob os termos de garantia da assistência técnica.
+                </p>
+              </div>
+
+              {/* Informações que serão registradas */}
+              <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800 space-y-2 text-[10px]">
+                <p className="font-black text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Fingerprint size={13} className="text-blue-400" /> Dados que serão auditados na sua confirmação:
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-slate-400 pt-1">
+                  <div>
+                    <span className="block font-bold text-[9px] uppercase text-slate-500">Dispositivo detectado:</span>
+                    <span className="text-white font-medium">{getClientDeviceInfo().deviceModel}</span>
+                  </div>
+                  <div>
+                    <span className="block font-bold text-[9px] uppercase text-slate-500">Data e Horário:</span>
+                    <span className="text-white font-medium">{new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR')}</span>
+                  </div>
+                  <div>
+                    <span className="block font-bold text-[9px] uppercase text-slate-500">Conexão:</span>
+                    <span className="text-white font-medium">IP Seguro Auditado</span>
+                  </div>
+                  <div>
+                    <span className="block font-bold text-[9px] uppercase text-slate-500">Autenticidade:</span>
+                    <span className="text-emerald-400 font-mono font-bold">Hash Criptográfico</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Campo de Nome do Cliente */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-300 block mb-1.5">
+                  Nome do Responsável pela Aprovação
+                </label>
+                <input
+                  type="text"
+                  value={approvalClientName}
+                  onChange={(e) => setApprovalClientName(e.target.value)}
+                  placeholder="Nome completo do cliente"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-medium focus:border-emerald-500 focus:outline-none transition-colors"
+                />
+              </div>
+
+              {/* Campo Opcional de IMEI */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-300 block mb-1">
+                  IMEI do Aparelho <span className="text-slate-500 font-normal lowercase">(opcional para validação)</span>
+                </label>
+                <input
+                  type="text"
+                  value={approvalImei}
+                  onChange={(e) => setApprovalImei(e.target.value.replace(/\D/g, '').substring(0, 15))}
+                  placeholder="Ex: 356789123456789 (Disque *#06# no celular)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono placeholder:font-sans focus:border-emerald-500 focus:outline-none transition-colors"
+                />
+                <p className="text-[9px] text-slate-500 mt-1">
+                  O IMEI pode ser consultado no celular discando <strong>*#06#</strong> na tela de chamadas.
+                </p>
+              </div>
+
+            </div>
+
+            {/* Rodapé do modal */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsApprovalModalOpen(false)}
+                disabled={isSubmittingApproval}
+                className="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-black text-xs uppercase tracking-wider transition-colors active:scale-95"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmServiceApproval}
+                disabled={isSubmittingApproval}
+                className="flex-2 py-3 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+              >
+                {isSubmittingApproval ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Registrando...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileCheck size={16} />
+                    <span>Confirmar e Assinar</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* MODAL DO JOGO DA COBRINHA */}
       <SnakeGameModal 

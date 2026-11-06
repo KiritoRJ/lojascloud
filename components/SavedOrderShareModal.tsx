@@ -264,6 +264,18 @@ export const SavedOrderShareModal: React.FC<SavedOrderShareModalProps> = ({
                 </span>
               )}
             </div>
+
+            {order.digitalApproval?.approved && (
+              <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-emerald-800 bg-emerald-50/80 p-2 rounded-xl border border-emerald-200">
+                <span className="font-bold flex items-center gap-1 text-[10px]">
+                  <ShieldCheck size={13} className="text-emerald-600 shrink-0" />
+                  Carimbo de Aprovação Digital Gravado no Comprovante
+                </span>
+                <span className="font-mono text-[9px] font-black text-emerald-700">
+                  {order.digitalApproval.signatureHash}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* FEEDBACK DE SUCESSO */}

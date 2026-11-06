@@ -1280,13 +1280,18 @@ app.get('/api/os-tracking/:token', async (req, res) => {
       return res.status(403).json({ error: 'O acompanhamento online para esta O.S. está temporariamente desativado.' });
     }
 
-    // Extract diagnostic tests if stored in checklist
+    // Extract diagnostic tests and digital approval if stored in checklist
     let diagData: any = null;
+    let digitalApprovalData: any = null;
     if (Array.isArray(order.checklist)) {
       for (const item of order.checklist) {
         if (typeof item === 'string' && item.startsWith('__DIAG_JSON__:')) {
           try {
             diagData = JSON.parse(item.substring(14));
+          } catch (e) {}
+        } else if (typeof item === 'string' && item.startsWith('__APPROVAL_JSON__:')) {
+          try {
+            digitalApprovalData = JSON.parse(item.substring(18));
           } catch (e) {}
         }
       }
@@ -1331,11 +1336,103 @@ app.get('/api/os-tracking/:token', async (req, res) => {
       photos: order.photos || [],
       finishedPhotos: order.finished_photos || [],
       diagnosticTests: diagData,
+      digitalApproval: digitalApprovalData,
       store: storeInfo
     });
   } catch (err: any) {
     console.error('Error fetching OS tracking:', err);
     res.status(500).json({ error: 'Erro ao buscar dados do acompanhamento' });
+  }
+});
+
+// Endpoint para aprovação / confirmação digital de serviço pelo cliente
+app.options('/api/os-tracking/approve/:token', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  return res.status(200).end();
+});
+
+app.post('/api/os-tracking/approve/:token', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const { token } = req.params;
+  const cleanToken = (token || '').trim();
+  const body = req.body || {};
+
+  try {
+    // 1. Localiza a OS
+    let { data: order, error } = await supabase
+      .from('service_orders')
+      .select('id, tenant_id, customer_name, status, checklist')
+      .eq('tracking_token', cleanToken)
+      .maybeSingle();
+
+    if (!order) {
+      const { data: fbOrder } = await supabase
+        .from('service_orders')
+        .select('id, tenant_id, customer_name, status, checklist')
+        .eq('id', cleanToken)
+        .maybeSingle();
+      if (fbOrder) order = fbOrder;
+    }
+
+    if (!order) {
+      return res.status(404).json({ error: 'Ordem de serviço não encontrada.' });
+    }
+
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '';
+    const ip = (typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : Array.isArray(rawIp) ? rawIp[0] : '')
+      .replace('::ffff:', '') || '127.0.0.1';
+
+    const now = new Date();
+    const approvedAt = now.toISOString();
+    const formattedDate = now.toLocaleDateString('pt-BR') + ' às ' + now.toLocaleTimeString('pt-BR');
+    const signatureHash = 'AUT-' + (order.id || '').split('-')[0] + '-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const approvalData = {
+      approved: true,
+      approvedAt,
+      formattedDate,
+      ip,
+      deviceModel: body.deviceModel || 'Celular do Cliente',
+      deviceInfo: body.deviceInfo || 'Navegador Web Mobile',
+      userAgent: body.userAgent || (req.headers['user-agent'] as string) || '',
+      screenResolution: body.screenResolution || '',
+      imei: body.imei || '',
+      clientName: body.clientName || order.customer_name || 'Cliente',
+      signatureHash
+    };
+
+    let checklistArr: string[] = Array.isArray(order.checklist) ? [...order.checklist] : [];
+    checklistArr = checklistArr.filter(item => typeof item === 'string' && !item.startsWith('__APPROVAL_JSON__:'));
+    checklistArr.push(`__APPROVAL_JSON__:${JSON.stringify(approvalData)}`);
+    checklistArr.push(`✔ [APROVAÇÃO DIGITAL] Confirmado pelo cliente em ${formattedDate} (${approvalData.deviceModel}) - IP: ${approvalData.ip} - Hash: ${signatureHash}`);
+
+    const newStatus = (order.status === 'Concluído' || order.status === 'Entregue' || order.status === 'Em Manutenção')
+      ? order.status
+      : 'Aprovado';
+
+    const { error: updateError } = await supabase
+      .from('service_orders')
+      .update({
+        checklist: checklistArr,
+        status: newStatus
+      })
+      .eq('id', order.id);
+
+    if (updateError) {
+      console.error('Erro ao atualizar aprovação no Supabase:', updateError);
+      throw updateError;
+    }
+
+    return res.status(200).json({
+      success: true,
+      digitalApproval: approvalData,
+      status: newStatus
+    });
+  } catch (err: any) {
+    console.error('Erro ao salvar aprovação digital:', err);
+    return res.status(500).json({ error: 'Erro ao registrar aprovação do cliente.' });
   }
 });
 
